@@ -14,7 +14,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Bad request' }, { status: 400 });
   }
-  const { token, key, filename, contentType, size, sortNumber } = body || {};
+  const { token, key, filename, contentType, size, sortNumber, folderPath } = body || {};
   if (!token || !key || !filename) {
     return NextResponse.json({ error: 'Missing file info' }, { status: 400 });
   }
@@ -33,6 +33,7 @@ export async function POST(request) {
     kind: 'client_upload',
     r2_key: key,
     filename,
+    folder_path: folderPath || null,
     sort_number: Number.isFinite(sortNumber) ? sortNumber : null,
     size_bytes: Number.isFinite(size) ? size : null,
     content_type: contentType || null,

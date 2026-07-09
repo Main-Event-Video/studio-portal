@@ -9,8 +9,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // GET /api/portal/media?token=...&scope=view|mine
-//   scope=view → rough cuts + finals Josh sent (default)
-//   scope=mine → the client's own uploads
 export async function GET(request) {
   const url = new URL(request.url);
   const token = url.searchParams.get('token');
@@ -28,9 +26,10 @@ export async function GET(request) {
   const db = createServiceClient();
   const { data, error } = await db
     .from('studio_media')
-    .select('id, filename, content_type, r2_key, kind, note, sort_number, created_at')
+    .select('id, filename, content_type, r2_key, kind, note, sort_number, folder_path, created_at')
     .eq('client_id', client.id)
     .in('kind', kinds)
+    .order('folder_path', { ascending: true, nullsFirst: true })
     .order('sort_number', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true });
 
@@ -46,6 +45,7 @@ export async function GET(request) {
       kind: m.kind,
       note: m.note,
       sortNumber: m.sort_number,
+      folderPath: m.folder_path,
       url: await getViewUrl(m.r2_key, 3600),
     }))
   );

@@ -242,3 +242,28 @@ tr:last-child td { border-bottom: none; }
   overflow: hidden;
 }
 .media-cell img, .media-cell video { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* ==== APPEND THESE TO THE BOTTOM OF app/globals.css ==== */
+/* (Do NOT replace the file — just paste these at the end.) */
+
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--blue);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.linklike:hover { color: #7ba6ff; }
+
+.folder-head {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
