@@ -53,6 +53,10 @@ export default async function PortalHome({ params }) {
       </div>
 
       <div className="tiles">
+        <Link href={`/p/${token}/intake`} className="tile">
+          <div className="tile-title neon-blue">Tell us about your event</div>
+          <div className="tile-sub">Fill out your questionnaire so we can bring your vision to life.</div>
+        </Link>
         <Link href={`/p/${token}/upload`} className="tile red">
           <div className="tile-title neon-red">Upload your photos and videos here</div>
           <div className="tile-sub">Send us your event media so we can get to work.</div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
 
@@ -66,6 +66,16 @@ export default function AdminPage() {
   // list
   const [clients, setClients] = useState([]);
   const [listError, setListError] = useState('');
+
+  // deliver a cut (step 6)
+  const [dClientId, setDClientId] = useState('');
+  const [dKind, setDKind] = useState('rough_cut');
+  const [dNote, setDNote] = useState('');
+  const [dFile, setDFile] = useState(null);
+  const [dPct, setDPct] = useState(0);
+  const [dPhase, setDPhase] = useState('idle'); // idle | uploading | saving | done | error
+  const [dMsg, setDMsg] = useState('');
+  const dFileRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -143,8 +153,73 @@ export default function AdminPage() {
     }
   }
 
+  function putWithProgress(url, file, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', url);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () =>
+        xhr.status >= 200 && xhr.status < 300
+          ? resolve()
+          : reject(new Error(`Upload failed (${xhr.status})`));
+      xhr.onerror = () => reject(new Error('Upload failed (network)'));
+      xhr.send(file);
+    });
+  }
+
+  async function sendCut(e) {
+    e.preventDefault();
+    setDMsg('');
+    if (!dClientId) return setDMsg('Pick a client first.');
+    if (!dFile) return setDMsg('Choose a video file to send.');
+
+    const contentType = dFile.type || 'application/octet-stream';
+    try {
+      setDPhase('uploading');
+      setDPct(0);
+      const { url, key } = await api('/api/admin/upload-url', {
+        method: 'POST',
+        body: JSON.stringify({ clientId: dClientId, contentType }),
+      });
+      await putWithProgress(url, dFile, setDPct);
+
+      setDPhase('saving');
+      const result = await api('/api/admin/deliver', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId: dClientId,
+          key,
+          filename: dFile.name,
+          contentType,
+          size: dFile.size,
+          kind: dKind,
+          note: dNote,
+        }),
+      });
+
+      setDPhase('done');
+      setDMsg(
+        result.emailed
+          ? 'Sent — the client has the file and an email is on its way.'
+          : `Saved to the client's portal, but the email did not send${
+              result.emailError ? ` (${result.emailError})` : ''
+            }. Check Postmark env vars.`
+      );
+      setDFile(null);
+      setDNote('');
+      if (dFileRef.current) dFileRef.current.value = '';
+    } catch (err) {
+      setDPhase('error');
+      setDMsg(err.message || 'Something went wrong.');
+    }
+  }
+
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const siteUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const activeClients = clients.filter((c) => !c.archived);
 
   if (!checked) return null;
 
@@ -236,6 +311,87 @@ export default function AdminPage() {
             )}
           </dl>
         )}
+      </section>
+
+      <section className="panel">
+        <h2 className="neon neon-red">Send a cut</h2>
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -8 }}>
+          Uploads straight to the client’s portal and emails them a link. Watermark rough cuts on
+          export before uploading; send finals clean and full-res.
+        </p>
+        <form onSubmit={sendCut}>
+          <label htmlFor="d_client">Client</label>
+          <select id="d_client" value={dClientId} onChange={(e) => setDClientId(e.target.value)}>
+            <option value="">Select a client…</option>
+            {activeClients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.display_name} — {c.email}
+              </option>
+            ))}
+          </select>
+
+          <div className="field-group">
+            <span className="field-label">What is this?</span>
+            <div className="choices">
+              <label className="choice">
+                <input
+                  type="radio"
+                  name="d_kind"
+                  checked={dKind === 'rough_cut'}
+                  onChange={() => setDKind('rough_cut')}
+                />
+                Rough cut (watermarked)
+              </label>
+              <label className="choice">
+                <input
+                  type="radio"
+                  name="d_kind"
+                  checked={dKind === 'final'}
+                  onChange={() => setDKind('final')}
+                />
+                Final (clean, full-res)
+              </label>
+            </div>
+          </div>
+
+          <label htmlFor="d_file">Video file</label>
+          <input
+            id="d_file"
+            ref={dFileRef}
+            type="file"
+            accept="video/*"
+            onChange={(e) => setDFile(e.target.files?.[0] || null)}
+          />
+
+          <label htmlFor="d_note">Personal note (optional — shown in the email)</label>
+          <textarea
+            id="d_note"
+            value={dNote}
+            onChange={(e) => setDNote(e.target.value)}
+            placeholder="Hi! Here's the first look — can't wait to hear what you think."
+          />
+
+          {(dPhase === 'uploading' || dPhase === 'saving') && (
+            <div className="progress" style={{ marginTop: 14 }}>
+              <span style={{ width: `${dPhase === 'saving' ? 100 : dPct}%` }} />
+            </div>
+          )}
+          {dMsg && (
+            <p className={dPhase === 'error' ? 'msg-error' : 'msg-ok'} style={{ fontSize: 14 }}>
+              {dMsg}
+            </p>
+          )}
+          <button
+            className="btn-primary"
+            disabled={dPhase === 'uploading' || dPhase === 'saving'}
+          >
+            {dPhase === 'uploading'
+              ? `Uploading… ${dPct}%`
+              : dPhase === 'saving'
+              ? 'Sending…'
+              : 'Upload & send'}
+          </button>
+        </form>
       </section>
 
       <section className="panel">
