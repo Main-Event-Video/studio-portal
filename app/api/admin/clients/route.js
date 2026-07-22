@@ -28,7 +28,26 @@ export async function GET(request) {
   if (error) {
     return NextResponse.json({ error: 'Could not load clients', detail: error.message }, { status: 500 });
   }
-  return NextResponse.json({ clients: data });
+
+  // Per-client upload stats: how many files THEY uploaded, and when they last did.
+  // One pass over their own uploads (kind='client_upload'); non-fatal if it fails.
+  const stats = {};
+  const { data: media } = await db
+    .from('studio_media')
+    .select('client_id, created_at')
+    .eq('kind', 'client_upload');
+  for (const m of media || []) {
+    const s = stats[m.client_id] || (stats[m.client_id] = { upload_count: 0, last_upload_at: null });
+    s.upload_count += 1;
+    if (!s.last_upload_at || m.created_at > s.last_upload_at) s.last_upload_at = m.created_at;
+  }
+
+  const clients = (data || []).map((c) => ({
+    ...c,
+    upload_count: stats[c.id]?.upload_count || 0,
+    last_upload_at: stats[c.id]?.last_upload_at || null,
+  }));
+  return NextResponse.json({ clients });
 }
 
 export async function POST(request) {

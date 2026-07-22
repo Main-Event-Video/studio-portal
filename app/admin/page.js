@@ -41,6 +41,14 @@ function CopyButton({ text, label = 'Copy' }) {
   );
 }
 
+// "2026-07-12T18:03:00Z" → "Jul 12, 2026". Date only; safe on null.
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export default function AdminPage() {
   const [session, setSession] = useState(null);
   const [checked, setChecked] = useState(false);
@@ -67,6 +75,10 @@ export default function AdminPage() {
   const [clients, setClients] = useState([]);
   const [listError, setListError] = useState('');
 
+  // accordion: which client's workspace is open, and which tool inside it.
+  const [openClientId, setOpenClientId] = useState(null);
+  const [activeTool, setActiveTool] = useState(null); // 'montage' | 'cut' | null
+
   // montage generator (spine v1)
   const MONTAGE_STYLES = [
     { value: 'hollywood', label: 'Hollywood — gold on black, slow + cinematic' },
@@ -77,7 +89,6 @@ export default function AdminPage() {
   const [mSpeed, setMSpeed] = useState(''); // '' = style default, else 1–10 s/photo
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
-  const [mShowAllRenders, setMShowAllRenders] = useState(false);
   const [mTitle, setMTitle] = useState('');
   const [mSubtitle, setMSubtitle] = useState('');
   const [mWatermark, setMWatermark] = useState(true);
@@ -114,42 +125,6 @@ export default function AdminPage() {
     }
   }, []);
 
-  // The Generate form remembers itself across refreshes (browser storage).
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('studioMontageForm') || '{}');
-      if (saved.clientId) setMClientId(saved.clientId);
-      if (saved.clientName) setMClientName(saved.clientName);
-      if (saved.style) setMStyle(saved.style);
-      if (saved.title) setMTitle(saved.title);
-      if (saved.subtitle) setMSubtitle(saved.subtitle);
-      if (saved.speed) setMSpeed(saved.speed);
-      if (typeof saved.watermark === 'boolean') setMWatermark(saved.watermark);
-    } catch { /* first visit */ }
-  }, []);
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'studioMontageForm',
-        JSON.stringify({ clientId: mClientId, clientName: mClientName, style: mStyle, title: mTitle, subtitle: mSubtitle, speed: mSpeed, watermark: mWatermark })
-      );
-    } catch { /* storage unavailable; harmless */ }
-  }, [mClientId, mClientName, mStyle, mTitle, mSubtitle, mSpeed, mWatermark]);
-
-  // Arm a work panel for a specific client (from their row in Clients).
-  // One shared selection drives BOTH the montage generator and Send a cut.
-  function pickClient(c, anchor) {
-    setMClientId(c.id);
-    setMClientName(c.display_name);
-    setMTitle(c.display_name);
-    setMSubtitle('');
-    setMShowAllRenders(false);
-    setMMsg('');
-    setMErr(false);
-    setDMsg('');
-    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth' });
-  }
-
   const loadMontages = useCallback(async () => {
     try {
       const { montages } = await api('/api/admin/montage');
@@ -165,6 +140,36 @@ export default function AdminPage() {
       loadMontages();
     }
   }, [session, loadClients, loadMontages]);
+
+  // Prime the shared work forms for a specific client. One selection drives
+  // BOTH the montage generator and Send a cut inside that client's workspace.
+  function pickClient(c) {
+    setMClientId(c.id);
+    setMClientName(c.display_name);
+    setMTitle(c.display_name);
+    setMSubtitle('');
+    setMMsg('');
+    setMErr(false);
+    setDMsg('');
+    setDPhase('idle');
+  }
+
+  // Click the client's name pill: toggle their workspace open/closed.
+  function openClient(c) {
+    if (openClientId === c.id) {
+      setOpenClientId(null);
+      setActiveTool(null);
+      return;
+    }
+    pickClient(c);
+    setOpenClientId(c.id);
+    setActiveTool(null); // show the two tool buttons first; user picks one
+  }
+
+  // Inside an open workspace: pick Montage or Send a cut (toggles the window).
+  function chooseTool(tool) {
+    setActiveTool((prev) => (prev === tool ? null : tool));
+  }
 
   // framing adjustments
   const [adjFor, setAdjFor] = useState(null); // montage row being adjusted
@@ -242,7 +247,7 @@ export default function AdminPage() {
     e.preventDefault();
     setMMsg('');
     setMErr(false);
-    if (!mClientId) { setMErr(true); return setMMsg('Pick a client first — use the Montage button on their row in the Clients list.'); }
+    if (!mClientId) { setMErr(true); return setMMsg('Pick a client first — open their workspace from the Clients list.'); }
     if (!mTitle.trim()) { setMErr(true); return setMMsg('Give it a title (usually the honoree’s name).'); }
     setMBusy(true);
     try {
@@ -339,7 +344,7 @@ export default function AdminPage() {
   async function sendCut(e) {
     e.preventDefault();
     setDMsg('');
-    if (!mClientId) return setDMsg('Pick a client first — use the Send cut button on their row in the Clients list.');
+    if (!mClientId) return setDMsg('Pick a client first — open their workspace from the Clients list.');
     if (!dFile) return setDMsg('Choose a video file to send.');
 
     const contentType = dFile.type || 'application/octet-stream';
@@ -385,110 +390,17 @@ export default function AdminPage() {
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const siteUrl = typeof window !== 'undefined' ? window.location.origin : '';
-  const activeClients = clients.filter((c) => !c.archived);
 
-  if (!checked) return null;
+  // ---- Inline tool windows (rendered inside an open client's workspace) ----
 
-  if (!session) {
+  function renderCutTool() {
     return (
-      <main className="wrap" style={{ maxWidth: 440 }}>
-        <div className="logo-header" style={{ marginTop: '8vh' }}>
-          <Image src="/logo.png" alt="Main Event Studio" width={240} height={162} priority />
-          <p className="eyebrow">Studio Admin</p>
-        </div>
-        <form className="panel" onSubmit={handleLogin}>
-          <h2 className="neon neon-blue">Sign in</h2>
-          <label htmlFor="email">Email</label>
-          <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <label htmlFor="password">Password</label>
-          <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          {loginError && <p className="msg-error">{loginError}</p>}
-          <button className="btn-primary" disabled={loggingIn}>
-            {loggingIn ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-      </main>
-    );
-  }
-
-  return (
-    <main className="wrap">
-      <div className="logo-header">
-        <Image src="/logo.png" alt="Main Event Studio" width={220} height={148} priority />
-        <p className="eyebrow">Studio Admin</p>
-        <button className="btn-ghost" onClick={() => supabase.auth.signOut()}>Sign out</button>
-      </div>
-
-      <section className="panel">
-        <h2 className="neon neon-red">New client</h2>
-        <form onSubmit={handleCreate}>
-          <div className="grid-2">
-            <div>
-              <label htmlFor="display_name">Welcome name (shown on portal)</label>
-              <input id="display_name" placeholder="The Goldbergs" value={form.display_name} onChange={set('display_name')} required />
-            </div>
-            <div>
-              <label htmlFor="last_name">Last name (password base)</label>
-              <input id="last_name" placeholder="Goldberg" value={form.last_name} onChange={set('last_name')} required />
-            </div>
-            <div>
-              <label htmlFor="client_email">Client email (username)</label>
-              <input id="client_email" type="email" placeholder="family@example.com" value={form.email} onChange={set('email')} required />
-            </div>
-            <div>
-              <label htmlFor="event_date">Event date</label>
-              <input id="event_date" type="date" value={form.event_date} onChange={set('event_date')} required />
-            </div>
-            <div>
-              <label htmlFor="event_type">Event type (optional)</label>
-              <input id="event_type" placeholder="Bar Mitzvah, Wedding…" value={form.event_type} onChange={set('event_type')} />
-            </div>
-          </div>
-          {form.last_name && form.event_date && (
-            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 12 }}>
-              Password will be:{' '}
-              <span className="mono" style={{ color: 'var(--text)' }}>
-                {form.last_name.toLowerCase().replace(/[^a-z]/g, '')}
-                {form.event_date.slice(5, 7)}
-                {form.event_date.slice(8, 10)}
-              </span>
-            </p>
-          )}
-          {createError && <p className="msg-error">{createError}</p>}
-          <button className="btn-primary" disabled={creating}>
-            {creating ? 'Creating…' : 'Create client'}
-          </button>
-        </form>
-
-        {ticket && (
-          <dl className="ticket">
-            <dt>{ticket.reset ? 'Password reset — new credentials' : 'Client created — credentials'}</dt>
-            <dd>
-              {ticket.credentials.username} / {ticket.credentials.password}{' '}
-              <CopyButton text={`${ticket.credentials.username} / ${ticket.credentials.password}`} />
-            </dd>
-            {ticket.portal_link && (
-              <>
-                <dt>Private portal link</dt>
-                <dd>
-                  {ticket.portal_link} <CopyButton text={ticket.portal_link} label="Copy link" />
-                </dd>
-              </>
-            )}
-          </dl>
-        )}
-      </section>
-
-      <section className="panel" id="deliver-panel">
-        <h2 className="neon neon-red">
-          Send a cut{mClientName ? ` — ${mClientName}` : ''}
-        </h2>
-        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -8 }}>
-          {mClientId
-            ? 'Uploads straight to this client’s portal and emails them a link. Watermark rough cuts on export before uploading; send finals clean and full-res.'
-            : 'Pick a client first — use the Send cut button next to their name in the Clients list below.'}
+      <div className="tool-window" style={{ marginTop: 16 }}>
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
+          Uploads straight to this client’s portal and emails them a link. Watermark rough cuts on
+          export before uploading; send finals clean and full-res.
         </p>
-        <form onSubmit={sendCut} style={{ opacity: mClientId ? 1 : 0.45 }}>
+        <form onSubmit={sendCut}>
           <div className="field-group">
             <span className="field-label">What is this?</span>
             <div className="choices">
@@ -540,10 +452,7 @@ export default function AdminPage() {
               {dMsg}
             </p>
           )}
-          <button
-            className="btn-primary"
-            disabled={dPhase === 'uploading' || dPhase === 'saving'}
-          >
+          <button className="btn-primary" disabled={dPhase === 'uploading' || dPhase === 'saving'}>
             {dPhase === 'uploading'
               ? `Uploading… ${dPct}%`
               : dPhase === 'saving'
@@ -551,18 +460,19 @@ export default function AdminPage() {
               : 'Upload & send'}
           </button>
         </form>
-      </section>
+      </div>
+    );
+  }
 
-      <section className="panel" id="montage-panel">
-        <h2 className="neon neon-red">
-          Generate montage{mClientName ? ` — ${mClientName}` : ''}
-        </h2>
-        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -8 }}>
-          {mClientId
-            ? 'Builds a montage from this client’s uploaded photos, in their folder and numbering order. Drafts carry the watermark automatically.'
-            : 'Pick a client first — use the Montage button next to their name in the Clients list below.'}
+  function renderMontageTool(c) {
+    const rows = montages.filter((x) => x.clientId === c.id);
+    return (
+      <div className="tool-window" style={{ marginTop: 16 }}>
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
+          Builds a montage from this client’s uploaded photos, in their folder and numbering order.
+          Drafts carry the watermark automatically.
         </p>
-        <form onSubmit={generateMontage} style={{ opacity: mClientId ? 1 : 0.45 }}>
+        <form onSubmit={generateMontage}>
           <div className="grid-2">
             <div>
               <label htmlFor="m_style">Style</label>
@@ -604,28 +514,19 @@ export default function AdminPage() {
 
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h3 className="folder-head" style={{ margin: 0 }}>
-              Renders{mClientId && !mShowAllRenders ? ` — ${mClientName}` : ' — all clients'}
-            </h3>
-            <span>
-              {mClientId && (
-                <button className="btn-ghost" type="button" onClick={() => setMShowAllRenders((v) => !v)}>
-                  {mShowAllRenders ? `Only ${mClientName}` : 'Show all'}
-                </button>
-              )}{' '}
-              <button className="btn-ghost" type="button" onClick={loadMontages}>Refresh</button>
-            </span>
+            <h3 className="folder-head" style={{ margin: 0 }}>Renders</h3>
+            <button className="btn-ghost" type="button" onClick={loadMontages}>Refresh</button>
           </div>
-          {(mClientId && !mShowAllRenders ? montages.filter((x) => x.clientId === mClientId) : montages).length === 0 ? (
-            <p style={{ color: 'var(--muted)', fontSize: 14 }}>No montages yet{mClientId && !mShowAllRenders ? ' for this client' : ''}.</p>
+          {rows.length === 0 ? (
+            <p style={{ color: 'var(--muted)', fontSize: 14 }}>No montages yet for this client.</p>
           ) : (
-            (mClientId && !mShowAllRenders ? montages.filter((x) => x.clientId === mClientId) : montages).map((m) => (
+            rows.map((m) => (
               <div key={m.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
                 <div className="upload-row" style={{ border: 'none', padding: 0 }}>
                   <span>
                     <strong>{m.title}</strong>
                     <span style={{ color: 'var(--muted)' }}>
-                      {' '}· {m.client} · {m.style} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos
+                      {' '}· {m.style} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos
                     </span>
                     {m.watermarked && <span className="pill" style={{ marginLeft: 8 }}>draft</span>}
                   </span>
@@ -734,6 +635,100 @@ export default function AdminPage() {
             ))
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (!checked) return null;
+
+  if (!session) {
+    return (
+      <main className="wrap" style={{ maxWidth: 440 }}>
+        <div className="logo-header" style={{ marginTop: '8vh' }}>
+          <Image src="/logo.png" alt="Main Event Studio" width={240} height={162} priority />
+          <p className="eyebrow">Studio Admin</p>
+        </div>
+        <form className="panel" onSubmit={handleLogin}>
+          <h2 className="neon neon-blue">Sign in</h2>
+          <label htmlFor="email">Email</label>
+          <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <label htmlFor="password">Password</label>
+          <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          {loginError && <p className="msg-error">{loginError}</p>}
+          <button className="btn-primary" disabled={loggingIn}>
+            {loggingIn ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+      </main>
+    );
+  }
+
+  return (
+    <main className="wrap">
+      <div className="logo-header">
+        <Image src="/logo.png" alt="Main Event Studio" width={220} height={148} priority />
+        <p className="eyebrow">Studio Admin</p>
+        <button className="btn-ghost" onClick={() => supabase.auth.signOut()}>Sign out</button>
+      </div>
+
+      <section className="panel">
+        <h2 className="neon neon-red">New client</h2>
+        <form onSubmit={handleCreate}>
+          <div className="grid-2">
+            <div>
+              <label htmlFor="display_name">Welcome name (shown on portal)</label>
+              <input id="display_name" placeholder="The Goldbergs" value={form.display_name} onChange={set('display_name')} required />
+            </div>
+            <div>
+              <label htmlFor="last_name">Last name (password base)</label>
+              <input id="last_name" placeholder="Goldberg" value={form.last_name} onChange={set('last_name')} required />
+            </div>
+            <div>
+              <label htmlFor="client_email">Client email (username)</label>
+              <input id="client_email" type="email" placeholder="family@example.com" value={form.email} onChange={set('email')} required />
+            </div>
+            <div>
+              <label htmlFor="event_date">Event date</label>
+              <input id="event_date" type="date" value={form.event_date} onChange={set('event_date')} required />
+            </div>
+            <div>
+              <label htmlFor="event_type">Event type (optional)</label>
+              <input id="event_type" placeholder="Bar Mitzvah, Wedding…" value={form.event_type} onChange={set('event_type')} />
+            </div>
+          </div>
+          {form.last_name && form.event_date && (
+            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 12 }}>
+              Password will be:{' '}
+              <span className="mono" style={{ color: 'var(--text)' }}>
+                {form.last_name.toLowerCase().replace(/[^a-z]/g, '')}
+                {form.event_date.slice(5, 7)}
+                {form.event_date.slice(8, 10)}
+              </span>
+            </p>
+          )}
+          {createError && <p className="msg-error">{createError}</p>}
+          <button className="btn-primary" disabled={creating}>
+            {creating ? 'Creating…' : 'Create client'}
+          </button>
+        </form>
+
+        {ticket && (
+          <dl className="ticket">
+            <dt>{ticket.reset ? 'Password reset — new credentials' : 'Client created — credentials'}</dt>
+            <dd>
+              {ticket.credentials.username} / {ticket.credentials.password}{' '}
+              <CopyButton text={`${ticket.credentials.username} / ${ticket.credentials.password}`} />
+            </dd>
+            {ticket.portal_link && (
+              <>
+                <dt>Private portal link</dt>
+                <dd>
+                  {ticket.portal_link} <CopyButton text={ticket.portal_link} label="Copy link" />
+                </dd>
+              </>
+            )}
+          </dl>
+        )}
       </section>
 
       <section className="panel">
@@ -750,39 +745,88 @@ export default function AdminPage() {
                   <th>Client</th>
                   <th>Email</th>
                   <th>Event</th>
-                  <th>Portal link</th>
+                  <th>Last upload</th>
+                  <th>Files</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {clients.map((c) => (
-                  <tr key={c.id}>
-                    <td>
-                      {c.display_name}{' '}
-                      {c.archived && <span className="pill archived">archived</span>}
-                    </td>
-                    <td className="mono">{c.email}</td>
-                    <td>
-                      {c.event_date}
-                      {c.event_type ? ` · ${c.event_type}` : ''}
-                    </td>
-                    <td>
-                      <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy link" />
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {!c.archived && (
-                        <>
-                          <button className="btn-ghost" onClick={() => pickClient(c, 'montage-panel')}>Montage</button>{' '}
-                          <button className="btn-ghost" onClick={() => pickClient(c, 'deliver-panel')}>Send cut</button>{' '}
-                        </>
+                {clients.map((c) => {
+                  const isOpen = openClientId === c.id;
+                  return (
+                    <FragmentRow key={c.id}>
+                      <tr className={isOpen ? 'row-open' : undefined}>
+                        <td>
+                          <button
+                            type="button"
+                            className="name-pill"
+                            onClick={() => openClient(c)}
+                            aria-expanded={isOpen}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '4px 12px',
+                              borderRadius: 999,
+                              border: '1px solid var(--line)',
+                              background: isOpen ? 'var(--blue, #2563eb)' : 'transparent',
+                              color: isOpen ? '#fff' : 'var(--text)',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <span aria-hidden="true" style={{ fontSize: 11 }}>{isOpen ? '▾' : '▸'}</span>
+                            {c.display_name}
+                          </button>{' '}
+                          {c.archived && <span className="pill archived">archived</span>}
+                        </td>
+                        <td className="mono">{c.email}</td>
+                        <td>
+                          {c.event_date}
+                          {c.event_type ? ` · ${c.event_type}` : ''}
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.last_upload_at)}</td>
+                        <td>{c.upload_count ?? 0}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
+                          <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>
+                            {c.archived ? 'Unarchive' : 'Archive'}
+                          </button>
+                        </td>
+                      </tr>
+
+                      {isOpen && (
+                        <tr className="row-workspace">
+                          <td colSpan={6} style={{ background: 'rgba(127,127,127,0.06)', padding: '18px 16px' }}>
+                            <div className="client-workspace">
+                              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                <button
+                                  type="button"
+                                  className={activeTool === 'montage' ? 'btn-primary' : 'btn-ghost'}
+                                  onClick={() => chooseTool('montage')}
+                                >
+                                  Generate montage
+                                </button>
+                                <button
+                                  type="button"
+                                  className={activeTool === 'cut' ? 'btn-primary' : 'btn-ghost'}
+                                  onClick={() => chooseTool('cut')}
+                                >
+                                  Send a cut
+                                </button>
+                                <span style={{ flex: 1 }} />
+                                <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
+                              </div>
+
+                              {activeTool === 'montage' && renderMontageTool(c)}
+                              {activeTool === 'cut' && renderCutTool()}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                      <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
-                      <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>
-                        {c.archived ? 'Unarchive' : 'Archive'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                    </FragmentRow>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -790,4 +834,10 @@ export default function AdminPage() {
       </section>
     </main>
   );
+}
+
+// Groups a client's summary row with its (optional) expanded workspace row
+// without adding DOM around them — <tbody> only allows <tr> children.
+function FragmentRow({ children }) {
+  return <>{children}</>;
 }
