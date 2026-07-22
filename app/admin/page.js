@@ -74,6 +74,7 @@ export default function AdminPage() {
     { value: 'party', label: 'Party — fast, punchy, high energy' },
   ];
   const [mStyle, setMStyle] = useState('hollywood');
+  const [mSpeed, setMSpeed] = useState(''); // '' = style default, else 1–10 s/photo
   const [mClientId, setMClientId] = useState('');
   const [mTitle, setMTitle] = useState('');
   const [mSubtitle, setMSubtitle] = useState('');
@@ -141,6 +142,7 @@ export default function AdminPage() {
         body: JSON.stringify({
           clientId: mClientId,
           style: mStyle,
+          photoSeconds: mSpeed ? Number(mSpeed) : null,
           title: mTitle.trim(),
           subtitle: mSubtitle.trim() || null,
           watermark: mWatermark,
@@ -486,6 +488,15 @@ export default function AdminPage() {
             <div>
               <label htmlFor="m_subtitle">Subtitle (optional)</label>
               <input id="m_subtitle" placeholder="A Bat Mitzvah Story" value={mSubtitle} onChange={(e) => setMSubtitle(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="m_speed">Seconds per photo</label>
+              <select id="m_speed" value={mSpeed} onChange={(e) => setMSpeed(e.target.value)}>
+                <option value="">Style default</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((s) => (
+                  <option key={s} value={s}>{s} second{s > 1 ? 's' : ''}</option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="field-group">

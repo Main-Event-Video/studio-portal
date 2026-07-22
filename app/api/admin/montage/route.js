@@ -25,7 +25,10 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood' } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null } = body || {};
+  if (photoSeconds != null && !(Number(photoSeconds) >= 1 && Number(photoSeconds) <= 10)) {
+    return NextResponse.json({ error: 'photoSeconds must be 1–10' }, { status: 400 });
+  }
   if (!clientId || !title) {
     return NextResponse.json({ error: 'clientId and title are required' }, { status: 400 });
   }
@@ -89,6 +92,7 @@ export async function POST(request) {
     const source = buildMontageSource({
       photos,
       style,
+      photoSeconds: photoSeconds ? Number(photoSeconds) : null,
       title: String(title).toUpperCase(),
       subtitle: subtitle ? String(subtitle).toUpperCase() : null,
       watermarkUrl: watermark ? `${siteUrl}/logo.png` : null,
