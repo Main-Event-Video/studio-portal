@@ -129,6 +129,19 @@ export default function AdminPage() {
     }
   }, [session, loadClients, loadMontages]);
 
+  async function syncMontage(id) {
+    try {
+      await api('/api/admin/montage/sync', {
+        method: 'POST',
+        body: JSON.stringify({ montageId: id }),
+      });
+      loadMontages();
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+  }
+
   async function generateMontage(e) {
     e.preventDefault();
     setMMsg('');
@@ -535,6 +548,14 @@ export default function AdminPage() {
                     }}
                   >
                     {m.status === 'rendering' ? 'Rendering…' : m.status}
+                    {(m.status === 'rendering' || m.status === 'queued') && (
+                      <>
+                        {' '}
+                        <button type="button" className="btn-ghost" onClick={() => syncMontage(m.id)}>
+                          Check status
+                        </button>
+                      </>
+                    )}
                   </span>
                 </div>
                 {m.status === 'failed' && m.error && (
