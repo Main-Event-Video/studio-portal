@@ -129,6 +129,54 @@ export default function AdminPage() {
     }
   }, [session, loadClients, loadMontages]);
 
+  // framing adjustments
+  const [adjFor, setAdjFor] = useState(null); // montage row being adjusted
+  const [adjPhotos, setAdjPhotos] = useState([]);
+  const [adjMap, setAdjMap] = useState({});
+  const [adjBusy, setAdjBusy] = useState(false);
+
+  async function openAdjust(m) {
+    if (adjFor?.id === m.id) { setAdjFor(null); return; }
+    setAdjFor(m);
+    setAdjMap(m.adjustments || {});
+    setAdjPhotos([]);
+    try {
+      const { photos } = await api(`/api/admin/montage/photos?clientId=${m.clientId}`);
+      setAdjPhotos(photos);
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+  }
+
+  async function rerenderAdjusted() {
+    if (!adjFor) return;
+    setAdjBusy(true);
+    setMMsg('');
+    setMErr(false);
+    try {
+      await api('/api/admin/montage', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId: adjFor.clientId,
+          style: adjFor.style,
+          title: adjFor.title,
+          subtitle: adjFor.subtitle || null,
+          watermark: adjFor.watermarked,
+          photoSeconds: adjFor.photoSeconds || null,
+          adjustments: adjMap,
+        }),
+      });
+      setMMsg('Re-render started with your framing fixes — it will appear as a new render below.');
+      setAdjFor(null);
+      loadMontages();
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+    setAdjBusy(false);
+  }
+
   async function syncMontage(id) {
     try {
       await api('/api/admin/montage/sync', {
@@ -566,12 +614,63 @@ export default function AdminPage() {
                     <video src={m.url} controls preload="metadata" style={{ width: '100%', maxHeight: 320, borderRadius: 10, background: '#000' }} />
                     <p style={{ marginTop: 8, fontSize: 13 }}>
                       <a href={m.url} download>Download MP4</a>
+                      {' '}·{' '}
+                      <button type="button" className="linklike" onClick={() => openAdjust(m)}>
+                        {adjFor?.id === m.id ? 'Close framing fixes' : 'Fix framing (head cut off, etc.)'}
+                      </button>
                       {!m.archived && (
                         <span style={{ color: 'var(--muted)' }}>
                           {' '}· not yet archived to our storage — this copy expires in ~30 days, download it
                         </span>
                       )}
                     </p>
+                    {adjFor?.id === m.id && (
+                      <div style={{ marginTop: 10, padding: '14px 0', borderTop: '1px solid var(--line)' }}>
+                        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
+                          Photos in montage order. For any photo cropped badly, pick which part to show,
+                          then re-render. A re-render is a full new render (uses credits).
+                        </p>
+                        {adjPhotos.length === 0 ? (
+                          <p style={{ color: 'var(--muted)' }}>Loading photos…</p>
+                        ) : (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+                            {adjPhotos.map((p) => (
+                              <div key={p.key}>
+                                <img
+                                  src={p.url}
+                                  alt={p.filename}
+                                  style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 8, border: adjMap[p.key] ? '2px solid var(--blue)' : '1px solid var(--line)' }}
+                                />
+                                <div style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {p.index}. {p.filename}
+                                </div>
+                                <select
+                                  value={adjMap[p.key] || ''}
+                                  onChange={(e) =>
+                                    setAdjMap((prev) => {
+                                      const next = { ...prev };
+                                      if (e.target.value) next[p.key] = e.target.value;
+                                      else delete next[p.key];
+                                      return next;
+                                    })
+                                  }
+                                  style={{ fontSize: 12, padding: '6px 8px' }}
+                                >
+                                  <option value="">Center (default)</option>
+                                  <option value="top">Show top (keep heads)</option>
+                                  <option value="bottom">Show bottom</option>
+                                  <option value="left">Show left side</option>
+                                  <option value="right">Show right side</option>
+                                </select>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <button className="btn-primary" type="button" disabled={adjBusy || adjPhotos.length === 0} onClick={rerenderAdjusted}>
+                          {adjBusy ? 'Starting…' : `Re-render with ${Object.keys(adjMap).length} fix${Object.keys(adjMap).length === 1 ? '' : 'es'}`}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

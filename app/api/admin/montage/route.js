@@ -25,7 +25,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, adjustments = {} } = body || {};
   if (photoSeconds != null && !(Number(photoSeconds) >= 1 && Number(photoSeconds) <= 10)) {
     return NextResponse.json({ error: 'photoSeconds must be 1–10' }, { status: 400 });
   }
@@ -77,6 +77,10 @@ export async function POST(request) {
       status: 'queued',
       photo_count: list.length,
       watermarked: !!watermark,
+      params: {
+        photoSeconds: photoSeconds ? Number(photoSeconds) : null,
+        adjustments: adjustments && typeof adjustments === 'object' ? adjustments : {},
+      },
     })
     .select('id')
     .single();
@@ -86,7 +90,10 @@ export async function POST(request) {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
     // Long-lived presigned URLs — Creatomate fetches these while rendering.
     const photos = await Promise.all(
-      list.map(async (m) => ({ url: await getViewUrl(m.r2_key, 21600) }))
+      list.map(async (m) => ({
+        url: await getViewUrl(m.r2_key, 21600),
+        framing: (adjustments && adjustments[m.r2_key]) || null,
+      }))
     );
 
     const source = buildMontageSource({
@@ -126,7 +133,7 @@ export async function GET(request) {
   const db = createServiceClient();
   const { data, error } = await db
     .from('studio_montages')
-    .select('id, client_id, style, title, subtitle, status, video_url, r2_key, error, photo_count, watermarked, created_at, studio_clients(display_name)')
+    .select('id, client_id, style, title, subtitle, status, video_url, r2_key, error, photo_count, watermarked, params, created_at, studio_clients(display_name)')
     .order('created_at', { ascending: false })
     .limit(25);
   if (error) return NextResponse.json({ error: 'Could not load renders', detail: error.message }, { status: 500 });
@@ -134,9 +141,13 @@ export async function GET(request) {
   const montages = await Promise.all(
     (data || []).map(async (m) => ({
       id: m.id,
+      clientId: m.client_id,
       client: m.studio_clients?.display_name || '—',
       style: m.style,
       title: m.title,
+      subtitle: m.subtitle,
+      photoSeconds: m.params?.photoSeconds || null,
+      adjustments: m.params?.adjustments || {},
       status: m.status,
       error: m.error,
       photoCount: m.photo_count,
