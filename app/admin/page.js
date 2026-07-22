@@ -76,6 +76,8 @@ export default function AdminPage() {
   const [mStyle, setMStyle] = useState('hollywood');
   const [mSpeed, setMSpeed] = useState(''); // '' = style default, else 1–10 s/photo
   const [mClientId, setMClientId] = useState('');
+  const [mClientName, setMClientName] = useState('');
+  const [mShowAllRenders, setMShowAllRenders] = useState(false);
   const [mTitle, setMTitle] = useState('');
   const [mSubtitle, setMSubtitle] = useState('');
   const [mWatermark, setMWatermark] = useState(true);
@@ -112,6 +114,40 @@ export default function AdminPage() {
       setListError(e.message);
     }
   }, []);
+
+  // The Generate form remembers itself across refreshes (browser storage).
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('studioMontageForm') || '{}');
+      if (saved.clientId) setMClientId(saved.clientId);
+      if (saved.clientName) setMClientName(saved.clientName);
+      if (saved.style) setMStyle(saved.style);
+      if (saved.title) setMTitle(saved.title);
+      if (saved.subtitle) setMSubtitle(saved.subtitle);
+      if (saved.speed) setMSpeed(saved.speed);
+      if (typeof saved.watermark === 'boolean') setMWatermark(saved.watermark);
+    } catch { /* first visit */ }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'studioMontageForm',
+        JSON.stringify({ clientId: mClientId, clientName: mClientName, style: mStyle, title: mTitle, subtitle: mSubtitle, speed: mSpeed, watermark: mWatermark })
+      );
+    } catch { /* storage unavailable; harmless */ }
+  }, [mClientId, mClientName, mStyle, mTitle, mSubtitle, mSpeed, mWatermark]);
+
+  // Arm the montage generator for a specific client (from their row in Clients).
+  function pickMontageClient(c) {
+    setMClientId(c.id);
+    setMClientName(c.display_name);
+    setMTitle(c.display_name);
+    setMSubtitle('');
+    setMShowAllRenders(false);
+    setMMsg('');
+    setMErr(false);
+    document.getElementById('montage-panel')?.scrollIntoView({ behavior: 'smooth' });
+  }
 
   const loadMontages = useCallback(async () => {
     try {
@@ -205,7 +241,7 @@ export default function AdminPage() {
     e.preventDefault();
     setMMsg('');
     setMErr(false);
-    if (!mClientId) { setMErr(true); return setMMsg('Pick a client first.'); }
+    if (!mClientId) { setMErr(true); return setMMsg('Pick a client first — use the Montage button on their row in the Clients list.'); }
     if (!mTitle.trim()) { setMErr(true); return setMMsg('Give it a title (usually the honoree’s name).'); }
     setMBusy(true);
     try {
@@ -221,8 +257,6 @@ export default function AdminPage() {
         }),
       });
       setMMsg('Render started — it will appear below as Rendering, then Ready. Renders take a few minutes; use Refresh.');
-      setMTitle('');
-      setMSubtitle('');
       loadMontages();
     } catch (err) {
       setMErr(true);
@@ -525,26 +559,17 @@ export default function AdminPage() {
         </form>
       </section>
 
-      <section className="panel">
-        <h2 className="neon neon-red">Generate montage</h2>
+      <section className="panel" id="montage-panel">
+        <h2 className="neon neon-red">
+          Generate montage{mClientName ? ` — ${mClientName}` : ''}
+        </h2>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -8 }}>
-          Builds a Hollywood-style montage from the client’s uploaded photos, in their folder and
-          numbering order. Drafts carry the logo watermark automatically. Rendering happens in the
-          cloud — start it and check back.
+          {mClientId
+            ? 'Builds a montage from this client’s uploaded photos, in their folder and numbering order. Drafts carry the watermark automatically.'
+            : 'Pick a client first — use the Montage button next to their name in the Clients list below.'}
         </p>
-        <form onSubmit={generateMontage}>
+        <form onSubmit={generateMontage} style={{ opacity: mClientId ? 1 : 0.45 }}>
           <div className="grid-2">
-            <div>
-              <label htmlFor="m_client">Client</label>
-              <select id="m_client" value={mClientId} onChange={(e) => setMClientId(e.target.value)}>
-                <option value="">Select a client…</option>
-                {activeClients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.display_name} — {c.email}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div>
               <label htmlFor="m_style">Style</label>
               <select id="m_style" value={mStyle} onChange={(e) => setMStyle(e.target.value)}>
@@ -585,18 +610,29 @@ export default function AdminPage() {
 
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h3 className="folder-head" style={{ margin: 0 }}>Renders</h3>
-            <button className="btn-ghost" type="button" onClick={loadMontages}>Refresh</button>
+            <h3 className="folder-head" style={{ margin: 0 }}>
+              Renders{mClientId && !mShowAllRenders ? ` — ${mClientName}` : ' — all clients'}
+            </h3>
+            <span>
+              {mClientId && (
+                <button className="btn-ghost" type="button" onClick={() => setMShowAllRenders((v) => !v)}>
+                  {mShowAllRenders ? `Only ${mClientName}` : 'Show all'}
+                </button>
+              )}{' '}
+              <button className="btn-ghost" type="button" onClick={loadMontages}>Refresh</button>
+            </span>
           </div>
-          {montages.length === 0 ? (
-            <p style={{ color: 'var(--muted)', fontSize: 14 }}>No montages yet.</p>
+          {(mClientId && !mShowAllRenders ? montages.filter((x) => x.clientId === mClientId) : montages).length === 0 ? (
+            <p style={{ color: 'var(--muted)', fontSize: 14 }}>No montages yet{mClientId && !mShowAllRenders ? ' for this client' : ''}.</p>
           ) : (
-            montages.map((m) => (
+            (mClientId && !mShowAllRenders ? montages.filter((x) => x.clientId === mClientId) : montages).map((m) => (
               <div key={m.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
                 <div className="upload-row" style={{ border: 'none', padding: 0 }}>
                   <span>
                     <strong>{m.title}</strong>
-                    <span style={{ color: 'var(--muted)' }}> · {m.client} · {m.style} · {m.photoCount} photos</span>
+                    <span style={{ color: 'var(--muted)' }}>
+                      {' '}· {m.client} · {m.style} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos
+                    </span>
                     {m.watermarked && <span className="pill" style={{ marginLeft: 8 }}>draft</span>}
                   </span>
                   <span
@@ -740,6 +776,11 @@ export default function AdminPage() {
                       <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy link" />
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
+                      {!c.archived && (
+                        <>
+                          <button className="btn-ghost" onClick={() => pickMontageClient(c)}>Montage</button>{' '}
+                        </>
+                      )}
                       <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
                       <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>
                         {c.archived ? 'Unarchive' : 'Archive'}
