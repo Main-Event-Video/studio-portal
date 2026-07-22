@@ -87,7 +87,6 @@ export default function AdminPage() {
   const [montages, setMontages] = useState([]);
 
   // deliver a cut (step 6)
-  const [dClientId, setDClientId] = useState('');
   const [dKind, setDKind] = useState('rough_cut');
   const [dNote, setDNote] = useState('');
   const [dFile, setDFile] = useState(null);
@@ -137,8 +136,9 @@ export default function AdminPage() {
     } catch { /* storage unavailable; harmless */ }
   }, [mClientId, mClientName, mStyle, mTitle, mSubtitle, mSpeed, mWatermark]);
 
-  // Arm the montage generator for a specific client (from their row in Clients).
-  function pickMontageClient(c) {
+  // Arm a work panel for a specific client (from their row in Clients).
+  // One shared selection drives BOTH the montage generator and Send a cut.
+  function pickClient(c, anchor) {
     setMClientId(c.id);
     setMClientName(c.display_name);
     setMTitle(c.display_name);
@@ -146,7 +146,8 @@ export default function AdminPage() {
     setMShowAllRenders(false);
     setMMsg('');
     setMErr(false);
-    document.getElementById('montage-panel')?.scrollIntoView({ behavior: 'smooth' });
+    setDMsg('');
+    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth' });
   }
 
   const loadMontages = useCallback(async () => {
@@ -338,7 +339,7 @@ export default function AdminPage() {
   async function sendCut(e) {
     e.preventDefault();
     setDMsg('');
-    if (!dClientId) return setDMsg('Pick a client first.');
+    if (!mClientId) return setDMsg('Pick a client first — use the Send cut button on their row in the Clients list.');
     if (!dFile) return setDMsg('Choose a video file to send.');
 
     const contentType = dFile.type || 'application/octet-stream';
@@ -347,7 +348,7 @@ export default function AdminPage() {
       setDPct(0);
       const { url, key } = await api('/api/admin/upload-url', {
         method: 'POST',
-        body: JSON.stringify({ clientId: dClientId, contentType }),
+        body: JSON.stringify({ clientId: mClientId, contentType }),
       });
       await putWithProgress(url, dFile, setDPct);
 
@@ -355,7 +356,7 @@ export default function AdminPage() {
       const result = await api('/api/admin/deliver', {
         method: 'POST',
         body: JSON.stringify({
-          clientId: dClientId,
+          clientId: mClientId,
           key,
           filename: dFile.name,
           contentType,
@@ -478,23 +479,16 @@ export default function AdminPage() {
         )}
       </section>
 
-      <section className="panel">
-        <h2 className="neon neon-red">Send a cut</h2>
+      <section className="panel" id="deliver-panel">
+        <h2 className="neon neon-red">
+          Send a cut{mClientName ? ` — ${mClientName}` : ''}
+        </h2>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -8 }}>
-          Uploads straight to the client’s portal and emails them a link. Watermark rough cuts on
-          export before uploading; send finals clean and full-res.
+          {mClientId
+            ? 'Uploads straight to this client’s portal and emails them a link. Watermark rough cuts on export before uploading; send finals clean and full-res.'
+            : 'Pick a client first — use the Send cut button next to their name in the Clients list below.'}
         </p>
-        <form onSubmit={sendCut}>
-          <label htmlFor="d_client">Client</label>
-          <select id="d_client" value={dClientId} onChange={(e) => setDClientId(e.target.value)}>
-            <option value="">Select a client…</option>
-            {activeClients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.display_name} — {c.email}
-              </option>
-            ))}
-          </select>
-
+        <form onSubmit={sendCut} style={{ opacity: mClientId ? 1 : 0.45 }}>
           <div className="field-group">
             <span className="field-label">What is this?</span>
             <div className="choices">
@@ -778,7 +772,8 @@ export default function AdminPage() {
                     <td style={{ whiteSpace: 'nowrap' }}>
                       {!c.archived && (
                         <>
-                          <button className="btn-ghost" onClick={() => pickMontageClient(c)}>Montage</button>{' '}
+                          <button className="btn-ghost" onClick={() => pickClient(c, 'montage-panel')}>Montage</button>{' '}
+                          <button className="btn-ghost" onClick={() => pickClient(c, 'deliver-panel')}>Send cut</button>{' '}
                         </>
                       )}
                       <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
