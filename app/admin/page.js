@@ -68,6 +68,12 @@ export default function AdminPage() {
   const [listError, setListError] = useState('');
 
   // montage generator (spine v1)
+  const MONTAGE_STYLES = [
+    { value: 'hollywood', label: 'Hollywood — gold on black, slow + cinematic' },
+    { value: 'timeless', label: 'Timeless — ivory, elegant, gentle' },
+    { value: 'party', label: 'Party — fast, punchy, high energy' },
+  ];
+  const [mStyle, setMStyle] = useState('hollywood');
   const [mClientId, setMClientId] = useState('');
   const [mTitle, setMTitle] = useState('');
   const [mSubtitle, setMSubtitle] = useState('');
@@ -134,6 +140,7 @@ export default function AdminPage() {
         method: 'POST',
         body: JSON.stringify({
           clientId: mClientId,
+          style: mStyle,
           title: mTitle.trim(),
           subtitle: mSubtitle.trim() || null,
           watermark: mWatermark,
@@ -465,6 +472,14 @@ export default function AdminPage() {
               </select>
             </div>
             <div>
+              <label htmlFor="m_style">Style</label>
+              <select id="m_style" value={mStyle} onChange={(e) => setMStyle(e.target.value)}>
+                {MONTAGE_STYLES.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label htmlFor="m_title">Title (honoree)</label>
               <input id="m_title" placeholder="DYLAN" value={mTitle} onChange={(e) => setMTitle(e.target.value)} />
             </div>
@@ -498,7 +513,7 @@ export default function AdminPage() {
                 <div className="upload-row" style={{ border: 'none', padding: 0 }}>
                   <span>
                     <strong>{m.title}</strong>
-                    <span style={{ color: 'var(--muted)' }}> · {m.client} · {m.photoCount} photos</span>
+                    <span style={{ color: 'var(--muted)' }}> · {m.client} · {m.style} · {m.photoCount} photos</span>
                     {m.watermarked && <span className="pill" style={{ marginLeft: 8 }}>draft</span>}
                   </span>
                   <span

@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl } from '@/lib/r2';
-import { buildMontageSource } from '@/lib/montage';
+import { buildMontageSource, STYLES } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 
 export const runtime = 'nodejs';
@@ -25,9 +25,12 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood' } = body || {};
   if (!clientId || !title) {
     return NextResponse.json({ error: 'clientId and title are required' }, { status: 400 });
+  }
+  if (!STYLES[style]) {
+    return NextResponse.json({ error: 'Unknown style' }, { status: 400 });
   }
 
   const db = createServiceClient();
@@ -65,7 +68,7 @@ export async function POST(request) {
     .from('studio_montages')
     .insert({
       client_id: client.id,
-      style: 'hollywood',
+      style,
       title,
       subtitle: subtitle || null,
       status: 'queued',
@@ -85,6 +88,7 @@ export async function POST(request) {
 
     const source = buildMontageSource({
       photos,
+      style,
       title: String(title).toUpperCase(),
       subtitle: subtitle ? String(subtitle).toUpperCase() : null,
       watermarkUrl: watermark ? `${siteUrl}/logo.png` : null,
@@ -127,6 +131,7 @@ export async function GET(request) {
     (data || []).map(async (m) => ({
       id: m.id,
       client: m.studio_clients?.display_name || '—',
+      style: m.style,
       title: m.title,
       status: m.status,
       error: m.error,
