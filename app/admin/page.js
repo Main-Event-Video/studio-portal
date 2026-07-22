@@ -67,6 +67,16 @@ export default function AdminPage() {
   const [clients, setClients] = useState([]);
   const [listError, setListError] = useState('');
 
+  // montage generator (spine v1)
+  const [mClientId, setMClientId] = useState('');
+  const [mTitle, setMTitle] = useState('');
+  const [mSubtitle, setMSubtitle] = useState('');
+  const [mWatermark, setMWatermark] = useState(true);
+  const [mBusy, setMBusy] = useState(false);
+  const [mMsg, setMMsg] = useState('');
+  const [mErr, setMErr] = useState(false);
+  const [montages, setMontages] = useState([]);
+
   // deliver a cut (step 6)
   const [dClientId, setDClientId] = useState('');
   const [dKind, setDKind] = useState('rough_cut');
@@ -96,9 +106,49 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadMontages = useCallback(async () => {
+    try {
+      const { montages } = await api('/api/admin/montage');
+      setMontages(montages);
+    } catch {
+      /* panel shows empty; refresh button retries */
+    }
+  }, []);
+
   useEffect(() => {
-    if (session) loadClients();
-  }, [session, loadClients]);
+    if (session) {
+      loadClients();
+      loadMontages();
+    }
+  }, [session, loadClients, loadMontages]);
+
+  async function generateMontage(e) {
+    e.preventDefault();
+    setMMsg('');
+    setMErr(false);
+    if (!mClientId) { setMErr(true); return setMMsg('Pick a client first.'); }
+    if (!mTitle.trim()) { setMErr(true); return setMMsg('Give it a title (usually the honoree’s name).'); }
+    setMBusy(true);
+    try {
+      await api('/api/admin/montage', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId: mClientId,
+          title: mTitle.trim(),
+          subtitle: mSubtitle.trim() || null,
+          watermark: mWatermark,
+        }),
+      });
+      setMMsg('Render started — it will appear below as Rendering, then Ready. Renders take a few minutes; use Refresh.');
+      setMTitle('');
+      setMSubtitle('');
+      loadMontages();
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+    setMBusy(false);
+  }
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -392,6 +442,95 @@ export default function AdminPage() {
               : 'Upload & send'}
           </button>
         </form>
+      </section>
+
+      <section className="panel">
+        <h2 className="neon neon-red">Generate montage</h2>
+        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -8 }}>
+          Builds a Hollywood-style montage from the client’s uploaded photos, in their folder and
+          numbering order. Drafts carry the logo watermark automatically. Rendering happens in the
+          cloud — start it and check back.
+        </p>
+        <form onSubmit={generateMontage}>
+          <div className="grid-2">
+            <div>
+              <label htmlFor="m_client">Client</label>
+              <select id="m_client" value={mClientId} onChange={(e) => setMClientId(e.target.value)}>
+                <option value="">Select a client…</option>
+                {activeClients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.display_name} — {c.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="m_title">Title (honoree)</label>
+              <input id="m_title" placeholder="DYLAN" value={mTitle} onChange={(e) => setMTitle(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="m_subtitle">Subtitle (optional)</label>
+              <input id="m_subtitle" placeholder="A Bat Mitzvah Story" value={mSubtitle} onChange={(e) => setMSubtitle(e.target.value)} />
+            </div>
+          </div>
+          <div className="field-group">
+            <label className="choice" style={{ color: 'var(--text)' }}>
+              <input type="checkbox" checked={mWatermark} onChange={(e) => setMWatermark(e.target.checked)} />
+              Watermark this draft with the logo
+            </label>
+          </div>
+          {mMsg && <p className={mErr ? 'msg-error' : 'msg-ok'} style={{ fontSize: 14 }}>{mMsg}</p>}
+          <button className="btn-primary" disabled={mBusy}>
+            {mBusy ? 'Starting…' : 'Generate montage'}
+          </button>
+        </form>
+
+        <div style={{ marginTop: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h3 className="folder-head" style={{ margin: 0 }}>Renders</h3>
+            <button className="btn-ghost" type="button" onClick={loadMontages}>Refresh</button>
+          </div>
+          {montages.length === 0 ? (
+            <p style={{ color: 'var(--muted)', fontSize: 14 }}>No montages yet.</p>
+          ) : (
+            montages.map((m) => (
+              <div key={m.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
+                <div className="upload-row" style={{ border: 'none', padding: 0 }}>
+                  <span>
+                    <strong>{m.title}</strong>
+                    <span style={{ color: 'var(--muted)' }}> · {m.client} · {m.photoCount} photos</span>
+                    {m.watermarked && <span className="pill" style={{ marginLeft: 8 }}>draft</span>}
+                  </span>
+                  <span
+                    style={{
+                      color:
+                        m.status === 'ready' ? 'var(--ok)' : m.status === 'failed' ? 'var(--red)' : 'var(--muted)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {m.status === 'rendering' ? 'Rendering…' : m.status}
+                  </span>
+                </div>
+                {m.status === 'failed' && m.error && (
+                  <p className="msg-error" style={{ marginTop: 6, fontSize: 13 }}>{m.error}</p>
+                )}
+                {m.status === 'ready' && m.url && (
+                  <div style={{ marginTop: 10 }}>
+                    <video src={m.url} controls preload="metadata" style={{ width: '100%', maxHeight: 320, borderRadius: 10, background: '#000' }} />
+                    <p style={{ marginTop: 8, fontSize: 13 }}>
+                      <a href={m.url} download>Download MP4</a>
+                      {!m.archived && (
+                        <span style={{ color: 'var(--muted)' }}>
+                          {' '}· not yet archived to our storage — this copy expires in ~30 days, download it
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
       <section className="panel">
