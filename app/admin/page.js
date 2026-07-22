@@ -135,6 +135,15 @@ export default function AdminPage() {
   const [adjMap, setAdjMap] = useState({});
   const [adjSpeed, setAdjSpeed] = useState('');
   const [adjBusy, setAdjBusy] = useState(false);
+  const [showVid, setShowVid] = useState({}); // per-render preview toggle
+
+  // Persist framing picks as they're made (refresh-proof). Fire-and-forget.
+  function saveAdjustments(montageId, next) {
+    api('/api/admin/montage/adjust', {
+      method: 'POST',
+      body: JSON.stringify({ montageId, adjustments: next }),
+    }).catch(() => {});
+  }
 
   async function openAdjust(m) {
     if (adjFor?.id === m.id) { setAdjFor(null); return; }
@@ -613,8 +622,14 @@ export default function AdminPage() {
                 )}
                 {m.status === 'ready' && m.url && (
                   <div style={{ marginTop: 10 }}>
-                    <video src={m.url} controls preload="metadata" style={{ width: '100%', maxHeight: 320, borderRadius: 10, background: '#000' }} />
+                    {showVid[m.id] && (
+                      <video src={m.url} controls preload="metadata" style={{ width: '100%', maxHeight: 320, borderRadius: 10, background: '#000' }} />
+                    )}
                     <p style={{ marginTop: 8, fontSize: 13 }}>
+                      <button type="button" className="linklike" onClick={() => setShowVid((v) => ({ ...v, [m.id]: !v[m.id] }))}>
+                        {showVid[m.id] ? 'Hide preview' : 'Show preview'}
+                      </button>
+                      {' '}·{' '}
                       <a href={m.url} download>Download MP4</a>
                       {' '}·{' '}
                       <button type="button" className="linklike" onClick={() => openAdjust(m)}>
@@ -653,6 +668,7 @@ export default function AdminPage() {
                                       const next = { ...prev };
                                       if (e.target.value) next[p.key] = e.target.value;
                                       else delete next[p.key];
+                                      saveAdjustments(m.id, next);
                                       return next;
                                     })
                                   }
