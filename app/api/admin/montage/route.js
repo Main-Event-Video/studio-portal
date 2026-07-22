@@ -102,7 +102,7 @@ export async function POST(request) {
       photoSeconds: photoSeconds ? Number(photoSeconds) : null,
       title: String(title).toUpperCase(),
       subtitle: subtitle ? String(subtitle).toUpperCase() : null,
-      watermarkUrl: watermark ? `${siteUrl}/logo.png` : null,
+      watermarkUrl: watermark ? `${siteUrl}/watermark.png` : null,
     });
 
     const render = await createRender({

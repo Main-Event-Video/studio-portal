@@ -133,12 +133,14 @@ export default function AdminPage() {
   const [adjFor, setAdjFor] = useState(null); // montage row being adjusted
   const [adjPhotos, setAdjPhotos] = useState([]);
   const [adjMap, setAdjMap] = useState({});
+  const [adjSpeed, setAdjSpeed] = useState('');
   const [adjBusy, setAdjBusy] = useState(false);
 
   async function openAdjust(m) {
     if (adjFor?.id === m.id) { setAdjFor(null); return; }
     setAdjFor(m);
     setAdjMap(m.adjustments || {});
+    setAdjSpeed(m.photoSeconds ? String(m.photoSeconds) : '');
     setAdjPhotos([]);
     try {
       const { photos } = await api(`/api/admin/montage/photos?clientId=${m.clientId}`);
@@ -163,7 +165,7 @@ export default function AdminPage() {
           title: adjFor.title,
           subtitle: adjFor.subtitle || null,
           watermark: adjFor.watermarked,
-          photoSeconds: adjFor.photoSeconds || null,
+          photoSeconds: adjSpeed ? Number(adjSpeed) : null,
           adjustments: adjMap,
         }),
       });
@@ -666,6 +668,15 @@ export default function AdminPage() {
                             ))}
                           </div>
                         )}
+                        <div className="field-group" style={{ maxWidth: 260 }}>
+                          <label htmlFor="adj_speed">Seconds per photo (for this re-render)</label>
+                          <select id="adj_speed" value={adjSpeed} onChange={(e) => setAdjSpeed(e.target.value)}>
+                            <option value="">Style default</option>
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((s) => (
+                              <option key={s} value={s}>{s} second{s > 1 ? 's' : ''}</option>
+                            ))}
+                          </select>
+                        </div>
                         <button className="btn-primary" type="button" disabled={adjBusy || adjPhotos.length === 0} onClick={rerenderAdjusted}>
                           {adjBusy ? 'Starting…' : `Re-render with ${Object.keys(adjMap).length} fix${Object.keys(adjMap).length === 1 ? '' : 'es'}`}
                         </button>
