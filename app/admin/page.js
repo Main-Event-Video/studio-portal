@@ -1,9 +1,57 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
 import { parsePhotoSpec } from '@/lib/montage';
+
+// Read-only intake display: field groups + how each value renders.
+const INTAKE_SECTIONS = [
+  {
+    title: 'Contact & logistics',
+    fields: [
+      ['first_name', 'First name'],
+      ['last_name', 'Last name'],
+      ['main_contact_name', 'Main contact (if different)'],
+      ['email', 'Email (as they entered)'],
+      ['contact_number', 'Contact number'],
+      ['contact_number_type', 'Number type'],
+      ['event_date', 'Event date (their estimate)'],
+      ['venue', 'Venue'],
+      ['preferred_contact_method', 'Preferred contact method'],
+      ['preferred_language', 'Preferred language'],
+      ['preferred_language_other', 'Language (other)'],
+      ['news_signup', 'Newsletter sign-up'],
+    ],
+  },
+  {
+    title: 'Event & creative direction',
+    fields: [
+      ['honoree_names', 'Honoree name(s)'],
+      ['age_milestone', 'Age / milestone'],
+      ['has_logo', 'Has a logo'],
+      ['event_description', 'Event description'],
+      ['vibe', 'Vibe'],
+      ['color_palette', 'Color palette'],
+      ['inspiration_links', 'Inspiration links'],
+      ['songs', 'Songs'],
+      ['must_include', 'Must include'],
+      ['avoid_content', 'Avoid'],
+      ['hobbies', 'Hobbies'],
+      ['favorite_media', 'Favorite shows / movies / brands'],
+      ['favorite_quotes', 'Favorite quotes'],
+      ['anything_else', 'Anything else'],
+    ],
+  },
+];
+
+function intakeValue(key, v) {
+  if (key === 'vibe') return Array.isArray(v) && v.length ? v.join(', ') : '—';
+  if (key === 'news_signup') return v ? 'Yes' : 'No';
+  if (key === 'has_logo') return v === true ? 'Yes' : v === false ? 'No' : '—';
+  if (v == null || v === '') return '—';
+  return String(v);
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -105,6 +153,14 @@ export default function AdminPage() {
   const [showRef, setShowRef] = useState(false);         // numbered reference strip
   const [genBusy, setGenBusy] = useState(false);
 
+  // client intake (read-only view in the workspace)
+  const [intake, setIntake] = useState(null);
+  const [intakeClientId, setIntakeClientId] = useState(null);
+  const [intakeLoading, setIntakeLoading] = useState(false);
+
+  // send-a-cut drag-and-drop
+  const [dragOver, setDragOver] = useState(false);
+
   // deliver a cut (step 6)
   const [dKind, setDKind] = useState('rough_cut');
   const [dNote, setDNote] = useState('');
@@ -181,6 +237,22 @@ export default function AdminPage() {
     const next = activeTool === tool ? null : tool;
     setActiveTool(next);
     if (next === 'montage') loadProjPhotos(c.id); // need the photo count + numbering
+    if (next === 'intake') loadIntake(c.id);
+  }
+
+  // The client's submitted questionnaire. Cached per client; Refresh forces it.
+  async function loadIntake(clientId, force = false) {
+    if (!force && intakeClientId === clientId) return; // already have it (even if null)
+    setIntakeLoading(true);
+    try {
+      const { intake } = await api(`/api/admin/intake?clientId=${clientId}`);
+      setIntake(intake || null);
+      setIntakeClientId(clientId);
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+    setIntakeLoading(false);
   }
 
   // This client's photos (numbered 1..N in montage order) — powers range
@@ -479,11 +551,45 @@ export default function AdminPage() {
           </div>
 
           <label htmlFor="d_file">Video file</label>
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const f = e.dataTransfer.files?.[0];
+              if (f && (f.type.startsWith('video/') || !f.type)) {
+                setDFile(f);
+                if (dFileRef.current) dFileRef.current.value = '';
+              }
+            }}
+            onClick={() => dFileRef.current?.click()}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') dFileRef.current?.click(); }}
+            style={{
+              border: `2px dashed ${dragOver ? 'var(--blue, #2563eb)' : 'var(--line)'}`,
+              borderRadius: 10,
+              padding: '18px 16px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              background: dragOver ? 'rgba(37,99,235,0.06)' : 'transparent',
+              color: 'var(--muted)',
+              fontSize: 14,
+            }}
+          >
+            {dFile ? (
+              <span style={{ color: 'var(--text)' }}>{dFile.name}</span>
+            ) : (
+              <>Drag &amp; drop a video here, or <span style={{ color: 'var(--text)', textDecoration: 'underline' }}>click to choose</span></>
+            )}
+          </div>
           <input
             id="d_file"
             ref={dFileRef}
             type="file"
             accept="video/*"
+            style={{ display: 'none' }}
             onChange={(e) => setDFile(e.target.files?.[0] || null)}
           />
 
@@ -513,6 +619,39 @@ export default function AdminPage() {
               : 'Upload & send'}
           </button>
         </form>
+      </div>
+    );
+  }
+
+  function renderIntakeTool(c) {
+    const showing = intakeClientId === c.id;
+    const data = showing ? intake : null;
+    return (
+      <div className="tool-window" style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>
+            {intakeLoading && !showing
+              ? 'Loading intake…'
+              : data
+              ? `Submitted ${fmtDate(data.submitted_at || data.updated_at)} — read-only snapshot of what the client entered.`
+              : 'This client hasn’t submitted their intake questionnaire yet.'}
+          </p>
+          <button type="button" className="btn-ghost" onClick={() => loadIntake(c.id, true)}>Refresh</button>
+        </div>
+        {data &&
+          INTAKE_SECTIONS.map((sec) => (
+            <div key={sec.title} style={{ marginTop: 16 }}>
+              <h3 className="folder-head" style={{ margin: '0 0 8px' }}>{sec.title}</h3>
+              <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 220px) 1fr', gap: '6px 16px', margin: 0 }}>
+                {sec.fields.map(([key, label]) => (
+                  <Fragment key={key}>
+                    <dt style={{ color: 'var(--muted)', fontSize: 13 }}>{label}</dt>
+                    <dd style={{ margin: 0, fontSize: 14, whiteSpace: 'pre-wrap' }}>{intakeValue(key, data[key])}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+            </div>
+          ))}
       </div>
     );
   }
@@ -946,12 +1085,20 @@ export default function AdminPage() {
                                 >
                                   Send a cut
                                 </button>
+                                <button
+                                  type="button"
+                                  className={activeTool === 'intake' ? 'btn-primary' : 'btn-ghost'}
+                                  onClick={() => chooseTool(c, 'intake')}
+                                >
+                                  Intake form
+                                </button>
                                 <span style={{ flex: 1 }} />
                                 <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
                               </div>
 
                               {activeTool === 'montage' && renderMontageTool(c)}
                               {activeTool === 'cut' && renderCutTool()}
+                              {activeTool === 'intake' && renderIntakeTool(c)}
                             </div>
                           </td>
                         </tr>
