@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl } from '@/lib/r2';
-import { buildMontageSource, STYLES } from '@/lib/montage';
+import { buildMontageSource, STYLES, parsePhotoSpec } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 
 export const runtime = 'nodejs';
@@ -25,7 +25,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, adjustments = {} } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, adjustments = {}, photoSpec = null, includeCards = true } = body || {};
   if (photoSeconds != null && !(Number(photoSeconds) >= 1 && Number(photoSeconds) <= 10)) {
     return NextResponse.json({ error: 'photoSeconds must be 1–10' }, { status: 400 });
   }
@@ -58,10 +58,27 @@ export async function POST(request) {
     .order('created_at', { ascending: true });
   if (mErr) return NextResponse.json({ error: 'Could not load photos', detail: mErr.message }, { status: 500 });
 
-  const list = (media || []).slice(0, MAX_PHOTOS);
-  if (list.length < 2) {
+  // Full ordered photo set — this is the 1..N universe the admin strip numbers.
+  const fullList = media || [];
+  if (fullList.length < 1) {
     return NextResponse.json(
-      { error: `Not enough photos — this client has ${list.length} image upload(s). Upload photos first.` },
+      { error: 'This client has no photo uploads yet. Upload photos first.' },
+      { status: 400 }
+    );
+  }
+
+  // Select (and order) the photos this segment uses. Blank spec = all photos.
+  const indexes = parsePhotoSpec(photoSpec, fullList.length); // 1-based, in play order
+  const list = indexes.map((i) => fullList[i - 1]).filter(Boolean);
+  if (list.length < 1) {
+    return NextResponse.json(
+      { error: `Your photo selection didn't match any of this client's ${fullList.length} photos — check the numbers.` },
+      { status: 400 }
+    );
+  }
+  if (list.length > MAX_PHOTOS) {
+    return NextResponse.json(
+      { error: `This segment selects ${list.length} photos; the max per render is ${MAX_PHOTOS}. Split it into more segments.` },
       { status: 400 }
     );
   }
@@ -80,6 +97,11 @@ export async function POST(request) {
       params: {
         photoSeconds: photoSeconds ? Number(photoSeconds) : null,
         adjustments: adjustments && typeof adjustments === 'object' ? adjustments : {},
+        // Photo selection for this segment: the raw expression (for display) and
+        // the resolved 1-based positions (for exact re-renders). Blank = all.
+        photoSpec: photoSpec ? String(photoSpec).trim() : null,
+        photoIndexes: indexes,
+        includeCards: includeCards !== false,
       },
     })
     .select('id')
@@ -100,6 +122,7 @@ export async function POST(request) {
       photos,
       style,
       photoSeconds: photoSeconds ? Number(photoSeconds) : null,
+      includeCards: includeCards !== false,
       title: String(title).toUpperCase(),
       subtitle: subtitle ? String(subtitle).toUpperCase() : null,
       watermarkUrl: watermark ? `${siteUrl}/watermark.png` : null,
@@ -148,6 +171,8 @@ export async function GET(request) {
       subtitle: m.subtitle,
       photoSeconds: m.params?.photoSeconds || null,
       adjustments: m.params?.adjustments || {},
+      photoSpec: m.params?.photoSpec || null,
+      includeCards: m.params?.includeCards !== false,
       status: m.status,
       error: m.error,
       photoCount: m.photo_count,

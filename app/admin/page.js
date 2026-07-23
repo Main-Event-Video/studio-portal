@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
+import { parsePhotoSpec } from '@/lib/montage';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -85,17 +86,24 @@ export default function AdminPage() {
     { value: 'timeless', label: 'Timeless — ivory, elegant, gentle' },
     { value: 'party', label: 'Party — fast, punchy, high energy' },
   ];
-  const [mStyle, setMStyle] = useState('hollywood');
-  const [mSpeed, setMSpeed] = useState(''); // '' = style default, else 1–10 s/photo
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
-  const [mTitle, setMTitle] = useState('');
+  const [mTitle, setMTitle] = useState('');       // honoree — used on any segment with cards
   const [mSubtitle, setMSubtitle] = useState('');
   const [mWatermark, setMWatermark] = useState(true);
-  const [mBusy, setMBusy] = useState(false);
   const [mMsg, setMMsg] = useState('');
   const [mErr, setMErr] = useState(false);
   const [montages, setMontages] = useState([]);
+
+  // multi-segment montage builder. One montage per segment; typed photo order.
+  const segKey = useRef(1);
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', style: 'hollywood', speed: '', cards: true });
+  const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
+  const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
+  const [projPhotosClientId, setProjPhotosClientId] = useState(null);
+  const [projPhotosLoading, setProjPhotosLoading] = useState(false);
+  const [showRef, setShowRef] = useState(false);         // numbered reference strip
+  const [genBusy, setGenBusy] = useState(false);
 
   // deliver a cut (step 6)
   const [dKind, setDKind] = useState('rough_cut');
@@ -152,6 +160,8 @@ export default function AdminPage() {
     setMErr(false);
     setDMsg('');
     setDPhase('idle');
+    setSegments([newSegment()]); // fresh one-segment plan for this client
+    setShowRef(false);
   }
 
   // Click the client's name pill: toggle their workspace open/closed.
@@ -167,9 +177,31 @@ export default function AdminPage() {
   }
 
   // Inside an open workspace: pick Montage or Send a cut (toggles the window).
-  function chooseTool(tool) {
-    setActiveTool((prev) => (prev === tool ? null : tool));
+  function chooseTool(c, tool) {
+    const next = activeTool === tool ? null : tool;
+    setActiveTool(next);
+    if (next === 'montage') loadProjPhotos(c.id); // need the photo count + numbering
   }
+
+  // This client's photos (numbered 1..N in montage order) — powers range
+  // validation, the live per-segment preview, and the numbered reference strip.
+  async function loadProjPhotos(clientId) {
+    if (projPhotosClientId === clientId && projPhotos.length) return; // already have them
+    setProjPhotosLoading(true);
+    try {
+      const { photos } = await api(`/api/admin/montage/photos?clientId=${clientId}`);
+      setProjPhotos(photos || []);
+      setProjPhotosClientId(clientId);
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+    setProjPhotosLoading(false);
+  }
+
+  const addSegment = () => setSegments((s) => [...s, newSegment()]);
+  const removeSegment = (key) => setSegments((s) => (s.length > 1 ? s.filter((x) => x.key !== key) : s));
+  const updateSegment = (key, patch) => setSegments((s) => s.map((x) => (x.key === key ? { ...x, ...patch } : x)));
 
   // framing adjustments
   const [adjFor, setAdjFor] = useState(null); // montage row being adjusted
@@ -218,6 +250,8 @@ export default function AdminPage() {
           watermark: adjFor.watermarked,
           photoSeconds: adjSpeed ? Number(adjSpeed) : null,
           adjustments: adjMap,
+          photoSpec: adjFor.photoSpec || null,       // keep this render's photo selection
+          includeCards: adjFor.includeCards !== false, // keep its cards choice
         }),
       });
       setMMsg('Re-render started with your framing fixes — it will appear as a new render below.');
@@ -243,32 +277,51 @@ export default function AdminPage() {
     }
   }
 
-  async function generateMontage(e) {
-    e.preventDefault();
+  // Fire one render per segment, in order. Segments that select no photos are
+  // skipped. Reports how many queued and surfaces any per-segment errors.
+  async function generateAll(c) {
     setMMsg('');
     setMErr(false);
-    if (!mClientId) { setMErr(true); return setMMsg('Pick a client first — open their workspace from the Clients list.'); }
-    if (!mTitle.trim()) { setMErr(true); return setMMsg('Give it a title (usually the honoree’s name).'); }
-    setMBusy(true);
-    try {
-      await api('/api/admin/montage', {
-        method: 'POST',
-        body: JSON.stringify({
-          clientId: mClientId,
-          style: mStyle,
-          photoSeconds: mSpeed ? Number(mSpeed) : null,
-          title: mTitle.trim(),
-          subtitle: mSubtitle.trim() || null,
-          watermark: mWatermark,
-        }),
-      });
-      setMMsg('Render started — it will appear below as Rendering, then Ready. Renders take a few minutes; use Refresh.');
-      loadMontages();
-    } catch (err) {
+    if (!mTitle.trim()) {
       setMErr(true);
-      setMMsg(err.message);
+      return setMMsg('Give it a title (the honoree) — it’s used on any segment that has title cards.');
     }
-    setMBusy(false);
+    const N = projPhotos.length;
+    const plan = segments.filter((s) => parsePhotoSpec(s.photos, N).length > 0);
+    if (!plan.length) {
+      setMErr(true);
+      return setMMsg(`No segment selects any photos — check the numbers against this client’s ${N} photo${N === 1 ? '' : 's'}.`);
+    }
+    setGenBusy(true);
+    let ok = 0;
+    const errs = [];
+    for (const s of plan) {
+      try {
+        await api('/api/admin/montage', {
+          method: 'POST',
+          body: JSON.stringify({
+            clientId: c.id,
+            style: s.style,
+            title: mTitle.trim(),
+            subtitle: mSubtitle.trim() || null,
+            watermark: mWatermark,
+            photoSeconds: s.speed ? Number(s.speed) : null,
+            photoSpec: s.photos.trim() || null,
+            includeCards: s.cards,
+          }),
+        });
+        ok++;
+      } catch (err) {
+        errs.push(err.message);
+      }
+    }
+    setGenBusy(false);
+    setMErr(errs.length > 0);
+    setMMsg(
+      `Queued ${ok} render${ok === 1 ? '' : 's'}${errs.length ? ` — ${errs.length} failed: ${errs.join('; ')}` : ''}. ` +
+        'They’ll appear below as Rendering, then Ready. Renders take a few minutes; use Refresh.'
+    );
+    loadMontages();
   }
 
   async function handleLogin(e) {
@@ -469,48 +522,125 @@ export default function AdminPage() {
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
-          Builds a montage from this client’s uploaded photos, in their folder and numbering order.
-          Drafts carry the watermark automatically.
+          Build one or more montage segments from this client’s photos. Each segment renders as its
+          own file — choose the photos (a range like <span className="mono">1-50</span>, or a mix like{' '}
+          <span className="mono">1-10, 15, 11-51</span>; photos play in the order you type), a style, a
+          pace, and whether it carries title cards. Generate them all at once and intercut in your edit.
         </p>
-        <form onSubmit={generateMontage}>
-          <div className="grid-2">
-            <div>
-              <label htmlFor="m_style">Style</label>
-              <select id="m_style" value={mStyle} onChange={(e) => setMStyle(e.target.value)}>
-                {MONTAGE_STYLES.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="m_title">Title (honoree)</label>
-              <input id="m_title" placeholder="DYLAN" value={mTitle} onChange={(e) => setMTitle(e.target.value)} />
-            </div>
-            <div>
-              <label htmlFor="m_subtitle">Subtitle (optional)</label>
-              <input id="m_subtitle" placeholder="A Bat Mitzvah Story" value={mSubtitle} onChange={(e) => setMSubtitle(e.target.value)} />
-            </div>
-            <div>
-              <label htmlFor="m_speed">Seconds per photo</label>
-              <select id="m_speed" value={mSpeed} onChange={(e) => setMSpeed(e.target.value)}>
-                <option value="">Style default</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((s) => (
-                  <option key={s} value={s}>{s} second{s > 1 ? 's' : ''}</option>
-                ))}
-              </select>
-            </div>
+
+        {/* Shared across every segment */}
+        <div className="grid-2">
+          <div>
+            <label htmlFor="m_title">Title (honoree — shown on any segment with cards)</label>
+            <input id="m_title" placeholder="DYLAN" value={mTitle} onChange={(e) => setMTitle(e.target.value)} />
           </div>
-          <div className="field-group">
-            <label className="choice" style={{ color: 'var(--text)' }}>
-              <input type="checkbox" checked={mWatermark} onChange={(e) => setMWatermark(e.target.checked)} />
-              Watermark this draft with the logo
-            </label>
+          <div>
+            <label htmlFor="m_subtitle">Subtitle (optional)</label>
+            <input id="m_subtitle" placeholder="A Bat Mitzvah Story" value={mSubtitle} onChange={(e) => setMSubtitle(e.target.value)} />
           </div>
-          {mMsg && <p className={mErr ? 'msg-error' : 'msg-ok'} style={{ fontSize: 14 }}>{mMsg}</p>}
-          <button className="btn-primary" disabled={mBusy}>
-            {mBusy ? 'Starting…' : 'Generate montage'}
+        </div>
+        <div className="field-group">
+          <label className="choice" style={{ color: 'var(--text)' }}>
+            <input type="checkbox" checked={mWatermark} onChange={(e) => setMWatermark(e.target.checked)} />
+            Watermark these drafts with the logo
+          </label>
+        </div>
+
+        {/* Photo count + numbered reference */}
+        <p style={{ color: 'var(--muted)', fontSize: 13 }}>
+          {projPhotosLoading
+            ? 'Loading this client’s photos…'
+            : `This client has ${projPhotos.length} photo${projPhotos.length === 1 ? '' : 's'}. The numbers below match this order.`}
+          {projPhotos.length > 0 && (
+            <>
+              {' '}
+              <button type="button" className="linklike" onClick={() => setShowRef((v) => !v)}>
+                {showRef ? 'Hide numbered photos' : 'Show numbered photos'}
+              </button>
+            </>
+          )}
+        </p>
+        {showRef && projPhotos.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8, marginBottom: 16 }}>
+            {projPhotos.map((p) => (
+              <div key={p.key || p.index} style={{ textAlign: 'center' }}>
+                <img
+                  src={p.url}
+                  alt={p.filename}
+                  style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{p.index}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Segment plan */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {segments.map((s, idx) => {
+            const N = projPhotos.length;
+            const matched = parsePhotoSpec(s.photos, N).length;
+            return (
+              <div key={s.key} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <strong style={{ fontSize: 13 }}>Segment {idx + 1}</strong>
+                  {segments.length > 1 && (
+                    <button type="button" className="linklike" onClick={() => removeSegment(s.key)}>Remove</button>
+                  )}
+                </div>
+                <label htmlFor={`ph_${s.key}`}>Photos (blank = all; e.g. 1-50 or 1-10, 15, 11-51)</label>
+                <input
+                  id={`ph_${s.key}`}
+                  placeholder="1-50"
+                  value={s.photos}
+                  onChange={(e) => updateSegment(s.key, { photos: e.target.value })}
+                />
+                <p style={{ fontSize: 12, margin: '4px 0 8px', color: N > 0 && matched === 0 ? 'var(--red)' : 'var(--muted)' }}>
+                  {N === 0
+                    ? 'Photos will load in a moment…'
+                    : matched === 0
+                    ? 'This selection matches no photos — check the numbers.'
+                    : s.photos.trim()
+                    ? `→ ${matched} of ${N} photos, in the order typed`
+                    : `→ all ${N} photos`}
+                </p>
+                <div className="grid-2">
+                  <div>
+                    <label htmlFor={`st_${s.key}`}>Style</label>
+                    <select id={`st_${s.key}`} value={s.style} onChange={(e) => updateSegment(s.key, { style: e.target.value })}>
+                      {MONTAGE_STYLES.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor={`sp_${s.key}`}>Seconds per photo</label>
+                    <select id={`sp_${s.key}`} value={s.speed} onChange={(e) => updateSegment(s.key, { speed: e.target.value })}>
+                      <option value="">Style default</option>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                        <option key={n} value={n}>{n} second{n > 1 ? 's' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="field-group">
+                  <label className="choice" style={{ color: 'var(--text)' }}>
+                    <input type="checkbox" checked={s.cards} onChange={(e) => updateSegment(s.key, { cards: e.target.checked })} />
+                    Include title cards (opening + closing)
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12 }}>
+          <button type="button" className="btn-ghost" onClick={addSegment}>+ Add segment</button>
+          <button type="button" className="btn-primary" disabled={genBusy} onClick={() => generateAll(c)}>
+            {genBusy ? 'Queuing…' : `Generate ${segments.length} segment${segments.length === 1 ? '' : 's'}`}
           </button>
-        </form>
+        </div>
+        {mMsg && <p className={mErr ? 'msg-error' : 'msg-ok'} style={{ fontSize: 14 }}>{mMsg}</p>}
 
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -527,8 +657,10 @@ export default function AdminPage() {
                     <strong>{m.title}</strong>
                     <span style={{ color: 'var(--muted)' }}>
                       {' '}· {m.style} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos
+                      {m.photoSpec ? ` · #${m.photoSpec}` : ''}
                     </span>
                     {m.watermarked && <span className="pill" style={{ marginLeft: 8 }}>draft</span>}
+                    {m.includeCards === false && <span className="pill" style={{ marginLeft: 8 }}>no cards</span>}
                   </span>
                   <span
                     style={{
@@ -803,14 +935,14 @@ export default function AdminPage() {
                                 <button
                                   type="button"
                                   className={activeTool === 'montage' ? 'btn-primary' : 'btn-ghost'}
-                                  onClick={() => chooseTool('montage')}
+                                  onClick={() => chooseTool(c, 'montage')}
                                 >
                                   Generate montage
                                 </button>
                                 <button
                                   type="button"
                                   className={activeTool === 'cut' ? 'btn-primary' : 'btn-ghost'}
-                                  onClick={() => chooseTool('cut')}
+                                  onClick={() => chooseTool(c, 'cut')}
                                 >
                                   Send a cut
                                 </button>

@@ -30,7 +30,7 @@ export async function GET(request) {
   if (error) return NextResponse.json({ error: 'Could not load photos', detail: error.message }, { status: 500 });
 
   const photos = await Promise.all(
-    (data || []).slice(0, 100).map(async (m, i) => ({
+    (data || []).slice(0, 500).map(async (m, i) => ({
       index: i + 1,
       key: m.r2_key,
       filename: m.filename,
