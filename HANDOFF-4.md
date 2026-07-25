@@ -167,6 +167,57 @@ differs from Josh's GitHub identity, `git commit --amend --reset-author` before 
 ---
 # 7. FIRST PROMPT SUGGESTION FOR NEXT CHAT
 
-"Read HANDOFF-4. Confirm the two commits are pushed and live. Then let's
+"Read HANDOFF-4. Confirm the commits are pushed and live. Then let's
 post-mortem the Creatomate webhook (§4.1), and I'll test the new montage segment
 builder — starting with a no-cards render and a cherry-picked selection."
+
+---
+# 8. FILE MANAGER — clients + admin (added same session, commit `ea9f371`)
+
+**What it does.** Both the studio (admin) and the client can now organize the
+client's uploaded files — reorder (the numbering that drives montages), rename
+files, rename folders, and move files between folders. Built on one shared engine.
+
+- **Admin**: new **Files** tool button in the client workspace. Folder-grouped
+  browser with thumbnails (videos show a "video" pill), inline edit of number /
+  filename / folder, up/down reorder + "Renumber 1…N", per-file **download**, and
+  **delete** (two-step confirm; removes the DB row + best-effort R2 object).
+- **Client (portal uploader)**: the "Files you've sent us" list is now editable —
+  same reorder/rename/move, plus **Move to Trash / Restore**. Clients CANNOT
+  delete.
+- **Trash workflow**: clients drop dupes/unwanted into a **`Trash`** folder (just
+  a normal move — `folder_path = 'Trash'`). Only the admin actually clears it via
+  **Empty Trash** (bulk delete). The Trash folder is protected from rename on the
+  admin side. Constant `TRASH_FOLDER = 'Trash'` is duplicated in
+  `app/admin/page.js` AND `app/p/[token]/upload/Uploader.jsx` — keep them equal.
+- **Watch-live**: while the admin Files tool is open it **auto-refreshes every 5s**
+  (paused during the admin's own edits) so Josh can watch a client organize on a
+  call. NOT true realtime push — Supabase Realtime is blocked by the deny-all RLS
+  design; polling is the deliberate workaround.
+
+**Auth split**: delete is gated by `allowDelete` — admin route passes `true`,
+portal route passes `false`. So the portal can never delete, only set-aside.
+
+**Shared-login caveat**: a client is ONE login; all family members share it, so
+there's no per-person attribution for who moved/trashed what. Known + accepted.
+
+## File map (file manager)
+| File | What |
+|---|---|
+| `lib/mediaOrganize.js` | **NEW** shared actions: update / renumber / renameFolder / delete / deleteMany (delete gated by allowDelete) |
+| `app/api/admin/media/route.js` | **NEW** admin GET (list w/ presigned URLs) + POST (allowDelete:true) |
+| `app/api/portal/media/route.js` | added POST (allowDelete:false) — client organize |
+| `app/admin/page.js` | Files tool + 5s auto-refresh poll |
+| `app/p/[token]/upload/Uploader.jsx` | client-side organize UI + Move to Trash / Restore |
+
+**No SQL** — reuses `studio_media.folder_path` / `sort_number`; Trash is just a
+folder value. Delete removes the row and best-effort deletes the R2 object (an
+orphaned blob is harmless if the R2 delete fails).
+
+## Verify next session (file manager)
+- Organize round-trips on BOTH sides; the montage numbering reflects reorders.
+- Client can Move to Trash / Restore but the delete endpoints reject them (403).
+- Admin Empty Trash deletes rows AND R2 objects.
+- Auto-refresh actually shows a client's change within ~5s on the admin side.
+- Delete on a photo referenced by an already-rendered montage doesn't break the
+  finished MP4 (it's archived separately) — just leaves a stale framing key.
