@@ -130,7 +130,7 @@ export default function Uploader({ token }) {
   const [items, setItems] = useState([]);
   const [mine, setMine] = useState([]);
   const [loadingMine, setLoadingMine] = useState(true);
-  const [localBoxes, setLocalBoxes] = useState([]); // user-made boxes not yet holding photos
+  const [serverBoxes, setServerBoxes] = useState([]); // boxes saved for this client (persist even empty)
   const [naming, setNaming] = useState(false);
   const [newName, setNewName] = useState('');
   const [orgBusy, setOrgBusy] = useState(false);
@@ -154,6 +154,7 @@ export default function Uploader({ token }) {
       const res = await fetch(`/api/portal/media?token=${token}&scope=mine`);
       const j = await res.json();
       setMine(j.media || []);
+      setServerBoxes(j.boxes || []);
     } catch {
       setMine([]);
     }
@@ -262,7 +263,7 @@ export default function Uploader({ token }) {
   // ---- derived ----
   const grouped = mine.reduce((acc, m) => { const k = m.folderPath || ''; (acc[k] = acc[k] || []).push(m); return acc; }, {});
   const folderBoxes = Object.keys(grouped).filter((k) => k !== '' && k !== TRASH_FOLDER);
-  const allBoxes = Array.from(new Set([...folderBoxes, ...localBoxes]));
+  const allBoxes = Array.from(new Set([...serverBoxes, ...folderBoxes]));
   const openCount = (grouped[''] || []).length;
   const total = mine.length;
   const pmsg = total === 0 ? 'Add your first photos 👇' : total < 6 ? `Great start — ${total} in!` : total < 16 ? `Nice — ${total} photos in! 🎉` : `Wow, ${total} photos! 🔥`;
@@ -271,9 +272,10 @@ export default function Uploader({ token }) {
 
   function createBox() {
     const v = newName.trim();
-    if (v && !allBoxes.includes(v)) setLocalBoxes((b) => [...b, v]);
     setNewName(''); setNaming(false);
-    if (v) pickInto(v); // let them add photos into the box they just made
+    if (!v) return;
+    if (!allBoxes.includes(v)) organize({ action: 'createBox', name: v }); // saves the box (persists even empty) + reloads
+    pickInto(v); // opens the picker within this tap so they can add photos now
   }
 
   // ================= RENDER =================
@@ -298,15 +300,6 @@ export default function Uploader({ token }) {
             <button className="big redbtn" onClick={() => pickInto('')}>＋ Add photos</button>
             <button className="big bluebtn" onClick={() => setNaming((v) => !v)}>📁 New box</button>
           </div>
-          {naming && (
-            <div className="newrow">
-              <input autoFocus placeholder="Name your box (ie. Childhood)" value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') createBox(); }} />
-              <button onClick={createBox}>Create</button>
-            </div>
-          )}
-
           <div className="window" style={{ marginTop: 14 }}>
             <p className="dragnote">Drag photos into <b>the open</b> — or into <b>a box</b>. Either works!</p>
             <div className="cols">
@@ -345,7 +338,16 @@ export default function Uploader({ token }) {
                         </div>
                       );
                     })}
-                <div className="newbox" onClick={() => setNaming(true)}>＋ New box</div>
+                {naming ? (
+                  <div className="newrow">
+                    <input autoFocus placeholder="Name your box (ie. Childhood)" value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') createBox(); }} />
+                    <button onClick={createBox}>Create</button>
+                  </div>
+                ) : (
+                  <div className="newbox" onClick={() => setNaming(true)}>＋ New box</div>
+                )}
               </div>
             </div>
           </div>
@@ -407,7 +409,7 @@ function OrderSection({ title, groupKey, list, boxes, isBox, orgBusy, reorder, o
       <div className="ohead">
         {isBox ? (
           <input className="rn" defaultValue={title} disabled={orgBusy}
-            onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== title) organize({ action: 'renameFolder', from: title, to: v }); else if (!v) e.target.value = title; }} />
+            onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== title) organize({ action: 'renameBox', from: title, to: v }); else if (!v) e.target.value = title; }} />
         ) : (
           <h3>▶ In the open</h3>
         )}
