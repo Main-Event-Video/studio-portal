@@ -39,6 +39,9 @@ const CSS = `
 #ccap .counter{font-size:13px;font-weight:800;color:#0b0710;background:var(--neon);border-radius:999px;padding:3px 10px;}
 #ccap .shotname{font-size:18px;font-weight:800;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.8);}
 #ccap .hint{font-size:13.5px;color:#e6eef5;text-shadow:0 1px 4px rgba(0,0,0,.9);}
+#ccap .posebox{background:rgba(11,7,16,.82);border:2px solid var(--red);border-radius:12px;padding:10px 12px;margin-top:4px;box-shadow:0 3px 14px rgba(0,0,0,.55);}
+#ccap .posebox .shotname{font-size:21px;display:block;}
+#ccap .posebox .hint{font-size:15.5px;color:#fff;margin-top:4px;line-height:1.35;}
 #ccap .flip{margin-left:auto;background:rgba(255,255,255,.16);border:1.5px solid rgba(255,255,255,.55);color:#fff;border-radius:10px;padding:6px 11px;font-size:16px;font-weight:800;cursor:pointer;}
 #ccap .retake{margin-top:8px;font-size:12.5px;font-weight:800;color:#0b0710;background:var(--neon);display:inline-block;padding:4px 11px;border-radius:999px;align-self:flex-start;}
 #ccap .dots{position:absolute;left:0;right:0;bottom:96px;display:flex;gap:5px;justify-content:center;flex-wrap:wrap;padding:0 12px;}
@@ -324,10 +327,13 @@ export default function CharacterCapture({ token, character = null, existing = [
             <div className="hud">
               <div className="hudrow">
                 <span className="counter">Shot {idx + 1} of {POSE_COUNT}</span>
-                <span className="shotname">{pose.label}</span>
+                <span style={{ flex: 1 }} />
                 {!camError && <button className="flip" onClick={() => setFacing((f) => (f === 'environment' ? 'user' : 'environment'))} title="Flip camera">⟲</button>}
               </div>
-              <div className="hint">{pose.hint}</div>
+              <div className="posebox">
+                <span className="shotname">{pose.label}</span>
+                <div className="hint">{pose.hint}</div>
+              </div>
               {captured.has(idx + 1) && <div className="retake">✓ Already taken — tap the shutter to redo it</div>}
             </div>
           )}
