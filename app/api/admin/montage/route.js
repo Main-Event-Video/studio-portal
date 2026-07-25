@@ -9,6 +9,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl } from '@/lib/r2';
 import { buildMontageSource, STYLES, parsePhotoSpec } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
+import { orderedClientMedia } from '@/lib/clientTimeline';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,21 +46,14 @@ export async function POST(request) {
   if (cErr || !client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
   if (client.archived) return NextResponse.json({ error: 'That client is archived' }, { status: 400 });
 
-  // The client's uploaded PHOTOS, in their folder + numbering order — the
-  // same order the portal shows. Videos are excluded from the spine.
-  const { data: media, error: mErr } = await db
-    .from('studio_media')
-    .select('r2_key, filename, folder_path, sort_number, content_type')
-    .eq('client_id', clientId)
-    .eq('kind', 'client_upload')
-    .like('content_type', 'image/%')
-    .order('folder_path', { ascending: true, nullsFirst: true })
-    .order('sort_number', { ascending: true, nullsFirst: false })
-    .order('created_at', { ascending: true });
+  // The client's uploaded PHOTOS in EXACT timeline play order — the same order
+  // the portal timeline shows (loose photos interleaved with albums; each album
+  // plays its photos in sequence). Videos keep their slot's effect on order but
+  // are dropped from the spine (photos-only render for now).
+  const { media: fullList, error: mErr } = await orderedClientMedia(db, clientId, { imagesOnly: true });
   if (mErr) return NextResponse.json({ error: 'Could not load photos', detail: mErr.message }, { status: 500 });
 
   // Full ordered photo set — this is the 1..N universe the admin strip numbers.
-  const fullList = media || [];
   if (fullList.length < 1) {
     return NextResponse.json(
       { error: 'This client has no photo uploads yet. Upload photos first.' },

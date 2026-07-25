@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl } from '@/lib/r2';
+import { orderedClientMedia } from '@/lib/clientTimeline';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,15 +19,9 @@ export async function GET(request) {
   if (!clientId) return NextResponse.json({ error: 'Missing clientId' }, { status: 400 });
 
   const db = createServiceClient();
-  const { data, error } = await db
-    .from('studio_media')
-    .select('r2_key, filename, folder_path, sort_number')
-    .eq('client_id', clientId)
-    .eq('kind', 'client_upload')
-    .like('content_type', 'image/%')
-    .order('folder_path', { ascending: true, nullsFirst: true })
-    .order('sort_number', { ascending: true, nullsFirst: false })
-    .order('created_at', { ascending: true });
+  // Same canonical timeline order the render uses, so the framing strip's 1..N
+  // numbers line up exactly with the montage's photo positions.
+  const { media: data, error } = await orderedClientMedia(db, clientId, { imagesOnly: true });
   if (error) return NextResponse.json({ error: 'Could not load photos', detail: error.message }, { status: 500 });
 
   const photos = await Promise.all(
