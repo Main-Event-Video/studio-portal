@@ -355,9 +355,9 @@ export default function Uploader({ token }) {
 
       <h2 className="neon neon-blue" style={{ fontSize: 18, marginTop: 32 }}>Files you’ve sent us</h2>
       <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -4, lineHeight: 1.6 }}>
-        Put them in the order you want (edit the number), rename anything, move a file by typing a folder
-        name, and drop duplicates or ones you don’t want into <strong>Trash</strong> — we’ll clear those
-        for you. Everyone in your family can help here.
+        Tap the arrows under a photo to change its order — the number is where it’ll appear in the video.
+        Put duplicates or ones you don’t want in <strong>Trash</strong> and we’ll clear them. Everyone in
+        your family can help here.
       </p>
       {orgMsg && <p className="msg-error" style={{ fontSize: 13 }}>{orgMsg}</p>}
       {loadingMine ? (
@@ -366,17 +366,15 @@ export default function Uploader({ token }) {
         <p style={{ color: 'var(--muted)' }}>Nothing yet — your uploads will appear here.</p>
       ) : (
         <>
-          <datalist id="my-folders">
-            {groupKeys.filter((k) => k !== '').map((n) => <option key={n} value={n} />)}
-          </datalist>
           {groupKeys.map((k) => {
             const list = grouped[k];
             const isTrash = k === TRASH_FOLDER;
+            const moveTargets = groupKeys.filter((g) => g !== '' && g !== TRASH_FOLDER && g !== k);
             return (
-              <section key={k || 'loose'} style={{ marginTop: 18 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <section key={k || 'loose'} style={{ marginTop: 22 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                   {k === '' ? (
-                    <h3 className="folder-head" style={{ margin: 0 }}>Loose files</h3>
+                    <h3 className="folder-head" style={{ margin: 0 }}>Loose photos</h3>
                   ) : isTrash ? (
                     <h3 className="folder-head" style={{ margin: 0 }}>
                       Trash <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>· we’ll clear these</span>
@@ -385,81 +383,69 @@ export default function Uploader({ token }) {
                     <input
                       key={`fh_${k}`}
                       defaultValue={k}
-                      title="Rename this folder"
+                      title="Tap to rename this folder"
                       disabled={orgBusy}
                       onBlur={(e) => {
                         const v = e.target.value.trim();
                         if (v && v !== k) organize({ action: 'renameFolder', from: k, to: v });
                         else if (!v) e.target.value = k;
                       }}
-                      style={{ fontWeight: 700, maxWidth: 260 }}
+                      style={{ fontWeight: 700, maxWidth: 240, fontSize: 15 }}
                     />
                   )}
-                  {!isTrash && (
-                    <>
-                      <span style={{ flex: 1 }} />
-                      <button type="button" className="linklike" disabled={orgBusy} onClick={() => organize({ action: 'renumber', ids: list.map((m) => m.id) })}>
-                        Number 1…{list.length} in this order
-                      </button>
-                    </>
-                  )}
+                  <span style={{ color: 'var(--muted)', fontSize: 12 }}>{list.length}</span>
                 </div>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                  {list.map((m, idx) => (
-                    <li
-                      key={`${m.id}-${m.sortNumber}-${m.folderPath}-${m.filename}`}
-                      className="upload-row"
-                      style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
-                    >
-                      <input
-                        type="number"
-                        defaultValue={m.sortNumber ?? ''}
-                        title="Order number"
-                        disabled={orgBusy}
-                        onBlur={(e) => {
-                          const raw = e.target.value.trim();
-                          if (String(m.sortNumber ?? '') !== String(raw)) organize({ action: 'update', id: m.id, sortNumber: raw === '' ? null : Number(raw) });
-                        }}
-                        style={{ width: 52 }}
-                      />
-                      <input
-                        defaultValue={m.filename}
-                        title="File name"
-                        disabled={orgBusy}
-                        onBlur={(e) => {
-                          const v = e.target.value.trim();
-                          if (v && v !== m.filename) organize({ action: 'update', id: m.id, filename: v });
-                          else if (!v) e.target.value = m.filename;
-                        }}
-                        style={{ flex: '1 1 150px', minWidth: 110 }}
-                      />
-                      <span style={{ color: 'var(--muted)', fontSize: 12 }}>
-                        {(m.contentType || '').startsWith('video') ? 'Video' : 'Photo'}
-                      </span>
-                      <input
-                        list="my-folders"
-                        defaultValue={m.folderPath || ''}
-                        placeholder="(loose)"
-                        title="Type a folder to move this file"
-                        disabled={orgBusy}
-                        onBlur={(e) => {
-                          const v = e.target.value.trim();
-                          if (v !== (m.folderPath || '')) organize({ action: 'update', id: m.id, folderPath: v });
-                        }}
-                        style={{ width: 120 }}
-                      />
-                      <span style={{ whiteSpace: 'nowrap' }}>
-                        <button type="button" className="linklike" disabled={orgBusy || idx === 0} onClick={() => moveWithin(k, m.id, -1)} title="Move up">↑</button>{' '}
-                        <button type="button" className="linklike" disabled={orgBusy || idx === list.length - 1} onClick={() => moveWithin(k, m.id, 1)} title="Move down">↓</button>
-                      </span>
-                      {isTrash ? (
-                        <button type="button" className="linklike" disabled={orgBusy} onClick={() => organize({ action: 'update', id: m.id, folderPath: '' })}>Restore</button>
-                      ) : (
-                        <button type="button" className="linklike" style={{ color: 'var(--red)' }} disabled={orgBusy} onClick={() => organize({ action: 'update', id: m.id, folderPath: TRASH_FOLDER })}>Move to Trash</button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))', gap: 12 }}>
+                  {list.map((m, idx) => {
+                    const isVideo = (m.contentType || '').startsWith('video');
+                    return (
+                      <div key={`${m.id}-${m.sortNumber}-${m.folderPath}`} style={{ border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
+                        <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', background: '#000' }}>
+                          {isVideo ? (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: 'var(--muted)', fontSize: 13 }}>▶ Video</div>
+                          ) : (
+                            <img src={m.url} alt={m.filename} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          )}
+                          {!isTrash && (
+                            <span style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.72)', color: '#fff', borderRadius: 999, minWidth: 22, height: 22, padding: '0 6px', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {idx + 1}
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ padding: 6 }}>
+                          {isTrash ? (
+                            <button type="button" className="btn-ghost" style={{ width: '100%' }} disabled={orgBusy} onClick={() => organize({ action: 'update', id: m.id, folderPath: '' })}>
+                              Put back
+                            </button>
+                          ) : (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                                <button type="button" className="btn-ghost" disabled={orgBusy || idx === 0} onClick={() => moveWithin(k, m.id, -1)} title="Move earlier" style={{ padding: '2px 10px', fontSize: 18, lineHeight: 1 }}>‹</button>
+                                <button type="button" className="btn-ghost" disabled={orgBusy || idx === list.length - 1} onClick={() => moveWithin(k, m.id, 1)} title="Move later" style={{ padding: '2px 10px', fontSize: 18, lineHeight: 1 }}>›</button>
+                                <button type="button" className="btn-ghost" style={{ color: 'var(--red)', padding: '2px 8px' }} disabled={orgBusy} onClick={() => organize({ action: 'update', id: m.id, folderPath: TRASH_FOLDER })} title="Move to Trash">Trash</button>
+                              </div>
+                              {moveTargets.length > 0 && (
+                                <select
+                                  value=""
+                                  disabled={orgBusy}
+                                  onChange={(e) => { const val = e.target.value; if (val !== '') organize({ action: 'update', id: m.id, folderPath: val === '__loose__' ? '' : val }); }}
+                                  style={{ width: '100%', marginTop: 6, fontSize: 12 }}
+                                  title="Move to another folder"
+                                >
+                                  <option value="">Move to…</option>
+                                  {k !== '' && <option value="__loose__">Loose photos</option>}
+                                  {moveTargets.map((g) => <option key={g} value={g}>{g}</option>)}
+                                </select>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </section>
             );
           })}
