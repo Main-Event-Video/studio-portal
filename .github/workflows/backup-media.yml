@@ -1,0 +1,92 @@
+# =============================================================
+# Main Event Studio — NIGHTLY OFF-SITE BACKUP of client media
+# Copies the Cloudflare R2 bucket to a Backblaze B2 bucket every night.
+#
+# WHY: R2 is durable but NOT a backup. A mistaken delete, a bad overwrite, or a
+# lost Supabase index could still lose client photos. This keeps an independent
+# copy in a different provider/account.
+#
+# IMPORTANT: this uses `rclone copy`, NOT `sync` — it NEVER deletes on the
+# destination. A file removed from R2 (even a hard-delete) stays safe in B2.
+#
+# Runs free on GitHub Actions. Configure the repo secrets listed in BACKUP.md.
+# You can also trigger it by hand: Actions tab → this workflow → "Run workflow".
+# =============================================================
+name: Nightly media backup (R2 → Backblaze B2)
+
+on:
+  schedule:
+    - cron: '0 9 * * *'      # 09:00 UTC ≈ 1-2am Pacific
+  workflow_dispatch: {}       # manual "Run workflow" button
+
+concurrency:
+  group: media-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out repo (for the manifest script)
+        uses: actions/checkout@v4
+
+      - name: Install rclone
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version
+
+      - name: Write rclone config
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
+          B2_S3_ENDPOINT: ${{ secrets.B2_S3_ENDPOINT }}
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<EOF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${R2_ACCESS_KEY_ID}
+          secret_access_key = ${R2_SECRET_ACCESS_KEY}
+          endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+          acl = private
+
+          [b2]
+          type = s3
+          provider = Other
+          access_key_id = ${B2_KEY_ID}
+          secret_access_key = ${B2_APP_KEY}
+          endpoint = ${B2_S3_ENDPOINT}
+          acl = private
+          EOF
+
+      - name: Copy R2 → B2 (accumulate; never delete on destination)
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+        run: |
+          rclone copy "r2:${R2_BUCKET}" "b2:${B2_BUCKET}/media" \
+            --transfers=8 --checkers=16 --fast-list --s3-no-check-bucket \
+            --stats=30s --stats-one-line -v
+
+      - name: Export DB index manifest (optional; needs SUPABASE_* secrets)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/backup-manifest.mjs
+
+      - name: Copy manifest → B2 (if produced)
+        env:
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+        run: |
+          if [ -f manifest.json ]; then
+            STAMP="$(date -u +%Y-%m-%d)"
+            rclone copyto manifest.json "b2:${B2_BUCKET}/_manifests/manifest-${STAMP}.json" --s3-no-check-bucket -v
+            rclone copyto manifest.json "b2:${B2_BUCKET}/_manifests/latest.json"          --s3-no-check-bucket -v
+          else
+            echo "No manifest.json produced — skipping (SUPABASE_* secrets not set?)."
+          fi
