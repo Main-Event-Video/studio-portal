@@ -39,9 +39,34 @@ const CSS = `
 #ccap .counter{font-size:13px;font-weight:800;color:#0b0710;background:var(--neon);border-radius:999px;padding:3px 10px;}
 #ccap .shotname{font-size:18px;font-weight:800;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.8);}
 #ccap .hint{font-size:13.5px;color:#e6eef5;text-shadow:0 1px 4px rgba(0,0,0,.9);}
-#ccap .posebox{background:rgba(11,7,16,.82);border:2px solid var(--red);border-radius:12px;padding:10px 12px;margin-top:4px;box-shadow:0 3px 14px rgba(0,0,0,.55);}
+#ccap .posebox{background:rgba(11,7,16,.82);border:2px solid var(--red);border-radius:12px;padding:10px 12px;margin-top:4px;box-shadow:0 3px 14px rgba(0,0,0,.55);display:flex;gap:12px;align-items:center;}
+#ccap .posetext{flex:1;min-width:0;}
 #ccap .posebox .shotname{font-size:21px;display:block;}
 #ccap .posebox .hint{font-size:15.5px;color:#fff;margin-top:4px;line-height:1.35;}
+/* animated "how to move" figure (looping front -> pose -> front) */
+#ccap .pd{width:58px;height:80px;flex:0 0 auto;perspective:560px;display:flex;align-items:center;justify-content:center;}
+#ccap .pds{transform:scale(.58);transform-origin:center;}
+#ccap .pdhead{position:relative;width:78px;height:96px;transform-style:preserve-3d;animation:pd-turn 2.8s ease-in-out infinite;}
+#ccap .pdskin{position:absolute;inset:0;background:#e9b48c;border-radius:46% 46% 44% 44%/52% 52% 46% 46%;}
+#ccap .pdhair{position:absolute;left:-4px;right:-4px;top:-8px;height:38px;background:#3a3040;border-radius:46% 46% 40% 40%;transform:translateZ(-6px);}
+#ccap .pdear{position:absolute;top:44px;width:12px;height:18px;background:#e0a87f;border-radius:50%;}
+#ccap .pdear.l{left:-6px;transform:translateZ(-2px);}#ccap .pdear.r{right:-6px;transform:translateZ(-2px);}
+#ccap .pdeye{position:absolute;top:40px;width:9px;height:9px;background:#241f2b;border-radius:50%;}
+#ccap .pdeye.l{left:18px;}#ccap .pdeye.r{right:18px;}
+#ccap .pdbrow{position:absolute;top:32px;width:14px;height:4px;background:#2a2330;border-radius:3px;}
+#ccap .pdbrow.l{left:15px;}#ccap .pdbrow.r{right:15px;}
+#ccap .pdnose{position:absolute;left:50%;top:46px;width:9px;height:20px;margin-left:-4.5px;background:#dda27a;border-radius:0 0 50% 50%;transform:translateZ(16px);}
+#ccap .pdmouth{position:absolute;left:50%;top:74px;width:26px;height:10px;margin-left:-13px;border-bottom:4px solid #7a4a4a;border-radius:0 0 40% 40%;transform:translateZ(4px);}
+#ccap .pdbody{position:relative;width:60px;height:130px;transform-style:preserve-3d;animation:pd-turn 2.8s ease-in-out infinite;}
+#ccap .pdbhead{position:absolute;left:50%;top:0;width:26px;height:26px;margin-left:-13px;background:#e9b48c;border-radius:50%;}
+#ccap .pdtorso{position:absolute;left:50%;top:24px;width:34px;height:52px;margin-left:-17px;background:#6f8fb0;border-radius:12px 12px 8px 8px;}
+#ccap .pdarm{position:absolute;top:28px;width:9px;height:44px;background:#e9b48c;border-radius:6px;}
+#ccap .pdarm.l{left:2px;transform:rotate(12deg);}#ccap .pdarm.r{right:2px;transform:rotate(-12deg);}
+#ccap .pdleg{position:absolute;top:74px;width:12px;height:52px;background:#33344a;border-radius:6px;}
+#ccap .pdleg.l{left:12px;}#ccap .pdleg.r{right:12px;}
+#ccap .pdbnose{position:absolute;left:50%;top:8px;width:6px;height:8px;margin-left:-3px;background:#c99;transform:translateZ(13px);border-radius:0 0 40% 40%;}
+@keyframes pd-turn{0%{transform:rotateY(0deg) rotateX(0deg)}42%{transform:var(--tf)}72%{transform:var(--tf)}100%{transform:rotateY(0deg) rotateX(0deg)}}
+@media (prefers-reduced-motion: reduce){#ccap .pdhead,#ccap .pdbody{animation:none;transform:var(--tf);}}
 #ccap .flip{margin-left:auto;background:rgba(255,255,255,.16);border:1.5px solid rgba(255,255,255,.55);color:#fff;border-radius:10px;padding:6px 11px;font-size:16px;font-weight:800;cursor:pointer;}
 #ccap .retake{margin-top:8px;font-size:12.5px;font-weight:800;color:#0b0710;background:var(--neon);display:inline-block;padding:4px 11px;border-radius:999px;align-self:flex-start;}
 #ccap .dots{position:absolute;left:0;right:0;bottom:96px;display:flex;gap:5px;justify-content:center;flex-wrap:wrap;padding:0 12px;}
@@ -83,6 +108,49 @@ function Overlay({ kind }) {
     shape = (<g {...S}><circle cx="50" cy="14" r="8" /><path d="M50 22 L50 60 M50 32 L44 48 M50 60 L46 92 M50 60 L54 92" /></g>);
   }
   return (<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">{shape}</svg>);
+}
+
+// Small animated figure that loops the movement for the current pose (front ->
+// pose -> front), from the camera's point of view (so it matches the outline).
+const POSE_DEMO = {
+  'face-front-neutral': { type: 'head', tf: 'rotateY(0deg) rotateX(9deg)' },
+  'face-front-smile':   { type: 'head', tf: 'rotateY(0deg) rotateX(9deg)', mouth: 'smile' },
+  'face-front-angry':   { type: 'head', tf: 'rotateY(0deg) rotateX(9deg)', brow: 'angry' },
+  'face-34-left':       { type: 'head', tf: 'rotateY(38deg) rotateX(0deg)' },
+  'face-34-right':      { type: 'head', tf: 'rotateY(-38deg) rotateX(0deg)' },
+  'face-profile-left':  { type: 'head', tf: 'rotateY(72deg) rotateX(0deg)' },
+  'face-profile-right': { type: 'head', tf: 'rotateY(-72deg) rotateX(0deg)' },
+  'head-top':           { type: 'head', tf: 'rotateY(0deg) rotateX(52deg)' },
+  'body-front-apose':   { type: 'body', tf: 'rotateY(0deg) rotateX(6deg)' },
+  'body-back':          { type: 'body', tf: 'rotateY(180deg) rotateX(0deg)' },
+  'body-left':          { type: 'body', tf: 'rotateY(55deg) rotateX(0deg)' },
+  'body-right':         { type: 'body', tf: 'rotateY(-55deg) rotateX(0deg)' },
+};
+
+function PoseDemo({ slug }) {
+  const d = POSE_DEMO[slug] || { type: 'head', tf: 'rotateY(0deg) rotateX(0deg)' };
+  const s = { '--tf': d.tf };
+  const mouth = d.mouth === 'smile' ? { borderBottomColor: '#7a4a4a', height: 14, borderRadius: '0 0 60% 60%' } : undefined;
+  const brow = d.brow === 'angry' ? { transform: 'rotate(14deg)', top: 34 } : undefined;
+  return (
+    <div className="pd" aria-hidden="true">
+      <div className="pds">
+        {d.type === 'head' ? (
+          <div className="pdhead" style={s}>
+            <div className="pdhair" /><div className="pdear l" /><div className="pdear r" /><div className="pdskin" />
+            <div className="pdbrow l" style={brow} /><div className="pdbrow r" style={brow} />
+            <div className="pdeye l" /><div className="pdeye r" /><div className="pdnose" />
+            <div className="pdmouth" style={mouth} />
+          </div>
+        ) : (
+          <div className="pdbody" style={s}>
+            <div className="pdbhead" /><div className="pdbnose" /><div className="pdarm l" /><div className="pdarm r" />
+            <div className="pdtorso" /><div className="pdleg l" /><div className="pdleg r" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function CharacterCapture({ token, character = null, existing = [], onClose, onChanged }) {
@@ -331,8 +399,11 @@ export default function CharacterCapture({ token, character = null, existing = [
                 {!camError && <button className="flip" onClick={() => setFacing((f) => (f === 'environment' ? 'user' : 'environment'))} title="Flip camera">⟲</button>}
               </div>
               <div className="posebox">
-                <span className="shotname">{pose.label}</span>
-                <div className="hint">{pose.hint}</div>
+                <PoseDemo slug={pose.slug} />
+                <div className="posetext">
+                  <span className="shotname">{pose.label}</span>
+                  <div className="hint">{pose.hint}</div>
+                </div>
               </div>
               {captured.has(idx + 1) && <div className="retake">✓ Already taken — tap the shutter to redo it</div>}
             </div>
