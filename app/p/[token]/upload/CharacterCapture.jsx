@@ -15,6 +15,9 @@ const CSS = `
 #ccap .top{display:flex;align-items:center;gap:10px;padding:12px 14px;background:#0b0710;border-bottom:1px solid #221a30;}
 #ccap .top .ttl{font-weight:800;font-size:16px;color:#f4f1f8;}
 #ccap .top .x{margin-left:auto;background:none;border:none;color:#93a3b6;font-size:26px;line-height:1;cursor:pointer;padding:0 4px;}
+#ccap .top .back{background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.28);color:#cbd5e1;border-radius:10px;padding:6px 11px;font-size:14px;font-weight:800;cursor:pointer;}
+#ccap .nameinput{width:100%;padding:14px;border-radius:14px;border:1.5px solid #2c2438;background:#141020;color:#eae6f0;font-size:18px;margin:2px 0 14px;}
+#ccap .nameinput:focus{outline:none;border-color:var(--neon);}
 #ccap .body{flex:1;overflow-y:auto;padding:16px 16px 24px;}
 #ccap h1{font-size:26px;margin:6px 0 10px;color:#f4f1f8;font-weight:800;}
 #ccap .lead{color:#aab6c4;font-size:15px;margin:0 0 14px;}
@@ -79,10 +82,14 @@ function Overlay({ kind }) {
   return (<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">{shape}</svg>);
 }
 
-export default function CharacterCapture({ token, existing = [], onClose, onChanged }) {
+export default function CharacterCapture({ token, character = null, existing = [], onClose, onChanged }) {
   const doneSet = new Set(existing);                 // sort_numbers already captured
   const firstTodo = Math.max(0, POSES.findIndex((_, i) => !doneSet.has(i + 1)));
-  const [stage, setStage] = useState('intro');       // 'intro' | 'capture' | 'finished'
+  // Multi-character (#9): a character must exist (with a name) before shooting.
+  const [charId, setCharId] = useState(character?.id || null);
+  const [charName, setCharName] = useState(character?.name || '');
+  const [nameDraft, setNameDraft] = useState(character?.name || '');
+  const [stage, setStage] = useState(character?.id ? 'intro' : 'name'); // 'name' | 'intro' | 'capture' | 'finished'
   const [idx, setIdx] = useState(firstTodo === -1 ? 0 : firstTodo);
   const [captured, setCaptured] = useState(doneSet);  // Set<number> (1-based)
   const [facing, setFacing] = useState('environment');
@@ -137,6 +144,26 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
 
   function close() { stopStream(); onClose?.(); }
 
+  // Create the named character before shooting (or when arriving via QR link).
+  async function createCharacter() {
+    const nm = nameDraft.trim();
+    if (!nm) { setBusy('Please enter a name'); setTimeout(() => setBusy(''), 1800); return; }
+    setBusy('uploading');
+    try {
+      const res = await fetch('/api/portal/character', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action: 'create', name: nm }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.character?.id) throw new Error(j.error || 'Could not start this character');
+      setCharId(j.character.id); setCharName(nm); setBusy('');
+      onChanged?.();
+      setStage('intro');
+    } catch (e) {
+      setBusy(e.message || 'Something went wrong'); setTimeout(() => setBusy(''), 2500);
+    }
+  }
+
   // ---- upload one blob to a guided slot (retake-safe) or as an extra ----
   async function putBlob(blob, contentType) {
     const urlRes = await fetch('/api/portal/upload-url', {
@@ -162,7 +189,7 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
       const key = await putBlob(blob, 'image/jpeg');
       const res = await fetch('/api/portal/character', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, action: 'slot', sortNumber: idx + 1, key, filename: `${String(idx + 1).padStart(2, '0')}-${pose.slug}.jpg`, contentType: 'image/jpeg' }),
+        body: JSON.stringify({ token, characterId: charId, action: 'slot', sortNumber: idx + 1, key, filename: `${String(idx + 1).padStart(2, '0')}-${pose.slug}.jpg`, contentType: 'image/jpeg' }),
       });
       if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || 'Could not save'); }
       const next = new Set(captured); next.add(idx + 1); setCaptured(next);
@@ -185,7 +212,7 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
     try {
       await fetch('/api/portal/character', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, action: 'done' }),
+        body: JSON.stringify({ token, characterId: charId, action: 'done' }),
       });
     } catch { /* best-effort: sheet can still be built from admin */ }
   }
@@ -217,7 +244,7 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
         const key = await putBlob(f, f.type || 'image/jpeg');
         await fetch('/api/portal/character', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token, action: 'extra', key, filename: f.name, contentType: f.type || 'image/jpeg' }),
+          body: JSON.stringify({ token, characterId: charId, action: 'extra', key, filename: f.name, contentType: f.type || 'image/jpeg' }),
         });
         /* eslint-enable no-await-in-loop */
       }
@@ -234,17 +261,37 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
     <div id="ccap">
       <style>{CSS}</style>
       <div className="top">
-        <span className="ttl">Character Build</span>
-        <span style={{ fontSize: 13, color: '#93a3b6' }}>{doneCount}/{POSE_COUNT}</span>
+        <button className="back" onClick={close} aria-label="Return to photo upload">‹ Photos</button>
+        <span className="ttl">Character Build{charName ? ` — ${charName}` : ''}</span>
+        <span style={{ fontSize: 13, color: '#93a3b6', marginLeft: 'auto' }}>{doneCount}/{POSE_COUNT}</span>
         <button className="x" onClick={close} aria-label="Close">×</button>
       </div>
+
+      {stage === 'name' && (
+        <div className="body">
+          <h1>Whose character is this?</h1>
+          <p className="lead">Give this character a name — that’s how you can build more than one person on this account and keep them straight. The name prints on their build sheet.</p>
+          <input
+            className="nameinput"
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            placeholder="e.g. Mom, Emma, Grandpa Joe"
+            maxLength={60}
+            autoFocus
+            onKeyDown={(e) => { if (e.key === 'Enter') createCharacter(); }}
+          />
+          <button className="btn" onClick={createCharacter}>{busy === 'uploading' ? 'Starting…' : 'Start character →'}</button>
+          <button className="btn ghost" onClick={close}>Return to photo upload</button>
+          {busy && busy !== 'uploading' && <p className="qrnote" style={{ color: '#ff3b63' }}>{busy}</p>}
+        </div>
+      )}
 
       {stage === 'intro' && isDesktop && (
         <div className="body">
           <h1>Continue on your phone</h1>
           <p className="lead">Your character photo shoot happens on a phone — grab a friend to snap the pics (no selfies!). Scan this code to start on your phone and pick up right here.</p>
           <div className="qrwrap">
-            <div className="qrcard"><img src={`/api/portal/character-qr?token=${encodeURIComponent(token)}`} alt="Scan to continue on your phone" width={232} height={232} /></div>
+            <div className="qrcard"><img src={`/api/portal/character-qr?token=${encodeURIComponent(token)}${charId ? `&character=${encodeURIComponent(charId)}` : ''}`} alt="Scan to continue on your phone" width={232} height={232} /></div>
             <p className="qrnote">Point your phone’s camera at the code. You’ll enter your portal password on your phone, then go straight into the 12 photos.</p>
           </div>
           {busy && busy !== 'uploading' && <p className="qrnote" style={{ color: '#38b6ff' }}>{busy}</p>}

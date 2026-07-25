@@ -25,7 +25,10 @@ export async function GET(request) {
   if (authed !== client.id) return NextResponse.json({ error: 'Please sign in again' }, { status: 401 });
 
   const site = process.env.NEXT_PUBLIC_SITE_URL || `${url.protocol}//${url.host}`;
-  const deepLink = `${site}/p/${token}?start=character`;
+  // Optionally continue a SPECIFIC character on the phone (multi-character, #9),
+  // so the desktop→phone handoff doesn't start a duplicate empty character.
+  const characterId = url.searchParams.get('character');
+  const deepLink = `${site}/p/${token}?start=character${characterId ? `&character=${encodeURIComponent(characterId)}` : ''}`;
 
   let svg;
   try {

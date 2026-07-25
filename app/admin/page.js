@@ -78,18 +78,29 @@ async function api(path, options = {}) {
   return json;
 }
 
-// Binary download (PNG) with the same admin auth as api(). Builds + downloads
-// the client's Character Build sheet.
-async function downloadCharacterSheet(clientId, name) {
+// Roster of a client's characters (multi-character, #9).
+async function fetchCharacterList(clientId) {
   const { data } = await supabase.auth.getSession();
   const token = data?.session?.access_token;
-  const q = name ? `&name=${encodeURIComponent(name)}` : '';
-  const res = await fetch(`/api/admin/character-sheet?clientId=${clientId}&download=1${q}`, {
+  const res = await fetch(`/api/admin/character-sheet?list=1&clientId=${clientId}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!res.ok) return [];
+  const j = await res.json().catch(() => ({}));
+  return Array.isArray(j.characters) ? j.characters : [];
+}
+
+// Download one character's build sheet by character id.
+async function downloadCharacterSheetById(characterId, name, regenerate = false) {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  const q = `${name ? `&name=${encodeURIComponent(name)}` : ''}${regenerate ? '&regenerate=1' : ''}`;
+  const res = await fetch(`/api/admin/character-sheet?characterId=${characterId}&download=1${q}`, {
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
   if (!res.ok) {
-    let msg = 'Could not build the sheet.';
-    try { const j = await res.json(); msg = j.error || msg; } catch { /* non-json */ }
+    let msg = 'Failed';
+    try { msg = (await res.json()).error || msg; } catch { /* ignore */ }
     return { ok: false, error: msg };
   }
   const blob = await res.blob();
@@ -102,6 +113,61 @@ async function downloadCharacterSheet(clientId, name) {
   a.remove();
   URL.revokeObjectURL(url);
   return { ok: true };
+}
+
+// Admin control: pick one of the client's characters and download its sheet.
+function CharacterSheetPicker({ client }) {
+  const [chars, setChars] = useState([]);
+  const [sel, setSel] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [regen, setRegen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchCharacterList(client.id).then((list) => {
+      if (!alive) return;
+      setChars(list);
+      setSel(list[0]?.id || '');
+    });
+    return () => { alive = false; };
+  }, [client.id]);
+  const current = chars.find((c) => c.id === sel);
+  const selStyle = { padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.4)', background: 'transparent', color: 'inherit', minWidth: 200 };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      {chars.length === 0 ? (
+        <span style={{ fontSize: 13, opacity: 0.6 }}>No character builds yet</span>
+      ) : (
+        <>
+          <select value={sel} onChange={(e) => setSel(e.target.value)} style={selStyle} title="Choose a character">
+            {chars.map((ch) => (
+              <option key={ch.id} value={ch.id}>
+                {(ch.name || 'Unnamed')} — {ch.done}/{ch.total}{ch.done >= ch.total ? ' ✓' : ''}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={busy || !sel}
+            title="Download this character's build sheet (PNG)"
+            onClick={async () => {
+              setBusy(true); setErr('');
+              const r = await downloadCharacterSheetById(sel, current?.name || '', regen);
+              setBusy(false);
+              if (!r.ok) setErr(r.error || 'Failed');
+            }}
+          >
+            {busy ? 'Building…' : 'Download sheet'}
+          </button>
+          <label style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input type="checkbox" checked={regen} onChange={(e) => setRegen(e.target.checked)} /> fresh write-up
+          </label>
+        </>
+      )}
+      {err && <span style={{ color: '#ff6b6b', fontSize: 12 }}>{err}</span>}
+    </div>
+  );
 }
 
 function CopyButton({ text, label = 'Copy' }) {
@@ -172,8 +238,6 @@ export default function AdminPage() {
   const [mMsg, setMMsg] = useState('');
   const [mErr, setMErr] = useState(false);
   const [montages, setMontages] = useState([]);
-  const [charSheet, setCharSheet] = useState({ id: null, busy: false, error: '' }); // Character Build download state
-  const charNameRef = useRef(null); // subject/character name input for the build sheet
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
@@ -1324,38 +1388,10 @@ export default function AdminPage() {
                                 >
                                   Files
                                 </button>
-                                <input
-                                  key={`cn-${c.id}`}
-                                  ref={charNameRef}
-                                  defaultValue={c.character_name || ''}
-                                  placeholder="Subject name for the sheet"
-                                  title="Name of the person in the character shots (defaults to the project name)"
-                                  style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.4)', background: 'transparent', color: 'inherit', minWidth: 180 }}
-                                />
-                                <button
-                                  type="button"
-                                  className="btn-ghost"
-                                  disabled={charSheet.busy && charSheet.id === c.id}
-                                  onClick={async () => {
-                                    const nm = (charNameRef.current?.value || '').trim();
-                                    setCharSheet({ id: c.id, busy: true, error: '' });
-                                    // Persist the name so the auto-email + future downloads use it.
-                                    if (nm !== (c.character_name || '')) {
-                                      try { await api(`/api/admin/clients/${c.id}`, { method: 'PATCH', body: JSON.stringify({ action: 'set_character_name', character_name: nm }) }); } catch { /* non-fatal */ }
-                                    }
-                                    const r = await downloadCharacterSheet(c.id, nm || c.display_name);
-                                    setCharSheet({ id: c.id, busy: false, error: r.ok ? '' : (r.error || 'Failed') });
-                                  }}
-                                  title="Download the character build sheet (PNG)"
-                                >
-                                  {charSheet.busy && charSheet.id === c.id ? 'Building…' : 'Character build'}
-                                </button>
+                                <CharacterSheetPicker client={c} />
                                 <span style={{ flex: 1 }} />
                                 <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
                               </div>
-                              {charSheet.error && charSheet.id === c.id && (
-                                <p style={{ color: '#ff6b6b', fontSize: 12, margin: '2px 0 6px' }}>{charSheet.error}</p>
-                              )}
 
                               {activeTool === 'montage' && renderMontageTool(c)}
                               {activeTool === 'cut' && renderCutTool()}

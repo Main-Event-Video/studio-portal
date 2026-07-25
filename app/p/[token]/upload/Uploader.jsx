@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildTimeline } from '@/lib/timelineOrder';
-import { CHAR_FOLDER, POSE_COUNT } from '@/lib/characterPoses';
+import { isCharacterFolder } from '@/lib/characterPoses';
 import CharacterCapture from './CharacterCapture';
 
 // Files moved here are set aside for the studio to clear — clients never delete.
@@ -102,6 +102,21 @@ const CSS = `
 #uploadflow .charbox .cbtitle{font-size:18px;font-weight:800;color:#f4f1f8;}
 #uploadflow .charbox .cbsub{font-size:13px;color:#cbb8ff;line-height:1.3;margin-top:2px;}
 #uploadflow .charbox .cbgo{margin-left:auto;font-size:26px;color:var(--album);font-weight:800;flex:0 0 auto;}
+#uploadflow .charwrap{margin-top:16px;border:1.5px solid var(--album);border-radius:18px;padding:14px;background:linear-gradient(160deg,rgba(124,92,255,.18),rgba(124,92,255,.05));}
+#uploadflow .charwrap .chtitle{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:800;color:#f4f1f8;margin:2px 2px 10px;}
+#uploadflow .charwrap .chtitle .chi{font-size:24px;}
+#uploadflow .charempty{font-size:13px;color:#cbb8ff;margin:0 2px 12px;line-height:1.45;}
+#uploadflow .charrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:rgba(0,0,0,.18);border:1px solid rgba(124,92,255,.35);border-radius:14px;padding:11px 13px;margin-bottom:9px;cursor:pointer;color:#eae6f0;}
+#uploadflow .charrow:active{transform:scale(.99);}
+#uploadflow .charrow .crmeta{display:flex;flex-direction:column;min-width:0;flex:1;}
+#uploadflow .charrow .crname{font-size:16px;font-weight:800;color:#f4f1f8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#uploadflow .charrow .crsub{font-size:12.5px;color:#cbb8ff;margin-top:2px;}
+#uploadflow .charrow .crpill{font-size:12px;font-weight:800;border-radius:999px;padding:3px 10px;flex:0 0 auto;}
+#uploadflow .charrow .crpill.done{background:var(--neon);color:#0b0710;}
+#uploadflow .charrow .crpill.wip{background:rgba(124,92,255,.35);color:#e9e2ff;border:1px solid var(--album);}
+#uploadflow .charrow .crgo{font-size:22px;color:var(--album);font-weight:800;flex:0 0 auto;}
+#uploadflow .charadd{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;border:1.5px dashed var(--album);background:transparent;color:#e9e2ff;border-radius:14px;padding:12px;font-size:15px;font-weight:800;cursor:pointer;margin-top:2px;}
+#uploadflow .charadd:active{transform:scale(.99);}
 #uploadflow .up-item{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:6px 2px;border-bottom:1px solid var(--line);color:var(--mut);}
 #uploadflow .up-item .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #uploadflow .mob{display:none;}
@@ -187,7 +202,8 @@ export default function Uploader({ token }) {
   const [newName, setNewName] = useState('');
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgMsg, setOrgMsg] = useState('');
-  const [showCharacter, setShowCharacter] = useState(false); // Character Build capture overlay
+  const [activeChar, setActiveChar] = useState(null);         // open capture: {id,name,existing} | {build:true} | null
+  const [characters, setCharacters] = useState([]);           // multi-character roster
   const [isDesktop, setIsDesktop] = useState(false);          // desktop → non-phone copy
 
   // timeline (order view) state
@@ -225,7 +241,9 @@ export default function Uploader({ token }) {
     // Deep-link from the desktop QR: land straight in Character Build on the phone.
     const sp = new URLSearchParams(window.location.search);
     if (sp.get('start') === 'character') {
-      setShowCharacter(true);
+      const wantChar = sp.get('character');
+      if (wantChar) pendingCharRef.current = wantChar; // continue this specific character once the roster loads
+      else setActiveChar({ build: true });
       const clean = window.location.pathname + window.location.hash;
       window.history.replaceState(null, '', clean); // drop the param so a refresh doesn't re-trigger
     }
@@ -255,6 +273,29 @@ export default function Uploader({ token }) {
   }, [token]);
 
   useEffect(() => { loadMine(); }, [loadMine]);
+
+  // Multi-character roster for the Character Build box.
+  const loadCharacters = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/portal/character?token=${token}`);
+      const j = await res.json();
+      setCharacters(Array.isArray(j.characters) ? j.characters : []);
+    } catch { /* keep prior roster */ }
+  }, [token]);
+  useEffect(() => { loadCharacters(); }, [loadCharacters]);
+
+  // When arriving via a per-character QR deep-link, open that character to
+  // continue once the roster (with its name + captured slots) has loaded.
+  const pendingCharRef = useRef(null);
+  useEffect(() => {
+    const id = pendingCharRef.current;
+    if (!id) return;
+    const ch = characters.find((c) => c.id === id);
+    if (ch) {
+      pendingCharRef.current = null;
+      setActiveChar({ id: ch.id, name: ch.name, existing: ch.slots || [] });
+    }
+  }, [characters]);
 
   // Rebuild the timeline whenever the server data changes. This is the single
   // source of truth for play order (shared with the montage render path).
@@ -382,12 +423,7 @@ export default function Uploader({ token }) {
 
   // ---- derived (upload view) ----
   const grouped = mine.reduce((acc, m) => { const k = m.folderPath || ''; (acc[k] = acc[k] || []).push(m); return acc; }, {});
-  const folderBoxes = Object.keys(grouped).filter((k) => k !== '' && k !== TRASH_FOLDER && k !== CHAR_FOLDER);
-
-  // Character Build reference shots live in a reserved area (never an album/timeline item).
-  const charShots = grouped[CHAR_FOLDER] || [];
-  const charSlots = Array.from(new Set(charShots.map((m) => m.sortNumber).filter((n) => Number.isInteger(n) && n >= 1 && n <= POSE_COUNT)));
-  const charDone = charSlots.length;
+  const folderBoxes = Object.keys(grouped).filter((k) => k !== '' && k !== TRASH_FOLDER && !isCharacterFolder(k));
   const allBoxes = Array.from(new Set([...serverBoxNames, ...folderBoxes]));
   const openCount = (grouped[''] || []).length;
   const total = mine.length;
@@ -691,18 +727,32 @@ export default function Uploader({ token }) {
             </div>
           )}
 
-          <button className="charbox" onClick={() => setShowCharacter(true)}>
-            <span className="cbicon">🧑‍🎨</span>
-            <span className="cbtext">
-              <span className="cbtitle">Character Build</span>
-              <span className="cbsub">
-                {charDone > 0
-                  ? `${charDone}/${POSE_COUNT} photos in — tap to keep going`
-                  : 'Your character photo shoot — 12 quick poses, kept separate from your video'}
-              </span>
-            </span>
-            <span className="cbgo">›</span>
-          </button>
+          <div className="charwrap">
+            <div className="chtitle"><span className="chi">🧑‍🎨</span> Character Build</div>
+            {characters.length === 0 && (
+              <p className="charempty">Turn a person into an AI character with a quick 12-photo shoot — kept separate from your event video. Build one for each person you want.</p>
+            )}
+            {characters.map((ch) => {
+              const done = ch.done >= ch.total;
+              return (
+                <button
+                  key={ch.id}
+                  className="charrow"
+                  onClick={() => setActiveChar({ id: ch.id, name: ch.name, existing: ch.slots || [] })}
+                >
+                  <span className="crmeta">
+                    <span className="crname">{ch.name || 'Unnamed character'}</span>
+                    <span className="crsub">{done ? 'All 12 shots in — tap to review or retake' : 'Tap to keep going'}</span>
+                  </span>
+                  <span className={`crpill ${done ? 'done' : 'wip'}`}>{done ? '✓ 12/12' : `${ch.done}/${ch.total}`}</span>
+                  <span className="crgo">›</span>
+                </button>
+              );
+            })}
+            <button className="charadd" onClick={() => setActiveChar({ build: true })}>
+              ＋ {characters.length === 0 ? 'Start a character' : 'Build another character'}
+            </button>
+          </div>
 
           <button className="seebtn" onClick={() => { loadMine(); goView('order'); }}>👁 See your photos &amp; order</button>
 
@@ -756,12 +806,13 @@ export default function Uploader({ token }) {
         </>
       )}
 
-      {showCharacter && (
+      {activeChar && (
         <CharacterCapture
           token={token}
-          existing={charSlots}
-          onClose={() => { setShowCharacter(false); loadMine(); }}
-          onChanged={() => loadMine()}
+          character={activeChar.build ? null : { id: activeChar.id, name: activeChar.name }}
+          existing={activeChar.existing || []}
+          onClose={() => { setActiveChar(null); loadMine(); loadCharacters(); }}
+          onChanged={() => { loadMine(); loadCharacters(); }}
         />
       )}
     </main>
