@@ -120,7 +120,10 @@ const CSS = `
 #uploadflow .gap{flex:0 0 auto;width:12px;align-self:stretch;border-radius:8px;margin:0 2px;}
 #uploadflow .gap.live{width:26px;background:repeating-linear-gradient(45deg,rgba(56,182,255,.20)0 6px,transparent 6px 12px);border:1.5px dashed var(--neon);cursor:pointer;}
 #uploadflow .gap.live:active{background:rgba(56,182,255,.4);}
-#uploadflow .card{flex:0 0 auto;position:relative;border-radius:12px;overflow:hidden;background:var(--pnl2);border:1px solid var(--line);cursor:pointer;}
+#uploadflow .card,#uploadflow .album{user-select:none;-webkit-user-select:none;}
+#uploadflow .card img,#uploadflow .album .mini span{-webkit-user-drag:none;user-drag:none;pointer-events:none;}
+#uploadflow .card{flex:0 0 auto;position:relative;border-radius:12px;overflow:hidden;background:var(--pnl2);border:1px solid var(--line);cursor:grab;}
+#uploadflow .card:active,#uploadflow .album:active{cursor:grabbing;}
 #uploadflow .card .thumb{width:var(--tz);height:var(--tz);background:#000;display:block;}
 #uploadflow .card img{width:100%;height:100%;object-fit:cover;display:block;}
 #uploadflow .card.video .thumb{display:flex;align-items:center;justify-content:center;flex-direction:column;color:#fff;gap:4px;background:#050505;}
@@ -469,12 +472,12 @@ export default function Uploader({ token }) {
         key={`${scope}:${album || ''}:${m.id}`}
         className={`card${isVideo ? ' video' : ''}${isPk ? ' picked' : ''}`}
         draggable
-        onDragStart={() => setPicked({ scope, album: album || null, id: m.id, kind: 'media' })}
+        onDragStart={(e) => { try { e.dataTransfer.setData('text/plain', m.id); e.dataTransfer.effectAllowed = 'move'; } catch { /* older browsers */ } setPicked({ scope, album: album || null, id: m.id, kind: 'media' }); }}
         onDragEnd={() => setPicked((c) => (c && c.id === m.id ? null : c))}
         onClick={(e) => { e.stopPropagation(); pickToggle({ scope, album: album || null, id: m.id, kind: 'media' }); }}
       >
         <div className="thumb">
-          {isVideo ? (<><span className="vplay">▶</span><span className="vdur">Video</span></>) : (<img src={m.url} alt={m.filename} loading="lazy" />)}
+          {isVideo ? (<><span className="vplay">▶</span><span className="vdur">Video</span></>) : (<img src={m.url} alt={m.filename} loading="lazy" draggable={false} />)}
         </div>
         <span className="num">{num}</span>
         <div className="cap">{m.filename}</div>
@@ -534,7 +537,7 @@ export default function Uploader({ token }) {
           key={name}
           className={`album${isPk ? ' picked' : ''}${pickedIsMedia ? ' target' : ''}`}
           draggable
-          onDragStart={() => setPicked({ scope: 'top', album: null, id: name, kind: 'album' })}
+          onDragStart={(e) => { try { e.dataTransfer.setData('text/plain', name); e.dataTransfer.effectAllowed = 'move'; } catch { /* older browsers */ } setPicked({ scope: 'top', album: null, id: name, kind: 'album' }); }}
           onDragEnd={() => setPicked((c) => (c && c.id === name ? null : c))}
           onDragOver={pickedIsMedia ? (e) => e.preventDefault() : undefined}
           onDrop={pickedIsMedia ? (e) => { e.preventDefault(); dropInAlbum(name, count); } : undefined}
@@ -666,8 +669,8 @@ export default function Uploader({ token }) {
               <span className="cbtitle">Character Build</span>
               <span className="cbsub">
                 {charDone > 0
-                  ? `${charDone}/${POSE_COUNT} reference photos in — tap to continue`
-                  : 'Guided photos for your AI character — kept separate from your montage'}
+                  ? `${charDone}/${POSE_COUNT} photos in — tap to keep going`
+                  : 'Your character photo shoot — 12 quick poses, kept separate from your video'}
               </span>
             </span>
             <span className="cbgo">›</span>

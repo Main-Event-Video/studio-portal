@@ -36,6 +36,8 @@ const CSS = `
 #ccap .counter{font-size:13px;font-weight:800;color:#0b0710;background:var(--neon);border-radius:999px;padding:3px 10px;}
 #ccap .shotname{font-size:18px;font-weight:800;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.8);}
 #ccap .hint{font-size:13.5px;color:#e6eef5;text-shadow:0 1px 4px rgba(0,0,0,.9);}
+#ccap .flip{margin-left:auto;background:rgba(255,255,255,.16);border:1.5px solid rgba(255,255,255,.55);color:#fff;border-radius:10px;padding:6px 11px;font-size:16px;font-weight:800;cursor:pointer;}
+#ccap .retake{margin-top:8px;font-size:12.5px;font-weight:800;color:#0b0710;background:var(--neon);display:inline-block;padding:4px 11px;border-radius:999px;align-self:flex-start;}
 #ccap .dots{position:absolute;left:0;right:0;bottom:96px;display:flex;gap:5px;justify-content:center;flex-wrap:wrap;padding:0 12px;}
 #ccap .dot{width:11px;height:11px;border-radius:999px;background:rgba(255,255,255,.3);border:1px solid rgba(255,255,255,.5);cursor:pointer;}
 #ccap .dot.done{background:var(--neon);border-color:var(--neon);}
@@ -240,7 +242,7 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
       {stage === 'intro' && isDesktop && (
         <div className="body">
           <h1>Continue on your phone</h1>
-          <p className="lead">Character photos are taken with a phone — someone else photographs you (not selfies). Scan this code to open Character Build on your phone and pick up right here.</p>
+          <p className="lead">Your character photo shoot happens on a phone — grab a friend to snap the pics (no selfies!). Scan this code to start on your phone and pick up right here.</p>
           <div className="qrwrap">
             <div className="qrcard"><img src={`/api/portal/character-qr?token=${encodeURIComponent(token)}`} alt="Scan to continue on your phone" width={232} height={232} /></div>
             <p className="qrnote">Point your phone’s camera at the code. You’ll enter your portal password on your phone, then go straight into the 12 photos.</p>
@@ -256,9 +258,9 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
       {stage === 'intro' && !isDesktop && (
         <div className="body">
           <h1>{CAPTURE_INTRO_TITLE}</h1>
-          <p className="lead">These reference photos build your AI character. They’re kept separate — they’re not part of your video montage.</p>
+          <p className="lead">This is your character photo shoot! A dozen quick poses and you’re done. These stay separate — they’re not part of your event video.</p>
           <ul className="guide">{CAPTURE_INTRO.map((g, i) => <li key={i}>{g}</li>)}</ul>
-          <button className="btn" onClick={() => setStage('capture')}>Start the 12 photos →</button>
+          <button className="btn" onClick={() => setStage('capture')}>Let’s go — 12 quick photos →</button>
           <button className="btn ghost" onClick={() => extraRef.current?.click()}>Upload my own photos instead</button>
           <button className="btn ghost" onClick={close}>Not now</button>
           <input ref={extraRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={onExtraPick} />
@@ -273,8 +275,13 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
 
           {!preview && (
             <div className="hud">
-              <div className="hudrow"><span className="counter">Shot {idx + 1} of {POSE_COUNT}</span><span className="shotname">{pose.label}</span></div>
+              <div className="hudrow">
+                <span className="counter">Shot {idx + 1} of {POSE_COUNT}</span>
+                <span className="shotname">{pose.label}</span>
+                {!camError && <button className="flip" onClick={() => setFacing((f) => (f === 'environment' ? 'user' : 'environment'))} title="Flip camera">⟲</button>}
+              </div>
               <div className="hint">{pose.hint}</div>
+              {captured.has(idx + 1) && <div className="retake">✓ Already taken — tap the shutter to redo it</div>}
             </div>
           )}
 
@@ -287,9 +294,9 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
                 ))}
               </div>
               <div className="controls">
-                <button className="cbtn" onClick={() => setFacing((f) => (f === 'environment' ? 'user' : 'environment'))}>⟲ Flip</button>
+                <button className="cbtn" disabled={idx === 0} onClick={() => setIdx((i) => Math.max(0, i - 1))}>‹ Back</button>
                 <button className="shutter" onClick={shoot} aria-label="Take photo" />
-                <button className="cbtn" onClick={() => advance(captured)}>Skip ›</button>
+                <button className="cbtn" onClick={() => (idx < POSE_COUNT - 1 ? setIdx((i) => i + 1) : advance(captured))}>{idx < POSE_COUNT - 1 ? 'Next ›' : 'Finish'}</button>
               </div>
             </>
           )}
@@ -305,11 +312,14 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
             <div className="fallback">
               <div className="shotname">Shot {idx + 1} of {POSE_COUNT}: {pose.label}</div>
               <div className="hint" style={{ color: '#aab6c4' }}>{pose.hint}</div>
-              <button className="fbtn" onClick={() => nativeRef.current?.click()}>📷 Take this photo</button>
+              <button className="fbtn" onClick={() => nativeRef.current?.click()}>📷 {captured.has(idx + 1) ? 'Redo this photo' : 'Take this photo'}</button>
               <div className="dots" style={{ position: 'static' }}>
                 {POSES.map((p, i) => <span key={p.slug} className={`dot${captured.has(i + 1) ? ' done' : ''}${i === idx ? ' cur' : ''}`} onClick={() => setIdx(i)} />)}
               </div>
-              <button className="btn ghost" style={{ maxWidth: 260 }} onClick={() => advance(captured)}>Skip this shot ›</button>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="btn ghost" style={{ maxWidth: 150 }} disabled={idx === 0} onClick={() => setIdx((i) => Math.max(0, i - 1))}>‹ Back</button>
+                <button className="btn ghost" style={{ maxWidth: 150 }} onClick={() => (idx < POSE_COUNT - 1 ? setIdx((i) => i + 1) : advance(captured))}>{idx < POSE_COUNT - 1 ? 'Next ›' : 'Finish'}</button>
+              </div>
             </div>
           )}
 
@@ -320,10 +330,10 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
 
       {stage === 'finished' && (
         <div className="body">
-          <h1>All 12 done — nice! 🎉</h1>
-          <p className="lead">Your character reference shots are saved. Main Event Studio will use them to build your AI character; the build sheet has been sent to the studio.</p>
+          <h1>That’s a wrap — nice! 🎉</h1>
+          <p className="lead">All 12 shots are saved and sent to Main Event Studio. You’re all set!</p>
           <button className="btn" onClick={close}>Done</button>
-          <button className="btn ghost" onClick={() => { setIdx(0); setStage('capture'); }}>Review or retake a shot</button>
+          <button className="btn ghost" onClick={() => { setIdx(0); setStage('capture'); }}>Go back &amp; retake a shot</button>
           <button className="btn ghost" onClick={() => extraRef.current?.click()}>Add more of my own photos</button>
           <input ref={extraRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={onExtraPick} />
         </div>
