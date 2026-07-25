@@ -65,8 +65,8 @@ export default async function PortalHome({ params, searchParams }) {
           <div className="tile-sub">Fill out your questionnaire so we can bring your vision to life.</div>
         </Link>
         <Link href={`/p/${token}/upload`} className="tile red">
-          <div className="tile-title neon-red">Upload your photos and videos here</div>
-          <div className="tile-sub">Send us your event media so we can get to work.</div>
+          <div className="tile-title neon-red">Upload your photos, video &amp; build your character here</div>
+          <div className="tile-sub">Send us your event media — and build your AI character.</div>
         </Link>
         <Link href={`/p/${token}/view`} className="tile">
           <div className="tile-title neon-blue">Take a look at what we sent you</div>
