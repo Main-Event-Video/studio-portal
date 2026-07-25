@@ -180,6 +180,7 @@ export default function Uploader({ token }) {
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgMsg, setOrgMsg] = useState('');
   const [showCharacter, setShowCharacter] = useState(false); // Character Build capture overlay
+  const [isDesktop, setIsDesktop] = useState(false);          // desktop → non-phone copy
 
   // timeline (order view) state
   const [tl, setTl] = useState([]);            // [{type:'media',item} | {type:'album',name,items}]
@@ -205,6 +206,13 @@ export default function Uploader({ token }) {
   // back to the add-photos screen). The active view lives in the URL hash.
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // Desktop → show non-phone copy (no "pinch"/"turn your phone").
+    const ua = navigator.userAgent || '';
+    const mobileUA = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+    const narrow = window.matchMedia('(max-width: 820px)').matches;
+    const noTouch = !('ontouchstart' in window) && (navigator.maxTouchPoints || 0) === 0;
+    setIsDesktop(!mobileUA && !narrow && noTouch);
+
     if (window.location.hash === '#order') setView('order');
     // Deep-link from the desktop QR: land straight in Character Build on the phone.
     const sp = new URLSearchParams(window.location.search);
@@ -680,7 +688,11 @@ export default function Uploader({ token }) {
           <button className="backbtn" onClick={() => goView('upload')}>‹ Back to adding photos</button>
           <p className="kick">Your video timeline</p>
           <h1>Put everything in play order</h1>
-          <p className="say">Left to right is how your video plays. <b>Tap a photo, then tap where it should go</b> — or drag it. Open an album to arrange the photos inside.</p>
+          <p className="say">
+            {isDesktop
+              ? <>Left to right is how your video plays. <b>Drag to rearrange</b>, or click a photo then click where it should go. Open an album to arrange the photos inside.</>
+              : <>Left to right is how your video plays. <b>Tap a photo, then tap where it should go</b> — or drag it. Open an album to arrange the photos inside.</>}
+          </p>
           {orgMsg && <p style={{ color: 'var(--red)', fontSize: 13 }}>{orgMsg}</p>}
 
           <div className="tlbar">
@@ -689,7 +701,7 @@ export default function Uploader({ token }) {
               <button className="zbtn" disabled={zoomIdx === ZOOMS.length - 1} onClick={() => setZoomIdx((z) => Math.min(ZOOMS.length - 1, z + 1))}>+</button>
               <span className="zlabel">{zoomIdx <= 1 ? 'Overview' : zoomIdx >= 4 ? 'Detailed' : 'Zoom'}</span>
             </div>
-            <span className="tlhint"><b>Tip:</b> pinch to zoom · turn your phone sideways for a longer view</span>
+            <span className="tlhint"><b>Tip:</b> {isDesktop ? 'use – / + to zoom · scroll sideways to see more' : 'pinch to zoom · turn your phone sideways for a longer view'}</span>
           </div>
 
           {loadingMine ? (
@@ -703,7 +715,8 @@ export default function Uploader({ token }) {
           )}
 
           <p className="tlfoot">
-            <b>↻ Turn your phone sideways</b> for a longer timeline. Videos show with a ▶ — place them anywhere, loose or inside an album. (Videos are saved with your files; the montage uses your photos for now.)
+            {!isDesktop && <><b>↻ Turn your phone sideways</b> for a longer timeline. </>}
+            Videos show with a ▶ — place them anywhere, loose or inside an album. (Videos are saved with your files; the montage uses your photos for now.)
           </p>
 
           <div className="savebar">

@@ -31,15 +31,22 @@ export async function GET(request) {
 
   const kinds = scope === 'mine' ? ['client_upload'] : ['rough_cut', 'final'];
   const db = createServiceClient();
-  const { data, error } = await db
+  const runQuery = (cols) => db
     .from('studio_media')
-    .select('id, filename, content_type, r2_key, kind, note, sort_number, folder_path, timeline_pos, created_at')
+    .select(cols)
     .eq('client_id', client.id)
     .in('kind', kinds)
     .order('folder_path', { ascending: true, nullsFirst: true })
     .order('sort_number', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true });
 
+  // Prefer the full set (with timeline_pos). If that column doesn't exist yet
+  // (sql/006 not run), fall back so the portal NEVER shows an empty list —
+  // ordering still works, timelinePos is just treated as null.
+  let { data, error } = await runQuery('id, filename, content_type, r2_key, kind, note, sort_number, folder_path, timeline_pos, created_at');
+  if (error) {
+    ({ data, error } = await runQuery('id, filename, content_type, r2_key, kind, note, sort_number, folder_path, created_at'));
+  }
   if (error) {
     return NextResponse.json({ error: 'Could not load media', detail: error.message }, { status: 500 });
   }
@@ -53,7 +60,7 @@ export async function GET(request) {
       note: m.note,
       sortNumber: m.sort_number,
       folderPath: m.folder_path,
-      timelinePos: m.timeline_pos,
+      timelinePos: m.timeline_pos ?? null,
       createdAt: m.created_at,
       url: await getViewUrl(m.r2_key, 3600),
     }))
