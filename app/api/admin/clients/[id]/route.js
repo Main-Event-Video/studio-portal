@@ -40,6 +40,13 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ ok: true, credentials: { username: client.email, password } });
   }
 
+  if (body.action === 'set_character_name') {
+    const name = typeof body.character_name === 'string' ? body.character_name.trim() : '';
+    const { error } = await db.from('studio_clients').update({ character_name: name || null }).eq('id', id);
+    if (error) return NextResponse.json({ error: 'Could not save name', detail: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, character_name: name || null });
+  }
+
   if (body.action === 'toggle_archive') {
     const { error } = await db
       .from('studio_clients')

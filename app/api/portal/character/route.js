@@ -78,9 +78,9 @@ export async function POST(request) {
   if (action === 'done') {
     // Generate the sheet + email the studio. Best-effort: never block the client.
     try {
-      const { buffer, count, profile } = await buildCharacterSheet(db, client.id);
+      const { buffer, count, profile, name } = await buildCharacterSheet(db, client.id);
       if (buffer && count > 0) {
-        await sendCharacterSheetReady({ client, buffer, count, profile }).catch((e) => console.error('sheet email failed:', e?.message));
+        await sendCharacterSheetReady({ client, buffer, count, profile, name }).catch((e) => console.error('sheet email failed:', e?.message));
       }
     } catch (e) {
       console.error('character-done failed:', e?.message);

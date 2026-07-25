@@ -80,10 +80,11 @@ async function api(path, options = {}) {
 
 // Binary download (PNG) with the same admin auth as api(). Builds + downloads
 // the client's Character Build sheet.
-async function downloadCharacterSheet(clientId, clientName) {
+async function downloadCharacterSheet(clientId, name) {
   const { data } = await supabase.auth.getSession();
   const token = data?.session?.access_token;
-  const res = await fetch(`/api/admin/character-sheet?clientId=${clientId}&download=1`, {
+  const q = name ? `&name=${encodeURIComponent(name)}` : '';
+  const res = await fetch(`/api/admin/character-sheet?clientId=${clientId}&download=1${q}`, {
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
   if (!res.ok) {
@@ -95,7 +96,7 @@ async function downloadCharacterSheet(clientId, clientName) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `character-build-${String(clientName || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}.png`;
+  a.download = `character-build-${String(name || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}.png`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -172,6 +173,7 @@ export default function AdminPage() {
   const [mErr, setMErr] = useState(false);
   const [montages, setMontages] = useState([]);
   const [charSheet, setCharSheet] = useState({ id: null, busy: false, error: '' }); // Character Build download state
+  const charNameRef = useRef(null); // subject/character name input for the build sheet
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
@@ -1322,16 +1324,29 @@ export default function AdminPage() {
                                 >
                                   Files
                                 </button>
+                                <input
+                                  key={`cn-${c.id}`}
+                                  ref={charNameRef}
+                                  defaultValue={c.character_name || ''}
+                                  placeholder="Subject name for the sheet"
+                                  title="Name of the person in the character shots (defaults to the project name)"
+                                  style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.4)', background: 'transparent', color: 'inherit', minWidth: 180 }}
+                                />
                                 <button
                                   type="button"
                                   className="btn-ghost"
                                   disabled={charSheet.busy && charSheet.id === c.id}
                                   onClick={async () => {
+                                    const nm = (charNameRef.current?.value || '').trim();
                                     setCharSheet({ id: c.id, busy: true, error: '' });
-                                    const r = await downloadCharacterSheet(c.id, c.display_name);
+                                    // Persist the name so the auto-email + future downloads use it.
+                                    if (nm !== (c.character_name || '')) {
+                                      try { await api(`/api/admin/clients/${c.id}`, { method: 'PATCH', body: JSON.stringify({ action: 'set_character_name', character_name: nm }) }); } catch { /* non-fatal */ }
+                                    }
+                                    const r = await downloadCharacterSheet(c.id, nm || c.display_name);
                                     setCharSheet({ id: c.id, busy: false, error: r.ok ? '' : (r.error || 'Failed') });
                                   }}
-                                  title="Download this client's AI character build sheet (PNG)"
+                                  title="Download the character build sheet (PNG)"
                                 >
                                   {charSheet.busy && charSheet.id === c.id ? 'Building…' : 'Character build'}
                                 </button>

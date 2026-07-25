@@ -20,11 +20,13 @@ export async function GET(request) {
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
   const db = createServiceClient();
-  const { data, error } = await db
-    .from('studio_clients')
-    .select('id, display_name, last_name, email, portal_token, event_date, event_type, archived, created_at')
-    .order('created_at', { ascending: false });
-
+  const base = 'id, display_name, last_name, email, portal_token, event_date, event_type, archived, created_at';
+  // Prefer including character_name; fall back if the column doesn't exist yet
+  // (sql/007 not run) so the client list never breaks.
+  let { data, error } = await db.from('studio_clients').select(`${base}, character_name`).order('created_at', { ascending: false });
+  if (error) {
+    ({ data, error } = await db.from('studio_clients').select(base).order('created_at', { ascending: false }));
+  }
   if (error) {
     return NextResponse.json({ error: 'Could not load clients', detail: error.message }, { status: 500 });
   }

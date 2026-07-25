@@ -18,9 +18,10 @@ export async function GET(request) {
   if (!clientId) return NextResponse.json({ error: 'Missing clientId' }, { status: 400 });
 
   const db = createServiceClient();
+  const nameOverride = url.searchParams.get('name');
   let sheet;
   try {
-    sheet = await buildCharacterSheet(db, clientId);
+    sheet = await buildCharacterSheet(db, clientId, nameOverride ? { name: nameOverride } : {});
   } catch (e) {
     return NextResponse.json({ error: 'Could not build sheet', detail: String(e.message || e) }, { status: 500 });
   }
