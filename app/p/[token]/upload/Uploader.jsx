@@ -772,7 +772,7 @@ export default function Uploader({ token }) {
           <p className="say">
             {isDesktop
               ? <>Left to right is how your video plays. <b>Drag to rearrange</b>, or click a photo then click where it should go. Drag a photo onto an album to file it; open an album to arrange or pull photos back out.</>
-              : <>Left to right is how your video plays. <b>Tap a photo, then tap where it should go</b>. Tap an album to drop a photo in; open an album to arrange or move photos out.</>}
+              : <>Left to right is the order your video plays. To move something: <b>first tap the photo you want to move, then tap the spot where it should go</b>. Videos are shown here too, marked <b>▶</b>. Tap an album to drop a photo inside; open an album to rearrange or pull photos out.</>}
           </p>
           {orgMsg && <p style={{ color: 'var(--red)', fontSize: 13 }}>{orgMsg}</p>}
 
@@ -796,8 +796,8 @@ export default function Uploader({ token }) {
           )}
 
           <p className="tlfoot">
-            {!isDesktop && <><b>↻ Turn your phone sideways</b> for a longer timeline. </>}
-            Videos show with a ▶ — place them anywhere, loose or inside an album. (Videos are saved with your files; the montage uses your photos for now.)
+            {!isDesktop && <><b>↻ Turn your phone sideways</b> for a longer, easier-to-use timeline. </>}
+            Videos are shown too, marked <b>▶</b> — place them anywhere, loose or inside an album.
           </p>
 
           <div className="savebar">

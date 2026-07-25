@@ -44,7 +44,8 @@ const CSS = `
 #ccap .posebox .shotname{font-size:21px;display:block;}
 #ccap .posebox .hint{font-size:15.5px;color:#fff;margin-top:4px;line-height:1.35;}
 /* animated "how to move" figure (looping front -> pose -> front) */
-#ccap .pd{width:58px;height:80px;flex:0 0 auto;perspective:560px;display:flex;align-items:center;justify-content:center;}
+#ccap .pd{position:relative;width:58px;height:80px;flex:0 0 auto;perspective:560px;display:flex;align-items:center;justify-content:center;}
+#ccap .pdarrow{position:absolute;bottom:-3px;left:0;right:0;text-align:center;font-size:22px;font-weight:900;line-height:1;color:var(--neon);text-shadow:0 1px 4px rgba(0,0,0,.95),0 0 3px rgba(0,0,0,.9);}
 #ccap .pds{transform:scale(.58);transform-origin:center;}
 #ccap .pdhead{position:relative;width:78px;height:96px;transform-style:preserve-3d;animation:pd-turn 2.8s ease-in-out infinite;}
 #ccap .pdskin{position:absolute;inset:0;background:#e9b48c;border-radius:46% 46% 44% 44%/52% 52% 46% 46%;}
@@ -116,15 +117,15 @@ const POSE_DEMO = {
   'face-front-neutral': { type: 'head', tf: 'rotateY(0deg) rotateX(9deg)' },
   'face-front-smile':   { type: 'head', tf: 'rotateY(0deg) rotateX(9deg)', mouth: 'smile' },
   'face-front-angry':   { type: 'head', tf: 'rotateY(0deg) rotateX(9deg)', brow: 'angry' },
-  'face-34-left':       { type: 'head', tf: 'rotateY(38deg) rotateX(0deg)' },
-  'face-34-right':      { type: 'head', tf: 'rotateY(-38deg) rotateX(0deg)' },
-  'face-profile-left':  { type: 'head', tf: 'rotateY(72deg) rotateX(0deg)' },
-  'face-profile-right': { type: 'head', tf: 'rotateY(-72deg) rotateX(0deg)' },
-  'head-top':           { type: 'head', tf: 'rotateY(0deg) rotateX(52deg)' },
+  'face-34-left':       { type: 'head', tf: 'rotateY(52deg) rotateX(0deg)', arrow: 'right' },
+  'face-34-right':      { type: 'head', tf: 'rotateY(-52deg) rotateX(0deg)', arrow: 'left' },
+  'face-profile-left':  { type: 'head', tf: 'rotateY(80deg) rotateX(0deg)', arrow: 'right' },
+  'face-profile-right': { type: 'head', tf: 'rotateY(-80deg) rotateX(0deg)', arrow: 'left' },
+  'head-top':           { type: 'head', tf: 'rotateY(0deg) rotateX(-60deg)' },
   'body-front-apose':   { type: 'body', tf: 'rotateY(0deg) rotateX(6deg)' },
   'body-back':          { type: 'body', tf: 'rotateY(180deg) rotateX(0deg)' },
-  'body-left':          { type: 'body', tf: 'rotateY(55deg) rotateX(0deg)' },
-  'body-right':         { type: 'body', tf: 'rotateY(-55deg) rotateX(0deg)' },
+  'body-left':          { type: 'body', tf: 'rotateY(58deg) rotateX(0deg)', arrow: 'right' },
+  'body-right':         { type: 'body', tf: 'rotateY(-58deg) rotateX(0deg)', arrow: 'left' },
 };
 
 function PoseDemo({ slug }) {
@@ -149,6 +150,7 @@ function PoseDemo({ slug }) {
           </div>
         )}
       </div>
+      {d.arrow && <div className="pdarrow">{d.arrow === 'right' ? '→' : '←'}</div>}
     </div>
   );
 }

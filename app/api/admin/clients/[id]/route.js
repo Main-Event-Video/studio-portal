@@ -47,6 +47,16 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ ok: true, character_name: name || null });
   }
 
+  if (body.action === 'set_admin_info') {
+    const info = body.admin_info;
+    if (info == null || typeof info !== 'object' || Array.isArray(info)) {
+      return NextResponse.json({ error: 'admin_info must be an object' }, { status: 400 });
+    }
+    const { error } = await db.from('studio_clients').update({ admin_info: info }).eq('id', id);
+    if (error) return NextResponse.json({ error: 'Could not save info', detail: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   if (body.action === 'toggle_archive') {
     const { error } = await db
       .from('studio_clients')

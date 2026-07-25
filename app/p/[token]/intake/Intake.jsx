@@ -22,6 +22,8 @@ function initialState(existing, prefill) {
     preferred_language: e.preferred_language ?? '',
     preferred_language_other: e.preferred_language_other ?? '',
     venue: e.venue ?? '',
+    dj_contact: e.dj_contact ?? '',
+    planner_contact: e.planner_contact ?? '',
     honoree_names: e.honoree_names ?? '',
     age_milestone: e.age_milestone ?? '',
     has_logo: typeof e.has_logo === 'boolean' ? e.has_logo : null,
@@ -204,6 +206,12 @@ export default function Intake({ token, welcomeName, existing, prefill }) {
 
         <label htmlFor="venue">Event venue / location</label>
         <input id="venue" value={form.venue} onChange={set('venue')} />
+
+        <label htmlFor="dj_contact">DJ / band — name & contact</label>
+        <input id="dj_contact" value={form.dj_contact} onChange={set('dj_contact')} />
+
+        <label htmlFor="planner_contact">Event planner — name & contact</label>
+        <input id="planner_contact" value={form.planner_contact} onChange={set('planner_contact')} />
 
         <label htmlFor="honoree_names">Celebrant / honoree name(s) <span className="req">*</span></label>
         <input id="honoree_names" value={form.honoree_names} onChange={set('honoree_names')} required />

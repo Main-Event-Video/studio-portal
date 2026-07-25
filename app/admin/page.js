@@ -22,6 +22,8 @@ const INTAKE_SECTIONS = [
       ['contact_number_type', 'Number type'],
       ['event_date', 'Event date (their estimate)'],
       ['venue', 'Venue'],
+      ['dj_contact', 'DJ (name & contact)'],
+      ['planner_contact', 'Planner (name & contact)'],
       ['preferred_contact_method', 'Preferred contact method'],
       ['preferred_language', 'Preferred language'],
       ['preferred_language_other', 'Language (other)'],
@@ -166,6 +168,127 @@ function CharacterSheetPicker({ client }) {
         </>
       )}
       {err && <span style={{ color: '#ff6b6b', fontSize: 12 }}>{err}</span>}
+    </div>
+  );
+}
+
+// ---- per-client private admin info sheet (#new) ----
+const INFO_FIELDS = [
+  { k: 'client_name', label: 'Client Name' },
+  { k: 'honoree_names', label: 'Honoree Name(s)' },
+  { k: 'instructing_party', label: 'Instructing Party' },
+  { k: 'event_date', label: 'Event Date', type: 'date' },
+  { k: 'event_type', label: 'Event Type' },
+  { k: 'address', label: 'Address', type: 'area' },
+  { k: 'billing_address', label: 'Billing Address (if different)', type: 'area' },
+  { k: 'contract_amount', label: 'Contract Amount', type: 'money' },
+  { k: 'deposit_amount', label: 'Deposit Amount', type: 'money' },
+  { k: 'deposit_paid_date', label: 'Date Deposit Paid', type: 'date' },
+  { k: 'outstanding_amount', label: 'Outstanding Amount', type: 'money' },
+  { k: 'balance_due_date', label: 'Balance Amount Due Date', type: 'date' },
+  { k: 'balance_paid_date', label: 'Date Balance Paid', type: 'date' },
+  { k: 'contract_details', label: 'Contract Details', type: 'area' },
+  { k: 'contract_in_portal', label: 'Contract (in portal?)' },
+  { k: 'portal_link', label: 'Portal Link' },
+  { k: 'portal_pw', label: 'Portal PW' },
+  { k: 'image_use_optout', label: 'Image Use / Opt Out' },
+  { k: 'dj_contact', label: 'DJ Name and Contact' },
+  { k: 'venue', label: 'Venue' },
+  { k: 'planner_contact', label: 'Planner Name and Contact' },
+  { k: 'referral', label: 'Referral / How Did They Hear About Us', type: 'area' },
+  { k: 'referral_code', label: 'Referral Thank-You / Discount MEV Code Sent' },
+  { k: 'special_details', label: 'Special Details', type: 'area' },
+  { k: 'notes', label: 'Notes', type: 'area' },
+];
+
+function portalPw(c) {
+  if (!c?.last_name || !c?.event_date) return '';
+  const [, mm, dd] = String(c.event_date).split('-');
+  return `${String(c.last_name).toLowerCase().replace(/[^a-z]/g, '')}${mm || ''}${dd || ''}`;
+}
+function infoDefaults(c, siteUrl) {
+  return {
+    client_name: c.display_name || '',
+    event_date: c.event_date || '',
+    event_type: c.event_type || '',
+    portal_link: c.portal_token ? `${siteUrl}/p/${c.portal_token}` : '',
+    portal_pw: portalPw(c),
+  };
+}
+function infoValues(c, siteUrl) {
+  return { ...infoDefaults(c, siteUrl), ...(c.admin_info || {}) };
+}
+
+async function saveAdminInfo(clientId, info) {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  const res = await fetch(`/api/admin/clients/${clientId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ action: 'set_admin_info', admin_info: info }),
+  });
+  if (!res.ok) { let m = 'Save failed'; try { m = (await res.json()).error || m; } catch { /* non-json */ } throw new Error(m); }
+  return true;
+}
+
+function csvCell(v) {
+  const s = v == null ? '' : String(v);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+function exportInfoCsv(clients, siteUrl, stamp) {
+  const header = INFO_FIELDS.map((f) => csvCell(f.label)).join(',');
+  const rows = clients.map((c) => {
+    const v = infoValues(c, siteUrl);
+    return INFO_FIELDS.map((f) => csvCell(v[f.k])).join(',');
+  });
+  const csv = [header, ...rows].join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mev-client-info-${stamp || 'export'}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function ClientInfoForm({ client, siteUrl, onSaved }) {
+  const [form, setForm] = useState(() => infoValues(client, siteUrl));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const set = (k, val) => setForm((f) => ({ ...f, [k]: val }));
+  const fs = { width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.4)', background: 'transparent', color: 'inherit', fontSize: 14 };
+  return (
+    <div style={{ padding: '4px 2px 8px' }}>
+      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px' }}>Private studio notes — never shown to the client. Name, event date/type, portal link, and password are pre-filled; edit anything and Save.</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+        {INFO_FIELDS.map((f) => (
+          <label key={f.k} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, opacity: 0.9, gridColumn: f.type === 'area' ? '1 / -1' : 'auto' }}>
+            <span style={{ fontWeight: 700, letterSpacing: 0.3 }}>{f.label}</span>
+            {f.type === 'area' ? (
+              <textarea rows={2} value={form[f.k] || ''} onChange={(e) => set(f.k, e.target.value)} style={{ ...fs, resize: 'vertical' }} />
+            ) : (
+              <input type={f.type === 'date' ? 'date' : 'text'} inputMode={f.type === 'money' ? 'decimal' : undefined} placeholder={f.type === 'money' ? '$' : ''} value={form[f.k] || ''} onChange={(e) => set(f.k, e.target.value)} style={fs} />
+            )}
+          </label>
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true); setMsg('');
+            try { await saveAdminInfo(client.id, form); setMsg('Saved ✓'); onSaved?.(); }
+            catch (e) { setMsg(e.message || 'Save failed'); }
+            setBusy(false);
+            setTimeout(() => setMsg(''), 2500);
+          }}
+        >
+          {busy ? 'Saving…' : 'Save details'}
+        </button>
+        {msg && <span style={{ fontSize: 13, color: msg.includes('✓') ? '#4ade80' : '#ff6b6b' }}>{msg}</span>}
+      </div>
     </div>
   );
 }
@@ -1292,7 +1415,19 @@ export default function AdminPage() {
       </section>
 
       <section className="panel">
-        <h2 className="neon neon-blue">Clients</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <h2 className="neon neon-blue" style={{ margin: 0 }}>Clients</h2>
+          {clients.length > 0 && (
+            <button
+              type="button"
+              className="btn-ghost"
+              title="Download every client's Details sheet as a CSV (opens in Excel/Sheets)"
+              onClick={() => exportInfoCsv(clients, siteUrl, new Date().toISOString().slice(0, 10))}
+            >
+              ⬇ Export details (CSV)
+            </button>
+          )}
+        </div>
         {listError && <p className="msg-error">{listError}</p>}
         {clients.length === 0 && !listError && (
           <p style={{ color: 'var(--muted)' }}>No clients yet. Create the first one above.</p>
@@ -1388,6 +1523,13 @@ export default function AdminPage() {
                                 >
                                   Files
                                 </button>
+                                <button
+                                  type="button"
+                                  className={activeTool === 'info' ? 'btn-primary' : 'btn-ghost'}
+                                  onClick={() => chooseTool(c, 'info')}
+                                >
+                                  Details
+                                </button>
                                 <CharacterSheetPicker client={c} />
                                 <span style={{ flex: 1 }} />
                                 <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
@@ -1397,6 +1539,7 @@ export default function AdminPage() {
                               {activeTool === 'cut' && renderCutTool()}
                               {activeTool === 'intake' && renderIntakeTool(c)}
                               {activeTool === 'files' && renderFilesTool(c)}
+                              {activeTool === 'info' && <ClientInfoForm client={c} siteUrl={siteUrl} onSaved={loadClients} />}
                             </div>
                           </td>
                         </tr>

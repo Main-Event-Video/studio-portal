@@ -62,6 +62,8 @@ export async function POST(request) {
     preferred_language: clean(body.preferred_language),
     preferred_language_other: clean(body.preferred_language_other),
     venue: clean(body.venue),
+    dj_contact: clean(body.dj_contact),
+    planner_contact: clean(body.planner_contact),
     honoree_names: clean(body.honoree_names),
     age_milestone: clean(body.age_milestone),
     has_logo: typeof body.has_logo === 'boolean' ? body.has_logo : null,
