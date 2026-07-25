@@ -19,9 +19,15 @@ export async function GET(request) {
 
   const db = createServiceClient();
   const nameOverride = url.searchParams.get('name');
+  // regenerate=1 forces a fresh AI write-up (bypasses the cache), e.g. if you
+  // want a new take. Normal downloads reuse the cached write-up — no re-billing.
+  const force = url.searchParams.get('regenerate') === '1';
   let sheet;
   try {
-    sheet = await buildCharacterSheet(db, clientId, nameOverride ? { name: nameOverride } : {});
+    sheet = await buildCharacterSheet(db, clientId, {
+      ...(nameOverride ? { name: nameOverride } : {}),
+      ...(force ? { force: true } : {}),
+    });
   } catch (e) {
     return NextResponse.json({ error: 'Could not build sheet', detail: String(e.message || e) }, { status: 500 });
   }
