@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabaseAdmin';
 import { getClientByToken } from '@/lib/portal';
 import { getViewUrl } from '@/lib/r2';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
+import { applyMediaAction } from '@/lib/mediaOrganize';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,4 +52,32 @@ export async function GET(request) {
   );
 
   return NextResponse.json({ media });
+}
+
+// POST /api/portal/media  { token, action, ... }
+// Lets the client organize THEIR OWN uploads: reorder / rename / move folders.
+// Delete is intentionally NOT allowed here (allowDelete:false) — only the studio
+// admin can delete, so a shared family login can't wipe someone else's photos.
+export async function POST(request) {
+  let body;
+  try { body = await request.json(); } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }); }
+
+  const { token } = body || {};
+  if (!token) return NextResponse.json({ error: 'Missing portal token' }, { status: 400 });
+
+  const client = await getClientByToken(token);
+  if (!client) return NextResponse.json({ error: 'Portal not found' }, { status: 404 });
+  if (client.archived) return NextResponse.json({ error: 'This portal is archived' }, { status: 400 });
+
+  const authed = verifySession(cookies().get(SESSION_COOKIE)?.value);
+  if (authed !== client.id) {
+    return NextResponse.json({ error: 'Please sign in again' }, { status: 401 });
+  }
+
+  const db = createServiceClient();
+  const result = await applyMediaAction(db, client.id, body, { allowDelete: false });
+  if (result.error) {
+    return NextResponse.json({ error: result.error, detail: result.detail }, { status: result.status || 500 });
+  }
+  return NextResponse.json(result);
 }

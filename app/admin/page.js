@@ -5,6 +5,10 @@ import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
 import { parsePhotoSpec } from '@/lib/montage';
 
+// Clients move unwanted / duplicate files into this folder; only the admin
+// actually deletes them ("Empty Trash"). Must match the portal's constant.
+const TRASH_FOLDER = 'Trash';
+
 // Read-only intake display: field groups + how each value renders.
 const INTAKE_SECTIONS = [
   {
@@ -161,6 +165,14 @@ export default function AdminPage() {
   // send-a-cut drag-and-drop
   const [dragOver, setDragOver] = useState(false);
 
+  // client file manager (reorder / rename / move / delete / download)
+  const [mediaFiles, setMediaFiles] = useState([]);
+  const [mediaClientId, setMediaClientId] = useState(null);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [pendingEmpty, setPendingEmpty] = useState(false);
+
   // deliver a cut (step 6)
   const [dKind, setDKind] = useState('rough_cut');
   const [dNote, setDNote] = useState('');
@@ -205,6 +217,17 @@ export default function AdminPage() {
     }
   }, [session, loadClients, loadMontages]);
 
+  // While the Files tool is open, auto-refresh every few seconds so the admin
+  // can watch a client organize in near-real-time (e.g. guiding them on a call).
+  // Paused during the admin's own edits so a poll can't clobber a field mid-type.
+  useEffect(() => {
+    if (activeTool !== 'files' || !openClientId) return undefined;
+    const id = setInterval(() => {
+      if (!mediaBusy) loadMedia(openClientId, true);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [activeTool, openClientId, mediaBusy]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Prime the shared work forms for a specific client. One selection drives
   // BOTH the montage generator and Send a cut inside that client's workspace.
   function pickClient(c) {
@@ -238,6 +261,45 @@ export default function AdminPage() {
     setActiveTool(next);
     if (next === 'montage') loadProjPhotos(c.id); // need the photo count + numbering
     if (next === 'intake') loadIntake(c.id);
+    if (next === 'files') loadMedia(c.id);
+  }
+
+  // Client file manager. Reload after each change so the view can't drift.
+  async function loadMedia(clientId, force = false) {
+    if (!force && mediaClientId === clientId) return;
+    setMediaLoading(true);
+    try {
+      const { files } = await api(`/api/admin/media?clientId=${clientId}`);
+      setMediaFiles(files || []);
+      setMediaClientId(clientId);
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+    setMediaLoading(false);
+  }
+
+  async function mediaAction(clientId, payload) {
+    setMediaBusy(true);
+    try {
+      await api('/api/admin/media', { method: 'POST', body: JSON.stringify({ clientId, ...payload }) });
+      await loadMedia(clientId, true);
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+    setMediaBusy(false);
+  }
+
+  // Reorder within a folder: swap two neighbours, then renumber the folder 1..n.
+  function mediaMove(clientId, folderKey, id, dir) {
+    const ids = mediaFiles.filter((m) => (m.folderPath || '') === folderKey).map((m) => m.id);
+    const i = ids.indexOf(id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    const next = ids.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    mediaAction(clientId, { action: 'renumber', ids: next });
   }
 
   // The client's submitted questionnaire. Cached per client; Refresh forces it.
@@ -619,6 +681,141 @@ export default function AdminPage() {
               : 'Upload & send'}
           </button>
         </form>
+      </div>
+    );
+  }
+
+  function renderFilesTool(c) {
+    const showing = mediaClientId === c.id;
+    const files = showing ? mediaFiles : [];
+    const groups = {};
+    for (const f of files) {
+      const k = f.folderPath || '';
+      (groups[k] = groups[k] || []).push(f);
+    }
+    const keys = Object.keys(groups).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, undefined, { numeric: true })));
+    const folderNames = keys.filter((k) => k !== '');
+    return (
+      <div className="tool-window" style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>
+            {mediaLoading && !showing
+              ? 'Loading files…'
+              : `${files.length} file${files.length === 1 ? '' : 's'}. Edit a number to reorder, rename files or folders, type a folder to move a file, or delete. Changes save as you make them — this view auto-refreshes, so you can watch a client organize live.`}
+          </p>
+          <button type="button" className="btn-ghost" onClick={() => loadMedia(c.id, true)}>Refresh</button>
+        </div>
+        <datalist id={`folders_${c.id}`}>
+          {folderNames.map((n) => <option key={n} value={n} />)}
+        </datalist>
+        {showing && files.length === 0 && !mediaLoading && (
+          <p style={{ color: 'var(--muted)', fontSize: 14 }}>This client hasn’t uploaded any files yet.</p>
+        )}
+        {keys.map((k) => {
+          const list = groups[k];
+          return (
+            <section key={k || '__loose__'} style={{ marginTop: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                {k === '' ? (
+                  <h3 className="folder-head" style={{ margin: 0 }}>Loose files</h3>
+                ) : k === TRASH_FOLDER ? (
+                  <h3 className="folder-head" style={{ margin: 0 }}>
+                    Trash <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>· client-flagged for removal</span>
+                  </h3>
+                ) : (
+                  <input
+                    key={`fname_${k}`}
+                    defaultValue={k}
+                    title="Rename this whole folder"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (v && v !== k) mediaAction(c.id, { action: 'renameFolder', from: k, to: v });
+                      else if (!v) e.target.value = k;
+                    }}
+                    style={{ fontWeight: 700, maxWidth: 280 }}
+                  />
+                )}
+                <span style={{ flex: 1 }} />
+                {k === TRASH_FOLDER ? (
+                  pendingEmpty ? (
+                    <span style={{ whiteSpace: 'nowrap' }}>
+                      <button type="button" className="btn-ghost" style={{ color: 'var(--red)' }} disabled={mediaBusy} onClick={() => { mediaAction(c.id, { action: 'deleteMany', ids: list.map((m) => m.id) }); setPendingEmpty(false); }}>
+                        Confirm empty ({list.length})
+                      </button>{' '}
+                      <button type="button" className="btn-ghost" onClick={() => setPendingEmpty(false)}>Cancel</button>
+                    </span>
+                  ) : (
+                    <button type="button" className="btn-ghost" style={{ color: 'var(--red)' }} onClick={() => setPendingEmpty(true)}>
+                      Empty Trash
+                    </button>
+                  )
+                ) : (
+                  <button type="button" className="btn-ghost" disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'renumber', ids: list.map((m) => m.id) })}>
+                    Renumber 1…{list.length}
+                  </button>
+                )}
+              </div>
+              {list.map((f, idx) => (
+                <div
+                  key={`${f.id}-${f.sortNumber}-${f.folderPath}-${f.filename}`}
+                  className="upload-row"
+                  style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap', borderBottom: '1px solid var(--line)', padding: '8px 0' }}
+                >
+                  <input
+                    type="number"
+                    defaultValue={f.sortNumber ?? ''}
+                    title="Order number"
+                    onBlur={(e) => {
+                      const raw = e.target.value.trim();
+                      const val = raw === '' ? null : Number(raw);
+                      if (String(f.sortNumber ?? '') !== String(raw)) mediaAction(c.id, { action: 'update', id: f.id, sortNumber: val });
+                    }}
+                    style={{ width: 56 }}
+                  />
+                  {f.isVideo ? (
+                    <span className="pill" style={{ fontSize: 11 }}>video</span>
+                  ) : (
+                    <img src={f.url} alt={f.filename} style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />
+                  )}
+                  <input
+                    defaultValue={f.filename}
+                    title="File name"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (v && v !== f.filename) mediaAction(c.id, { action: 'update', id: f.id, filename: v });
+                      else if (!v) e.target.value = f.filename;
+                    }}
+                    style={{ flex: '1 1 160px', minWidth: 120 }}
+                  />
+                  <input
+                    list={`folders_${c.id}`}
+                    defaultValue={f.folderPath || ''}
+                    placeholder="(loose)"
+                    title="Folder — type or pick to move this file"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (v !== (f.folderPath || '')) mediaAction(c.id, { action: 'update', id: f.id, folderPath: v });
+                    }}
+                    style={{ width: 130 }}
+                  />
+                  <span style={{ whiteSpace: 'nowrap' }}>
+                    <button type="button" className="btn-ghost" disabled={mediaBusy || idx === 0} onClick={() => mediaMove(c.id, k, f.id, -1)} title="Move up">↑</button>{' '}
+                    <button type="button" className="btn-ghost" disabled={mediaBusy || idx === list.length - 1} onClick={() => mediaMove(c.id, k, f.id, 1)} title="Move down">↓</button>
+                  </span>
+                  <a href={f.url} download={f.filename} className="linklike">Download</a>
+                  {pendingDelete === f.id ? (
+                    <span style={{ whiteSpace: 'nowrap' }}>
+                      <button type="button" className="btn-ghost" style={{ color: 'var(--red)' }} disabled={mediaBusy} onClick={() => { mediaAction(c.id, { action: 'delete', id: f.id }); setPendingDelete(null); }}>Confirm delete</button>{' '}
+                      <button type="button" className="btn-ghost" onClick={() => setPendingDelete(null)}>Cancel</button>
+                    </span>
+                  ) : (
+                    <button type="button" className="linklike" style={{ color: 'var(--red)' }} onClick={() => setPendingDelete(f.id)}>Delete</button>
+                  )}
+                </div>
+              ))}
+            </section>
+          );
+        })}
       </div>
     );
   }
@@ -1092,6 +1289,13 @@ export default function AdminPage() {
                                 >
                                   Intake form
                                 </button>
+                                <button
+                                  type="button"
+                                  className={activeTool === 'files' ? 'btn-primary' : 'btn-ghost'}
+                                  onClick={() => chooseTool(c, 'files')}
+                                >
+                                  Files
+                                </button>
                                 <span style={{ flex: 1 }} />
                                 <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
                               </div>
@@ -1099,6 +1303,7 @@ export default function AdminPage() {
                               {activeTool === 'montage' && renderMontageTool(c)}
                               {activeTool === 'cut' && renderCutTool()}
                               {activeTool === 'intake' && renderIntakeTool(c)}
+                              {activeTool === 'files' && renderFilesTool(c)}
                             </div>
                           </td>
                         </tr>

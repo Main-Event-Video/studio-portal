@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+// Files moved here are set aside for the studio to clear — clients never delete.
+// Must match the admin's constant in app/admin/page.js.
+const TRASH_FOLDER = 'Trash';
+
 // "001.jpg" -> 1 ; "12 - dance.mov" -> 12 ; "IMG_0214.jpeg" -> null
 function leadingNumber(name) {
   const m = name.match(/^\s*0*(\d+)/);
@@ -63,6 +67,8 @@ export default function Uploader({ token }) {
   const [items, setItems] = useState([]);
   const [mine, setMine] = useState([]);
   const [loadingMine, setLoadingMine] = useState(true);
+  const [orgBusy, setOrgBusy] = useState(false);
+  const [orgMsg, setOrgMsg] = useState('');
   const fileRef = useRef(null);
   const folderRef = useRef(null);
 
@@ -89,6 +95,40 @@ export default function Uploader({ token }) {
   useEffect(() => {
     loadMine();
   }, [loadMine]);
+
+  // Organize your own uploads: reorder / rename / move / send to Trash. Deleting
+  // for good is left to the studio — anything you move to "Trash" just gets set
+  // aside for them to clear.
+  async function organize(payload) {
+    setOrgBusy(true);
+    setOrgMsg('');
+    try {
+      const res = await fetch('/api/portal/media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, ...payload }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || 'Could not save your change');
+      }
+      await loadMine();
+    } catch (e) {
+      setOrgMsg(e.message || 'Something went wrong.');
+    }
+    setOrgBusy(false);
+  }
+
+  // Reorder within a folder: swap neighbours, then renumber that folder 1..n.
+  function moveWithin(folderKey, id, dir) {
+    const ids = mine.filter((m) => (m.folderPath || '') === folderKey).map((m) => m.id);
+    const i = ids.indexOf(id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    const next = ids.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    organize({ action: 'renumber', ids: next });
+  }
 
   function putWithProgress(url, file, onProgress) {
     return new Promise((resolve, reject) => {
@@ -314,29 +354,116 @@ export default function Uploader({ token }) {
       )}
 
       <h2 className="neon neon-blue" style={{ fontSize: 18, marginTop: 32 }}>Files you’ve sent us</h2>
+      <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -4, lineHeight: 1.6 }}>
+        Put them in the order you want (edit the number), rename anything, move a file by typing a folder
+        name, and drop duplicates or ones you don’t want into <strong>Trash</strong> — we’ll clear those
+        for you. Everyone in your family can help here.
+      </p>
+      {orgMsg && <p className="msg-error" style={{ fontSize: 13 }}>{orgMsg}</p>}
       {loadingMine ? (
         <p style={{ color: 'var(--muted)' }}>Loading…</p>
       ) : mine.length === 0 ? (
         <p style={{ color: 'var(--muted)' }}>Nothing yet — your uploads will appear here.</p>
       ) : (
-        groupKeys.map((k) => (
-          <section key={k || 'loose'} style={{ marginTop: 18 }}>
-            <h3 className="folder-head">{k === '' ? 'Loose files' : k}</h3>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {grouped[k].map((m) => (
-                <li key={m.id} className="upload-row">
-                  <span>
-                    {m.sortNumber != null ? `${String(m.sortNumber).padStart(3, '0')} · ` : ''}
-                    {m.filename}
-                  </span>
-                  <span style={{ color: 'var(--muted)' }}>
-                    {(m.contentType || '').startsWith('video') ? 'Video' : 'Photo'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))
+        <>
+          <datalist id="my-folders">
+            {groupKeys.filter((k) => k !== '').map((n) => <option key={n} value={n} />)}
+          </datalist>
+          {groupKeys.map((k) => {
+            const list = grouped[k];
+            const isTrash = k === TRASH_FOLDER;
+            return (
+              <section key={k || 'loose'} style={{ marginTop: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  {k === '' ? (
+                    <h3 className="folder-head" style={{ margin: 0 }}>Loose files</h3>
+                  ) : isTrash ? (
+                    <h3 className="folder-head" style={{ margin: 0 }}>
+                      Trash <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>· we’ll clear these</span>
+                    </h3>
+                  ) : (
+                    <input
+                      key={`fh_${k}`}
+                      defaultValue={k}
+                      title="Rename this folder"
+                      disabled={orgBusy}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v && v !== k) organize({ action: 'renameFolder', from: k, to: v });
+                        else if (!v) e.target.value = k;
+                      }}
+                      style={{ fontWeight: 700, maxWidth: 260 }}
+                    />
+                  )}
+                  {!isTrash && (
+                    <>
+                      <span style={{ flex: 1 }} />
+                      <button type="button" className="linklike" disabled={orgBusy} onClick={() => organize({ action: 'renumber', ids: list.map((m) => m.id) })}>
+                        Number 1…{list.length} in this order
+                      </button>
+                    </>
+                  )}
+                </div>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {list.map((m, idx) => (
+                    <li
+                      key={`${m.id}-${m.sortNumber}-${m.folderPath}-${m.filename}`}
+                      className="upload-row"
+                      style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+                    >
+                      <input
+                        type="number"
+                        defaultValue={m.sortNumber ?? ''}
+                        title="Order number"
+                        disabled={orgBusy}
+                        onBlur={(e) => {
+                          const raw = e.target.value.trim();
+                          if (String(m.sortNumber ?? '') !== String(raw)) organize({ action: 'update', id: m.id, sortNumber: raw === '' ? null : Number(raw) });
+                        }}
+                        style={{ width: 52 }}
+                      />
+                      <input
+                        defaultValue={m.filename}
+                        title="File name"
+                        disabled={orgBusy}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          if (v && v !== m.filename) organize({ action: 'update', id: m.id, filename: v });
+                          else if (!v) e.target.value = m.filename;
+                        }}
+                        style={{ flex: '1 1 150px', minWidth: 110 }}
+                      />
+                      <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+                        {(m.contentType || '').startsWith('video') ? 'Video' : 'Photo'}
+                      </span>
+                      <input
+                        list="my-folders"
+                        defaultValue={m.folderPath || ''}
+                        placeholder="(loose)"
+                        title="Type a folder to move this file"
+                        disabled={orgBusy}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          if (v !== (m.folderPath || '')) organize({ action: 'update', id: m.id, folderPath: v });
+                        }}
+                        style={{ width: 120 }}
+                      />
+                      <span style={{ whiteSpace: 'nowrap' }}>
+                        <button type="button" className="linklike" disabled={orgBusy || idx === 0} onClick={() => moveWithin(k, m.id, -1)} title="Move up">↑</button>{' '}
+                        <button type="button" className="linklike" disabled={orgBusy || idx === list.length - 1} onClick={() => moveWithin(k, m.id, 1)} title="Move down">↓</button>
+                      </span>
+                      {isTrash ? (
+                        <button type="button" className="linklike" disabled={orgBusy} onClick={() => organize({ action: 'update', id: m.id, folderPath: '' })}>Restore</button>
+                      ) : (
+                        <button type="button" className="linklike" style={{ color: 'var(--red)' }} disabled={orgBusy} onClick={() => organize({ action: 'update', id: m.id, folderPath: TRASH_FOLDER })}>Move to Trash</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </>
       )}
     </main>
   );
