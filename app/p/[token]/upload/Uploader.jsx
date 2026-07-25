@@ -440,7 +440,7 @@ export default function Uploader({ token }) {
   // ---- derived (upload view) ----
   const grouped = mine.reduce((acc, m) => { const k = m.folderPath || ''; (acc[k] = acc[k] || []).push(m); return acc; }, {});
   const folderBoxes = Object.keys(grouped).filter((k) => k !== '' && k !== TRASH_FOLDER && !isCharacterFolder(k));
-  const allBoxes = Array.from(new Set([...serverBoxNames, ...folderBoxes]));
+  const allBoxes = Array.from(new Set([...serverBoxNames, ...folderBoxes])).filter((k) => !isCharacterFolder(k));
   const openCount = (grouped[''] || []).length;
   const total = mine.length;
   const pmsg = total === 0 ? 'Add your first photos 👇' : total < 6 ? `Great start — ${total} in!` : total < 16 ? `Nice — ${total} photos in! 🎉` : `Wow, ${total} photos! 🔥`;
