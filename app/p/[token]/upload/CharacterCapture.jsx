@@ -117,13 +117,13 @@ const POSE_DEMO = {
   'face-front-neutral': { type: 'head', tf: 'rotateY(0deg) rotateX(9deg)' },
   'face-front-smile':   { type: 'head', tf: 'rotateY(0deg) rotateX(9deg)', mouth: 'smile' },
   'face-front-angry':   { type: 'head', tf: 'rotateY(0deg) rotateX(9deg)', brow: 'angry' },
-  'face-34-left':       { type: 'head', tf: 'rotateY(52deg) rotateX(0deg)', arrow: 'right' },
-  'face-34-right':      { type: 'head', tf: 'rotateY(-52deg) rotateX(0deg)', arrow: 'left' },
+  'face-34-left':       { type: 'head', tf: 'rotateY(40deg) rotateX(0deg)', arrow: 'right' },
+  'face-34-right':      { type: 'head', tf: 'rotateY(-40deg) rotateX(0deg)', arrow: 'left' },
   'face-profile-left':  { type: 'head', tf: 'rotateY(80deg) rotateX(0deg)', arrow: 'right' },
   'face-profile-right': { type: 'head', tf: 'rotateY(-80deg) rotateX(0deg)', arrow: 'left' },
-  'head-top':           { type: 'head', tf: 'rotateY(0deg) rotateX(-60deg)' },
+  'head-top':           { type: 'head', tf: 'rotateY(0deg) rotateX(-72deg)' },
   'body-front-apose':   { type: 'body', tf: 'rotateY(0deg) rotateX(6deg)' },
-  'body-back':          { type: 'body', tf: 'rotateY(180deg) rotateX(0deg)' },
+  'body-back':          { type: 'body', tf: 'rotateY(180deg) rotateX(0deg)', arrow: 'circle' },
   'body-left':          { type: 'body', tf: 'rotateY(58deg) rotateX(0deg)', arrow: 'right' },
   'body-right':         { type: 'body', tf: 'rotateY(-58deg) rotateX(0deg)', arrow: 'left' },
 };
@@ -150,7 +150,7 @@ function PoseDemo({ slug }) {
           </div>
         )}
       </div>
-      {d.arrow && <div className="pdarrow">{d.arrow === 'right' ? '→' : '←'}</div>}
+      {d.arrow && <div className="pdarrow">{d.arrow === 'right' ? '→' : d.arrow === 'left' ? '←' : '↻'}</div>}
     </div>
   );
 }

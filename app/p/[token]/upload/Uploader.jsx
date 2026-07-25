@@ -117,6 +117,11 @@ const CSS = `
 #uploadflow .charrow .crgo{font-size:22px;color:var(--album);font-weight:800;flex:0 0 auto;}
 #uploadflow .charadd{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;border:1.5px dashed var(--album);background:transparent;color:#e9e2ff;border-radius:14px;padding:12px;font-size:15px;font-weight:800;cursor:pointer;margin-top:2px;}
 #uploadflow .charadd:active{transform:scale(.99);}
+#uploadflow .charitem{margin-bottom:12px;}
+#uploadflow .charitem .charrow{margin-bottom:6px;}
+#uploadflow .cractions{display:flex;gap:16px;align-items:center;padding:0 6px;}
+#uploadflow .cract{font-size:12.5px;font-weight:800;color:var(--neon);text-decoration:none;background:none;border:none;cursor:pointer;padding:2px 0;font-family:inherit;}
+#uploadflow .cract.del{color:#ff6b7f;margin-left:auto;}
 #uploadflow .up-item{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:6px 2px;border-bottom:1px solid var(--line);color:var(--mut);}
 #uploadflow .up-item .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #uploadflow .mob{display:none;}
@@ -296,6 +301,17 @@ export default function Uploader({ token }) {
       setActiveChar({ id: ch.id, name: ch.name, existing: ch.slots || [] });
     }
   }, [characters]);
+
+  async function deleteCharacter(ch) {
+    if (typeof window !== 'undefined' && !window.confirm(`Delete the character “${ch.name || 'Unnamed'}”? Main Event Studio can restore it if you change your mind.`)) return;
+    try {
+      await fetch('/api/portal/character', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action: 'delete', characterId: ch.id }),
+      });
+    } catch { /* best-effort; roster reload reflects the result */ }
+    loadCharacters();
+  }
 
   // Rebuild the timeline whenever the server data changes. This is the single
   // source of truth for play order (shared with the montage render path).
@@ -735,18 +751,32 @@ export default function Uploader({ token }) {
             {characters.map((ch) => {
               const done = ch.done >= ch.total;
               return (
-                <button
-                  key={ch.id}
-                  className="charrow"
-                  onClick={() => setActiveChar({ id: ch.id, name: ch.name, existing: ch.slots || [] })}
-                >
-                  <span className="crmeta">
-                    <span className="crname">{ch.name || 'Unnamed character'}</span>
-                    <span className="crsub">{done ? 'All 12 shots in — tap to review or retake' : 'Tap to keep going'}</span>
-                  </span>
-                  <span className={`crpill ${done ? 'done' : 'wip'}`}>{done ? '✓ 12/12' : `${ch.done}/${ch.total}`}</span>
-                  <span className="crgo">›</span>
-                </button>
+                <div key={ch.id} className="charitem">
+                  <button
+                    className="charrow"
+                    onClick={() => setActiveChar({ id: ch.id, name: ch.name, existing: ch.slots || [] })}
+                  >
+                    <span className="crmeta">
+                      <span className="crname">{ch.name || 'Unnamed character'}</span>
+                      <span className="crsub">{done ? 'All 12 shots in — tap to review or retake' : 'Tap to keep going'}</span>
+                    </span>
+                    <span className={`crpill ${done ? 'done' : 'wip'}`}>{done ? '✓ 12/12' : `${ch.done}/${ch.total}`}</span>
+                    <span className="crgo">›</span>
+                  </button>
+                  <div className="cractions">
+                    {ch.done > 0 && (
+                      <a
+                        className="cract"
+                        href={`/api/portal/character-sheet?token=${encodeURIComponent(token)}&characterId=${encodeURIComponent(ch.id)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        See your character sheet ↗
+                      </a>
+                    )}
+                    <button type="button" className="cract del" onClick={() => deleteCharacter(ch)}>Delete</button>
+                  </div>
+                </div>
               );
             })}
             <button className="charadd" onClick={() => setActiveChar({ build: true })}>

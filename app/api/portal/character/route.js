@@ -24,7 +24,7 @@ import { buildCharacterSheet } from '@/lib/characterSheet';
 import { sendCharacterSheetReady } from '@/lib/email';
 import {
   listCharacters, getCharacter, createCharacter, ensureCharacter,
-  renameCharacter, markCharacterDone,
+  renameCharacter, markCharacterDone, markCharacterDeleted,
 } from '@/lib/characters';
 
 export const runtime = 'nodejs';
@@ -79,6 +79,16 @@ export async function POST(request) {
     }
     try { await renameCharacter(db, character.id, body.name); return NextResponse.json({ ok: true }); }
     catch (e) { return NextResponse.json({ error: 'Could not rename', detail: e.message }, { status: 500 }); }
+  }
+
+  if (action === 'delete') {
+    // Soft-delete: hide from the roster, keep the row + photos (recoverable).
+    const character = await getCharacter(db, body.characterId);
+    if (!character || character.client_id !== client.id) {
+      return NextResponse.json({ error: 'Character not found' }, { status: 404 });
+    }
+    try { await markCharacterDeleted(db, character.id); return NextResponse.json({ ok: true }); }
+    catch (e) { return NextResponse.json({ error: 'Could not delete', detail: e.message }, { status: 500 }); }
   }
 
   // slot / extra / done all act on ONE character. ensureCharacter validates the
