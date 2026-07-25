@@ -15,9 +15,12 @@ Committed on `main` locally (NOT pushed yet — push from your machine):
 Run these before it all works live:
 1. `git push origin main` from your machine.
 2. Supabase → SQL Editor, run in order (if not already):
-     sql/005_studio_boxes.sql   (albums table)
-     sql/006_timeline_pos.sql   (timeline order column)
-   (Character Build needs NO migration — it uses a reserved folder sentinel.)
+     sql/005_studio_boxes.sql            (albums table)
+     sql/006_timeline_pos.sql            (timeline order column)
+     sql/007_character_name.sql          (subject/character name field)
+     sql/008_character_profile_cache.sql (caches the AI write-up so it bills once)
+   (Character Build capture needs NO migration — it uses a reserved folder sentinel.
+    008 is only needed for write-up caching; without it, each sheet build re-generates.)
 3. Vercel env vars to add:
      ANTHROPIC_API_KEY   — enables the AI character write-up (Claude vision).
      ANTHROPIC_MODEL     — OPTIONAL; overrides the vision model id
