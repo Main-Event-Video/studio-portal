@@ -46,66 +46,60 @@ function readEntry(entry, path = '') {
 }
 
 const CSS = `
-#uploadflow{--red:#ff2e63;--blue:#38b6ff;--gold:#e8cc8a;--pnl:#181120;--pnl2:#1f1729;--line:#2c2438;--txt:#f2ecf7;--mut:#b3a9c1;
-  --rglow:0 0 8px rgba(255,46,99,.5);--rglowS:0 0 16px rgba(255,46,99,.85);--bglow:0 0 8px rgba(56,182,255,.5);--bglowS:0 0 16px rgba(56,182,255,.85);
-  max-width:640px;margin:0 auto;padding:8px 2px 70px;color:var(--txt);}
-#uploadflow .back{color:var(--mut);text-decoration:none;font-size:14px;}
-#uploadflow .kick{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--red);margin:12px 0 6px;font-weight:800;text-shadow:var(--rglow);}
-#uploadflow h1{font-size:32px;line-height:1.05;margin:2px 0 8px;color:#fff;font-weight:800;text-shadow:0 0 14px rgba(255,46,99,.45);}
+#uploadflow{--pnl:#181120;--pnl2:#1f1729;--line:#2c2438;--txt:#eae6f0;--titlecol:#f4f1f8;--mut:#93a3b6;
+  --blue:#6d93b3;--bluedim:#3a566e;--red:#ff3b63;--neon:#38b6ff;--shadow:0 6px 16px rgba(0,0,0,.35);
+  max-width:560px;margin:0 auto;padding:8px 2px 70px;color:var(--txt);}
+#uploadflow .back,#uploadflow .backbtn{color:var(--mut);text-decoration:none;font-size:14px;background:none;border:none;cursor:pointer;padding:0;margin-bottom:6px;}
+#uploadflow .kick{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--blue);margin:12px 0 6px;font-weight:800;}
+#uploadflow h1{font-size:32px;line-height:1.05;margin:2px 0 8px;color:var(--titlecol);font-weight:800;}
 #uploadflow .say{font-size:18px;line-height:1.4;color:var(--mut);margin:0 0 12px;}
-#uploadflow .tip{border-left:3px solid var(--blue);background:rgba(56,182,255,.10);padding:10px 12px;border-radius:0 12px 12px 0;font-size:14px;margin:0 0 16px;box-shadow:var(--bglow);}
-#uploadflow .tip b{color:#fff;}
+#uploadflow .tip{border-left:3px solid var(--blue);background:rgba(109,147,179,.10);padding:10px 12px;border-radius:0 12px 12px 0;font-size:14px;margin:0 0 16px;}
+#uploadflow .tip b{color:var(--titlecol);}
 #uploadflow .prog{display:flex;align-items:center;gap:12px;margin:0 0 16px;}
-#uploadflow .pmsg{font-size:17px;font-weight:800;color:#fff;white-space:nowrap;}
-#uploadflow .pbar{flex:1;height:12px;border-radius:999px;background:#241a30;overflow:hidden;}
-#uploadflow .pfill{height:100%;border-radius:999px;transition:width .4s;background:linear-gradient(90deg,var(--red),var(--blue));}
+#uploadflow .pmsg{font-size:17px;font-weight:800;color:var(--titlecol);white-space:nowrap;}
+#uploadflow .pbar{flex:1;height:12px;border-radius:999px;background:#241f2e;overflow:hidden;}
+#uploadflow .pfill{height:100%;border-radius:999px;transition:width .4s;background:var(--blue);}
 #uploadflow .addrow{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;}
-#uploadflow .big{flex:1;min-width:150px;border:none;border-radius:16px;padding:18px;font-size:19px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;}
+#uploadflow .big{flex:1;min-width:150px;border:1.5px solid var(--neon);border-radius:16px;padding:18px;font-size:19px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;color:var(--neon);transition:transform .08s;}
 #uploadflow .big:active{transform:scale(.97);}
-#uploadflow .redbtn{background:linear-gradient(180deg,#ff3a6b,#df2151);color:#fff;box-shadow:var(--rglowS);}
-#uploadflow .bluebtn{background:linear-gradient(180deg,#4cbcff,#1f9fef);color:#04121d;box-shadow:var(--bglowS);}
-#uploadflow .window{border:1.5px solid var(--red);border-radius:20px;background:var(--pnl);padding:14px;box-shadow:var(--rglow),inset 0 0 18px rgba(255,46,99,.06);}
+#uploadflow .window{border:1.5px solid var(--red);border-radius:20px;background:var(--pnl);padding:14px;}
 #uploadflow .dragnote{font-size:15px;text-align:center;color:var(--mut);margin:0 0 12px;}
-#uploadflow .dragnote b{font-weight:800;}
+#uploadflow .dragnote b{font-weight:800;color:var(--blue);}
 #uploadflow .cols{display:flex;gap:12px;align-items:stretch;}
 #uploadflow .col{flex:1;min-width:0;display:flex;flex-direction:column;}
-#uploadflow .lbl{font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;margin:2px 2px 8px;}
-#uploadflow .lbl.red{color:var(--red);text-shadow:var(--rglow);}
-#uploadflow .lbl.blue{color:var(--blue);text-shadow:var(--bglow);}
-#uploadflow .openzone{border:2px dashed var(--red);border-radius:16px;padding:16px;text-align:center;box-shadow:inset 0 0 14px rgba(255,46,99,.08);cursor:pointer;flex:1;display:flex;flex-direction:column;justify-content:center;}
-#uploadflow .openzone.drop{border-color:#ff6b8f;background:#26101a;box-shadow:var(--rglowS);}
-#uploadflow .obig{font-size:22px;font-weight:800;color:#fff;}
-#uploadflow .otag{font-size:13px;font-weight:700;font-style:italic;color:var(--red);margin-top:6px;}
+#uploadflow .lbl{font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;margin:2px 2px 8px;color:var(--blue);}
+#uploadflow .openzone{border:1.5px solid var(--neon);border-radius:16px;padding:16px;text-align:center;cursor:pointer;flex:1;display:flex;flex-direction:column;justify-content:center;}
+#uploadflow .openzone.drop{background:#122031;}
+#uploadflow .obig{font-size:22px;font-weight:800;color:var(--titlecol);}
+#uploadflow .otag{font-size:13px;font-weight:700;color:var(--neon);margin-top:6px;}
 #uploadflow .ofolder{font-size:12.5px;color:var(--mut);margin-top:10px;line-height:1.4;}
-#uploadflow .ocount{font-size:15px;font-weight:800;color:var(--red);margin-top:12px;}
-#uploadflow .box{border:1.5px solid var(--blue);border-radius:16px;background:var(--pnl2);padding:12px 14px;margin-bottom:10px;box-shadow:var(--bglow);cursor:pointer;}
+#uploadflow .ocount{font-size:15px;font-weight:800;color:var(--blue);margin-top:12px;}
+#uploadflow .box{border:1.5px solid var(--neon);border-radius:16px;background:var(--pnl2);padding:12px 14px;margin-bottom:10px;cursor:pointer;transition:transform .08s;}
 #uploadflow .box:active{transform:scale(.98);}
-#uploadflow .box.drop{background:#101f2b;box-shadow:var(--bglowS);}
+#uploadflow .box.drop{background:#122031;}
 #uploadflow .bhead{display:flex;align-items:center;gap:12px;}
 #uploadflow .bicon{font-size:22px;}
-#uploadflow .bname{font-size:18px;font-weight:800;color:#fff;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#uploadflow .bname.sample{color:#6b6478;font-style:italic;font-weight:500;font-size:15px;}
-#uploadflow .bcount{margin-left:auto;font-size:13px;color:var(--blue);font-weight:700;white-space:nowrap;flex:0 0 auto;}
+#uploadflow .bname{font-size:17px;font-weight:800;color:var(--titlecol);min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.2;}
+#uploadflow .bname.sample{color:#8fb0cc;font-style:italic;font-weight:500;font-size:15px;}
+#uploadflow .bcount{margin-left:auto;font-size:13px;color:var(--mut);font-weight:700;white-space:nowrap;flex:0 0 auto;}
 #uploadflow .btag{margin-left:auto;font-size:12px;color:var(--mut);font-style:italic;white-space:nowrap;flex:0 0 auto;}
-#uploadflow .newbox{border:2px dashed var(--blue);color:var(--blue);border-radius:16px;padding:14px;text-align:center;font-size:15px;font-weight:800;cursor:pointer;box-shadow:var(--bglow);}
+#uploadflow .newbox{border:1.5px solid var(--neon);color:#e6eef5;background:var(--bluedim);border-radius:16px;padding:14px;text-align:center;font-size:15px;font-weight:800;cursor:pointer;}
 #uploadflow .newrow{display:flex;gap:8px;margin-top:8px;}
-#uploadflow .newrow input{flex:1;background:var(--pnl2);color:#fff;border:1.5px solid var(--blue);border-radius:12px;padding:12px;font-size:15px;}
-#uploadflow .newrow button{background:var(--blue);border:none;color:#04121d;border-radius:12px;padding:0 16px;font-weight:800;cursor:pointer;}
-#uploadflow .seebtn{width:100%;border:none;border-radius:20px;padding:20px;font-size:20px;font-weight:800;cursor:pointer;margin-top:16px;background:linear-gradient(180deg,#ff3a6b,#df2151);color:#fff;box-shadow:var(--rglowS);}
+#uploadflow .newrow input{flex:1;background:var(--pnl2);color:#fff;border:1.5px solid var(--neon);border-radius:12px;padding:12px;font-size:15px;}
+#uploadflow .newrow button{background:var(--bluedim);border:1.5px solid var(--neon);color:#e6eef5;border-radius:12px;padding:0 16px;font-weight:800;cursor:pointer;}
+#uploadflow .seebtn{width:100%;border:1.5px solid var(--neon);border-radius:20px;padding:20px;font-size:20px;font-weight:800;cursor:pointer;margin-top:16px;background:var(--bluedim);color:#e6eef5;box-shadow:var(--shadow);}
 #uploadflow .up-item{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:6px 2px;border-bottom:1px solid var(--line);color:var(--mut);}
 #uploadflow .up-item .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#uploadflow .miniprog{height:6px;border-radius:999px;background:#241a30;overflow:hidden;margin-top:4px;}
-#uploadflow .miniprog span{display:block;height:100%;background:var(--blue);}
+#uploadflow .mob{display:none;}
 /* order view */
 #uploadflow .osec{margin-top:20px;}
-#uploadflow .osec.box{border:1.5px solid var(--blue);border-radius:16px;background:var(--pnl);padding:12px;box-shadow:var(--bglow);cursor:default;}
+#uploadflow .osec.box{border:1.5px solid var(--neon);border-radius:16px;background:var(--pnl);padding:12px;cursor:default;}
 #uploadflow .ohead{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
-#uploadflow .ohead h3{margin:0;font-size:18px;color:#fff;}
-#uploadflow .ohead .rn{font-weight:800;font-size:16px;color:#fff;background:none;border:none;border-radius:6px;padding:2px 4px;max-width:200px;}
+#uploadflow .ohead h3{margin:0;font-size:18px;color:var(--titlecol);}
+#uploadflow .ohead .rn{font-weight:800;font-size:16px;color:var(--titlecol);background:none;border:none;border-radius:6px;padding:2px 4px;max-width:200px;}
 #uploadflow .ohead .rn:focus{outline:1px solid var(--line);background:var(--pnl2);}
 #uploadflow .ohead .cnt{margin-left:auto;color:var(--mut);font-size:12px;}
 #uploadflow .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;}
-@media(max-width:640px){#uploadflow .grid{grid-template-columns:repeat(3,1fr);}}
 #uploadflow .pcard{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--pnl2);}
 #uploadflow .pthumb{position:relative;width:100%;aspect-ratio:1/1;background:#000;}
 #uploadflow .pthumb img{width:100%;height:100%;object-fit:cover;}
@@ -114,8 +108,20 @@ const CSS = `
 #uploadflow .pctrls{display:flex;align-items:center;justify-content:center;gap:4px;padding:5px;}
 #uploadflow .ib{background:var(--pnl);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:2px 9px;font-size:15px;line-height:1.1;cursor:pointer;font-weight:700;}
 #uploadflow .ib:disabled{opacity:.3;cursor:default;}
-#uploadflow .msel{width:100%;margin-top:5px;background:var(--pnl);color:var(--txt);border:1px solid var(--blue);border-radius:8px;font-size:12px;padding:5px;}
-#uploadflow .backbtn{background:none;border:none;color:var(--blue);font-size:15px;font-weight:700;cursor:pointer;padding:0;margin-bottom:6px;}
+#uploadflow .msel{width:100%;margin-top:5px;background:var(--pnl);color:var(--txt);border:1px solid var(--neon);border-radius:8px;font-size:12px;padding:5px;}
+@media(max-width:640px){
+  #uploadflow .grid{grid-template-columns:repeat(3,1fr);}
+  #uploadflow .ofolder{display:none;} #uploadflow .bcount{display:none;}
+  #uploadflow .addrow{display:none;} #uploadflow .dragnote{display:none;}
+  #uploadflow .desk{display:none;} #uploadflow .mob{display:inline;}
+  #uploadflow h1{font-size:26px;} #uploadflow .say{font-size:15px;margin-bottom:10px;}
+  #uploadflow .tip{font-size:13px;margin-bottom:12px;} #uploadflow .prog{margin-bottom:12px;}
+  #uploadflow .cols{flex-direction:column;gap:10px;} #uploadflow .openzone{flex:none;padding:14px;}
+  #uploadflow .lbl{margin:2px 2px 6px;} #uploadflow .window{padding:12px;}
+  #uploadflow .box{padding:11px 13px;margin-bottom:8px;}
+  #uploadflow .bname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #uploadflow .newbox{padding:12px;} #uploadflow .seebtn{padding:16px;font-size:18px;margin-top:12px;}
+}
 `;
 
 export default function Uploader({ token }) {
@@ -302,7 +308,7 @@ export default function Uploader({ token }) {
           )}
 
           <div className="window" style={{ marginTop: 14 }}>
-            <p className="dragnote">Drag photos into <b style={{ color: 'var(--red)' }}>the open</b> — or into <b style={{ color: 'var(--blue)' }}>a box</b>. Either works!</p>
+            <p className="dragnote">Drag photos into <b>the open</b> — or into <b>a box</b>. Either works!</p>
             <div className="cols">
               <div className="col">
                 <div className="lbl red">▶ In the open</div>
@@ -311,8 +317,8 @@ export default function Uploader({ token }) {
                   onDragOver={(e) => { e.preventDefault(); setDragging('open'); }}
                   onDragLeave={() => setDragging('')}
                   onDrop={onDropOpen}>
-                  <div className="obig">📥 Drop here</div>
-                  <div className="otag">＋ tap to add</div>
+                  <div className="obig"><span className="desk">📥 Drop here</span><span className="mob">📷 Add photos</span></div>
+                  <div className="otag">＋ tap to open your photo library</div>
                   <div className="ofolder">📁 Drop a folder here creates a new box</div>
                   {openCount > 0 && <div className="ocount">{openCount} photo{openCount === 1 ? '' : 's'} here</div>}
                 </div>
