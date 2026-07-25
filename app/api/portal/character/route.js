@@ -44,16 +44,13 @@ export async function POST(request) {
     }
     if (!body.key || !body.filename) return NextResponse.json({ error: 'Missing file info' }, { status: 400 });
 
-    // Retake: drop any existing shot already in this slot for this client.
+    // Retake: note any existing shot(s) in this slot, but SAVE THE NEW ONE FIRST
+    // so a failed insert can never leave the slot empty (data-safety).
     const { data: old } = await db
       .from('studio_media')
       .select('id, r2_key')
       .eq('client_id', client.id).eq('kind', 'client_upload')
       .eq('folder_path', CHAR_FOLDER).eq('sort_number', sortNumber);
-    for (const row of old || []) {
-      await db.from('studio_media').delete().eq('id', row.id);
-      if (row.r2_key) { try { await deleteFile(row.r2_key); } catch { /* orphan blob is harmless */ } }
-    }
 
     const { error } = await db.from('studio_media').insert({
       client_id: client.id, kind: 'client_upload', r2_key: body.key,
@@ -61,6 +58,12 @@ export async function POST(request) {
       sort_number: sortNumber, content_type: body.contentType || 'image/jpeg', watermarked: false,
     });
     if (error) return NextResponse.json({ error: 'Could not save shot', detail: error.message }, { status: 500 });
+
+    // New shot is safely saved — now remove the superseded one(s).
+    for (const row of old || []) {
+      await db.from('studio_media').delete().eq('id', row.id);
+      if (row.r2_key) { try { await deleteFile(row.r2_key); } catch { /* orphan blob is harmless */ } }
+    }
     return NextResponse.json({ ok: true });
   }
 
