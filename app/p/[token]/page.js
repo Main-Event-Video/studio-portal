@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getClientByToken, getAuthedClientId } from '@/lib/portal';
 import PasswordGate from './PasswordGate';
 
@@ -18,7 +19,7 @@ function formatDate(d) {
   }
 }
 
-export default async function PortalHome({ params }) {
+export default async function PortalHome({ params, searchParams }) {
   const { token } = params;
   const client = await getClientByToken(token);
 
@@ -36,6 +37,12 @@ export default async function PortalHome({ params }) {
   const authed = getAuthedClientId() === client.id;
   if (!authed) {
     return <PasswordGate token={token} displayName={client.display_name} />;
+  }
+
+  // Deep-link from the desktop QR code: once the phone is signed in, jump
+  // straight into the Character Build capture on the upload page.
+  if (searchParams?.start === 'character') {
+    redirect(`/p/${token}/upload?start=character`);
   }
 
   const when = [formatDate(client.event_date), client.event_type].filter(Boolean).join(' · ');

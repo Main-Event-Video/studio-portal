@@ -204,7 +204,15 @@ export default function Uploader({ token }) {
   // Remember which view we're on across a refresh (fixes phone refresh dropping
   // back to the add-photos screen). The active view lives in the URL hash.
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.hash === '#order') setView('order');
+    if (typeof window === 'undefined') return;
+    if (window.location.hash === '#order') setView('order');
+    // Deep-link from the desktop QR: land straight in Character Build on the phone.
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get('start') === 'character') {
+      setShowCharacter(true);
+      const clean = window.location.pathname + window.location.hash;
+      window.history.replaceState(null, '', clean); // drop the param so a refresh doesn't re-trigger
+    }
   }, []);
   const goView = useCallback((v) => {
     setView(v);

@@ -50,6 +50,11 @@ const CSS = `
 #ccap .msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#fff;padding:12px 18px;border-radius:12px;font-weight:700;font-size:14px;text-align:center;max-width:80%;}
 #ccap .fallback{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:#0b0710;}
 #ccap .fallback .fbtn{border:1.5px solid var(--neon);background:var(--album);color:#fff;border-radius:16px;padding:18px 22px;font-size:18px;font-weight:800;cursor:pointer;}
+#ccap .qrwrap{display:flex;flex-direction:column;align-items:center;gap:14px;margin:8px 0 6px;}
+#ccap .qrcard{background:#fff;border-radius:18px;padding:16px;width:264px;height:264px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 30px rgba(0,0,0,.4);}
+#ccap .qrcard img{width:100%;height:100%;display:block;}
+#ccap .qrnote{font-size:13.5px;color:#aab6c4;text-align:center;max-width:360px;line-height:1.5;}
+#ccap .smalllink{background:none;border:none;color:#93a3b6;text-decoration:underline;font-size:13px;cursor:pointer;padding:8px;display:block;margin:0 auto;}
 `;
 
 // Simple dashed outline guides per pose (viewBox 100x100).
@@ -82,6 +87,16 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
   const [preview, setPreview] = useState(null);       // { blob, url } pending accept
   const [busy, setBusy] = useState('');               // '' | 'uploading' | message
   const [camError, setCamError] = useState(false);    // live preview unavailable → native fallback
+  // Desktop users can't do the "someone else photographs you" flow on a webcam,
+  // so we hand them to their phone with a QR code.
+  const [isDesktop] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const mobileUA = /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+    const narrow = window.matchMedia('(max-width: 820px)').matches;
+    const noTouch = !('ontouchstart' in window) && (navigator.maxTouchPoints || 0) === 0;
+    return !mobileUA && !narrow && noTouch;
+  });
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -222,7 +237,23 @@ export default function CharacterCapture({ token, existing = [], onClose, onChan
         <button className="x" onClick={close} aria-label="Close">×</button>
       </div>
 
-      {stage === 'intro' && (
+      {stage === 'intro' && isDesktop && (
+        <div className="body">
+          <h1>Continue on your phone</h1>
+          <p className="lead">Character photos are taken with a phone — someone else photographs you (not selfies). Scan this code to open Character Build on your phone and pick up right here.</p>
+          <div className="qrwrap">
+            <div className="qrcard"><img src={`/api/portal/character-qr?token=${encodeURIComponent(token)}`} alt="Scan to continue on your phone" width={232} height={232} /></div>
+            <p className="qrnote">Point your phone’s camera at the code. You’ll enter your portal password on your phone, then go straight into the 12 photos.</p>
+          </div>
+          {busy && busy !== 'uploading' && <p className="qrnote" style={{ color: '#38b6ff' }}>{busy}</p>}
+          <button className="btn ghost" onClick={() => extraRef.current?.click()}>Upload photos from this computer instead</button>
+          <button className="btn ghost" onClick={close}>Not now</button>
+          <button className="smalllink" onClick={() => setStage('capture')}>Use this computer’s camera anyway</button>
+          <input ref={extraRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={onExtraPick} />
+        </div>
+      )}
+
+      {stage === 'intro' && !isDesktop && (
         <div className="body">
           <h1>{CAPTURE_INTRO_TITLE}</h1>
           <p className="lead">These reference photos build your AI character. They’re kept separate — they’re not part of your video montage.</p>
