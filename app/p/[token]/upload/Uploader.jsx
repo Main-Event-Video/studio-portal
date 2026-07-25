@@ -150,6 +150,11 @@ const CSS = `
 #uploadflow .album .ahead .acount{margin:0 0 0 2px;}
 #uploadflow .album .ahead .aclose{margin-left:auto;font-size:12px;font-weight:800;color:var(--album);background:none;border:1.5px solid var(--album);border-radius:999px;padding:4px 10px;cursor:pointer;}
 #uploadflow .album .lane{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px;min-height:calc(var(--tz) + 30px);}
+#uploadflow .album .ahead .acount{margin-right:auto;}
+#uploadflow .album .ahead .amoveout{font-size:12px;font-weight:800;color:#0d0913;background:var(--neon);border:none;border-radius:999px;padding:5px 12px;cursor:pointer;}
+#uploadflow .album .ahead .aclose{margin-left:0;}
+#uploadflow .album .ahint{font-size:12px;color:#cbb8ff;margin:0 2px 8px;}
+#uploadflow .album .adrop{margin-top:6px;font-size:11px;font-weight:800;color:#0d0913;background:var(--neon);border-radius:999px;padding:4px 10px;}
 #uploadflow .album .laneempty{color:#cbb8ff;font-size:12.5px;padding:14px 4px;}
 #uploadflow .tlfoot{font-size:12.5px;color:var(--mut);margin-top:12px;text-align:center;line-height:1.5;}
 #uploadflow .tlfoot b{color:var(--blue);}
@@ -450,6 +455,17 @@ export default function Uploader({ token }) {
     commit(work);
   }
 
+  // Pull the currently-picked in-album photo OUT to the loose timeline, right
+  // after its album. (You can also drop it on any timeline gap.)
+  function moveOut(albumName) {
+    if (!picked || picked.scope !== 'album' || picked.album !== albumName) return;
+    const work = tl.slice();
+    const { node } = detachPicked(work);
+    const ai = work.findIndex((n) => n.type === 'album' && n.name === albumName);
+    work.splice(ai + 1, 0, node);
+    commit(work);
+  }
+
   function toggleOpen(name) {
     setOpenAlbums((prev) => { const s = new Set(prev); if (s.has(name)) s.delete(name); else s.add(name); return s; });
     setPicked(null);
@@ -547,7 +563,7 @@ export default function Uploader({ token }) {
           <div className="aname">{name}</div>
           <div className="acount">{count} item{count === 1 ? '' : 's'}</div>
           {count > 0 && <div className="mini">{minis}</div>}
-          <button className="aopen" onClick={(e) => { e.stopPropagation(); toggleOpen(name); }}>⤢ open</button>
+          {pickedIsMedia ? <div className="adrop">＋ drop to add</div> : <button className="aopen" onClick={(e) => { e.stopPropagation(); toggleOpen(name); }}>⤢ open</button>}
         </div>
       );
     }
@@ -566,12 +582,24 @@ export default function Uploader({ token }) {
           <span className="aico">📁</span>
           <span className="aname">{name}</span>
           <span className="acount">{count} item{count === 1 ? '' : 's'}</span>
+          {picked && picked.scope === 'album' && picked.album === name && (
+            <button className="amoveout" onClick={(e) => { e.stopPropagation(); moveOut(name); }}>⤴ Move out</button>
+          )}
           <button className="aclose" onClick={(e) => { e.stopPropagation(); toggleOpen(name); }}>Done ✓</button>
         </div>
         {count === 0 && !laneLive ? (
           <div className="laneempty">Empty — pick a photo from the timeline, then tap here to add it.</div>
         ) : (
-          <div className="lane">{lane}</div>
+          <>
+            {count > 0 && (
+              <div className="ahint">
+                {picked && picked.scope === 'album' && picked.album === name
+                  ? 'Tap ⤴ Move out to pull it to the timeline, or tap a gap out there.'
+                  : 'Tap a photo to move it — drag it out to the timeline, or into another album.'}
+              </div>
+            )}
+            <div className="lane">{lane}</div>
+          </>
         )}
       </div>
     );
@@ -693,8 +721,8 @@ export default function Uploader({ token }) {
           <h1>Put everything in play order</h1>
           <p className="say">
             {isDesktop
-              ? <>Left to right is how your video plays. <b>Drag to rearrange</b>, or click a photo then click where it should go. Open an album to arrange the photos inside.</>
-              : <>Left to right is how your video plays. <b>Tap a photo, then tap where it should go</b> — or drag it. Open an album to arrange the photos inside.</>}
+              ? <>Left to right is how your video plays. <b>Drag to rearrange</b>, or click a photo then click where it should go. Drag a photo onto an album to file it; open an album to arrange or pull photos back out.</>
+              : <>Left to right is how your video plays. <b>Tap a photo, then tap where it should go</b>. Tap an album to drop a photo in; open an album to arrange or move photos out.</>}
           </p>
           {orgMsg && <p style={{ color: 'var(--red)', fontSize: 13 }}>{orgMsg}</p>}
 
