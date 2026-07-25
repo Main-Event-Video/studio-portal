@@ -9,7 +9,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl } from '@/lib/r2';
 import { buildMontageSource, STYLES, parsePhotoSpec } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
-import { orderedClientMedia } from '@/lib/clientTimeline';
+import { orderedClientTimeline } from '@/lib/clientTimeline';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,7 +26,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, adjustments = {}, photoSpec = null, includeCards = true } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true } = body || {};
   if (photoSeconds != null && !(Number(photoSeconds) >= 1 && Number(photoSeconds) <= 10)) {
     return NextResponse.json({ error: 'photoSeconds must be 1–10' }, { status: 400 });
   }
@@ -46,33 +46,61 @@ export async function POST(request) {
   if (cErr || !client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
   if (client.archived) return NextResponse.json({ error: 'That client is archived' }, { status: 400 });
 
-  // The client's uploaded PHOTOS in EXACT timeline play order — the same order
-  // the portal timeline shows (loose photos interleaved with albums; each album
-  // plays its photos in sequence). Videos keep their slot's effect on order but
-  // are dropped from the spine (photos-only render for now).
-  const { media: fullList, error: mErr } = await orderedClientMedia(db, clientId, { imagesOnly: true });
-  if (mErr) return NextResponse.json({ error: 'Could not load photos', detail: mErr.message }, { status: 500 });
-
-  // Full ordered photo set — this is the 1..N universe the admin strip numbers.
-  if (fullList.length < 1) {
+  // Full timeline (photos + videos) in play order. Photos define the 1..N
+  // numbering the admin strip uses; each video becomes a green-screen placeholder
+  // the editor keys their real clip into.
+  const { items: timelineItems, error: mErr } = await orderedClientTimeline(db, clientId);
+  if (mErr) return NextResponse.json({ error: 'Could not load media', detail: mErr.message }, { status: 500 });
+  const photosAll = (timelineItems || []).filter((m) => (m.content_type || '').startsWith('image/'));
+  if (photosAll.length < 1) {
     return NextResponse.json(
       { error: 'This client has no photo uploads yet. Upload photos first.' },
       { status: 400 }
     );
   }
 
-  // Select (and order) the photos this segment uses. Blank spec = all photos.
-  const indexes = parsePhotoSpec(photoSpec, fullList.length); // 1-based, in play order
-  const list = indexes.map((i) => fullList[i - 1]).filter(Boolean);
-  if (list.length < 1) {
+  // Which photos this segment uses (blank spec = all), 1-based, in play order.
+  const indexes = parsePhotoSpec(photoSpec, photosAll.length);
+  const selected = new Set(indexes);
+  const ascending = indexes.every((v, i) => i === 0 || v > indexes[i - 1]);
+
+  // Build the play sequence. When placeholders are on AND the selection is in
+  // natural order, walk the timeline and drop a green gap at each video slot
+  // (trimming leading/trailing gaps). Otherwise fall back to the exact spec
+  // order with photos only (preserves the reorder-spec behavior).
+  const wantGaps = videoPlaceholders !== false && ascending && indexes.length > 0;
+  let sequence;
+  if (wantGaps) {
+    const numByKey = new Map();
+    photosAll.forEach((p, i) => numByKey.set(p.r2_key, i + 1));
+    sequence = [];
+    for (const it of timelineItems) {
+      const ct = it.content_type || '';
+      if (ct.startsWith('image/')) {
+        const num = numByKey.get(it.r2_key);
+        if (selected.has(num)) sequence.push({ type: 'photo', r2_key: it.r2_key, framing: (adjustments && adjustments[it.r2_key]) || null });
+      } else if (ct.startsWith('video/')) {
+        sequence.push({ type: 'placeholder', name: it.filename });
+      }
+    }
+    while (sequence.length && sequence[0].type === 'placeholder') sequence.shift();
+    while (sequence.length && sequence[sequence.length - 1].type === 'placeholder') sequence.pop();
+  } else {
+    sequence = indexes.map((i) => photosAll[i - 1]).filter(Boolean)
+      .map((m) => ({ type: 'photo', r2_key: m.r2_key, framing: (adjustments && adjustments[m.r2_key]) || null }));
+  }
+
+  const photoItems = sequence.filter((s) => s.type === 'photo');
+  const gapCount = sequence.length - photoItems.length;
+  if (photoItems.length < 1) {
     return NextResponse.json(
-      { error: `Your photo selection didn't match any of this client's ${fullList.length} photos — check the numbers.` },
+      { error: `Your photo selection didn't match any of this client's ${photosAll.length} photos — check the numbers.` },
       { status: 400 }
     );
   }
-  if (list.length > MAX_PHOTOS) {
+  if (photoItems.length > MAX_PHOTOS) {
     return NextResponse.json(
-      { error: `This segment selects ${list.length} photos; the max per render is ${MAX_PHOTOS}. Split it into more segments.` },
+      { error: `This segment selects ${photoItems.length} photos; the max per render is ${MAX_PHOTOS}. Split it into more segments.` },
       { status: 400 }
     );
   }
@@ -86,7 +114,7 @@ export async function POST(request) {
       title,
       subtitle: subtitle || null,
       status: 'queued',
-      photo_count: list.length,
+      photo_count: photoItems.length,
       watermarked: !!watermark,
       params: {
         photoSeconds: photoSeconds ? Number(photoSeconds) : null,
@@ -96,6 +124,8 @@ export async function POST(request) {
         photoSpec: photoSpec ? String(photoSpec).trim() : null,
         photoIndexes: indexes,
         includeCards: includeCards !== false,
+        videoPlaceholders: videoPlaceholders !== false,
+        videoGaps: gapCount,
       },
     })
     .select('id')
@@ -105,15 +135,17 @@ export async function POST(request) {
   try {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
     // Long-lived presigned URLs — Creatomate fetches these while rendering.
-    const photos = await Promise.all(
-      list.map(async (m) => ({
-        url: await getViewUrl(m.r2_key, 21600),
-        framing: (adjustments && adjustments[m.r2_key]) || null,
-      }))
+    // Placeholders carry only a name (a green gap the editor keys their clip into).
+    const items = await Promise.all(
+      sequence.map(async (s) => (
+        s.type === 'photo'
+          ? { type: 'photo', url: await getViewUrl(s.r2_key, 21600), framing: s.framing }
+          : { type: 'placeholder', name: s.name }
+      ))
     );
 
     const source = buildMontageSource({
-      photos,
+      items,
       style,
       photoSeconds: photoSeconds ? Number(photoSeconds) : null,
       includeCards: includeCards !== false,
