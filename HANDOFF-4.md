@@ -214,6 +214,26 @@ there's no per-person attribution for who moved/trashed what. Known + accepted.
 folder value. Delete removes the row and best-effort deletes the R2 object (an
 orphaned blob is harmless if the R2 delete fails).
 
+---
+# 9. BACKLOG / DESIGN NOTES (captured mid-session)
+
+- **Montage-by-box (Josh's ask):** the montage generator must let you pick a
+  BOX / folder name to montage — not just photo numbers. Today `photoSpec` is
+  number-based (1-10, 15, …) over the flat photo list. When the folder/box model
+  lands (below), add a "montage this box" option that resolves the box's photos
+  in their order. Keep number-based selection too.
+- **Portal upload/organize redesign (in progress, NOT built):** we're moving the
+  client portal to a "drop window with boxes + a separate order screen" —
+  play order = top-to-bottom; loose photos and whole boxes share one sequence;
+  each box has its own internal order. Look = playful neon, red window + blue
+  boxes, big buttons, short copy, encouraging progress. Interactive mockups were
+  delivered in chat (upload-neon / order-screen / dropwindow). This needs a DB
+  change: photos currently store only folder_path + sort_number; a top-level
+  order for "loose photos AND boxes interleaved" isn't representable yet.
+- When both land, the montage box-picker should read the SAME box/folder names
+  the portal uses.
+
+---
 ## Verify next session (file manager)
 - Organize round-trips on BOTH sides; the montage numbering reflects reorders.
 - Client can Move to Trash / Restore but the delete endpoints reject them (403).
