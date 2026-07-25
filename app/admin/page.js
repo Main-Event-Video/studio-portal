@@ -120,53 +120,52 @@ async function downloadCharacterSheetById(characterId, name, regenerate = false)
 // Admin control: pick one of the client's characters and download its sheet.
 function CharacterSheetPicker({ client }) {
   const [chars, setChars] = useState([]);
-  const [sel, setSel] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState('');
   const [err, setErr] = useState('');
   const [regen, setRegen] = useState(false);
   useEffect(() => {
     let alive = true;
+    setLoading(true);
     fetchCharacterList(client.id).then((list) => {
       if (!alive) return;
       setChars(list);
-      setSel(list[0]?.id || '');
+      setLoading(false);
     });
     return () => { alive = false; };
   }, [client.id]);
-  const current = chars.find((c) => c.id === sel);
-  const selStyle = { padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.4)', background: 'transparent', color: 'inherit', minWidth: 200 };
+
+  async function download(ch) {
+    setBusyId(ch.id); setErr('');
+    const r = await downloadCharacterSheetById(ch.id, ch.name || '', regen);
+    setBusyId('');
+    if (!r.ok) setErr(r.error || 'Failed');
+  }
+
+  if (loading) return <p style={{ fontSize: 13, color: 'var(--muted)' }}>Loading…</p>;
+  if (!chars.length) return <p style={{ fontSize: 13, color: 'var(--muted)' }}>No character builds yet.</p>;
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      {chars.length === 0 ? (
-        <span style={{ fontSize: 13, opacity: 0.6 }}>No character builds yet</span>
-      ) : (
-        <>
-          <select value={sel} onChange={(e) => setSel(e.target.value)} style={selStyle} title="Choose a character">
-            {chars.map((ch) => (
-              <option key={ch.id} value={ch.id}>
-                {(ch.name || 'Unnamed')} — {ch.done}/{ch.total}{ch.done >= ch.total ? ' ✓' : ''}
-              </option>
-            ))}
-          </select>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 520 }}>
+      <label style={{ fontSize: 12, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input type="checkbox" checked={regen} onChange={(e) => setRegen(e.target.checked)} /> Generate a fresh write-up on download
+      </label>
+      {chars.map((ch) => (
+        <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid rgba(127,127,127,0.3)', borderRadius: 8 }}>
+          <span style={{ fontWeight: 700 }}>{ch.name || 'Unnamed'}</span>
+          <span style={{ fontSize: 12, opacity: 0.65 }}>{ch.done}/{ch.total}{ch.done >= ch.total ? ' ✓' : ''}</span>
+          <span style={{ flex: 1 }} />
           <button
             type="button"
             className="btn-ghost"
-            disabled={busy || !sel}
+            disabled={!!busyId}
             title="Download this character's build sheet (PNG)"
-            onClick={async () => {
-              setBusy(true); setErr('');
-              const r = await downloadCharacterSheetById(sel, current?.name || '', regen);
-              setBusy(false);
-              if (!r.ok) setErr(r.error || 'Failed');
-            }}
+            onClick={() => download(ch)}
           >
-            {busy ? 'Building…' : 'Download sheet'}
+            {busyId === ch.id ? 'Building…' : 'Download sheet'}
           </button>
-          <label style={{ fontSize: 12, opacity: 0.75, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <input type="checkbox" checked={regen} onChange={(e) => setRegen(e.target.checked)} /> fresh write-up
-          </label>
-        </>
-      )}
+        </div>
+      ))}
       {err && <span style={{ color: '#ff6b6b', fontSize: 12 }}>{err}</span>}
     </div>
   );
@@ -256,14 +255,14 @@ function ClientInfoForm({ client, siteUrl, onSaved }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const set = (k, val) => setForm((f) => ({ ...f, [k]: val }));
-  const fs = { width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.4)', background: 'transparent', color: 'inherit', fontSize: 14 };
+  const fs = { width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid #c2c2c2', background: '#ffffff', color: '#111111', fontSize: 14 };
   return (
-    <div style={{ padding: '4px 2px 8px' }}>
-      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px' }}>Private studio notes — never shown to the client. Name, event date/type, portal link, and password are pre-filled; edit anything and Save.</p>
+    <div style={{ background: '#ffffff', color: '#111111', padding: '14px 14px 16px', borderRadius: 10, border: '1px solid #dddddd', marginTop: 4 }}>
+      <p style={{ fontSize: 12, color: '#555555', margin: '0 0 12px' }}>Private studio notes — never shown to the client. Name, event date/type, portal link, and password are pre-filled; edit anything and Save.</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
         {INFO_FIELDS.map((f) => (
-          <label key={f.k} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, opacity: 0.9, gridColumn: f.type === 'area' ? '1 / -1' : 'auto' }}>
-            <span style={{ fontWeight: 700, letterSpacing: 0.3 }}>{f.label}</span>
+          <label key={f.k} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#333333', gridColumn: f.type === 'area' ? '1 / -1' : 'auto' }}>
+            <span style={{ fontWeight: 700, letterSpacing: 0.3, color: '#111111' }}>{f.label}</span>
             {f.type === 'area' ? (
               <textarea rows={2} value={form[f.k] || ''} onChange={(e) => set(f.k, e.target.value)} style={{ ...fs, resize: 'vertical' }} />
             ) : (
@@ -287,7 +286,7 @@ function ClientInfoForm({ client, siteUrl, onSaved }) {
         >
           {busy ? 'Saving…' : 'Save details'}
         </button>
-        {msg && <span style={{ fontSize: 13, color: msg.includes('✓') ? '#4ade80' : '#ff6b6b' }}>{msg}</span>}
+        {msg && <span style={{ fontSize: 13, fontWeight: 700, color: msg.includes('✓') ? '#15803d' : '#b91c1c' }}>{msg}</span>}
       </div>
     </div>
   );
@@ -1530,7 +1529,13 @@ export default function AdminPage() {
                                 >
                                   Details
                                 </button>
-                                <CharacterSheetPicker client={c} />
+                                <button
+                                  type="button"
+                                  className={activeTool === 'character' ? 'btn-primary' : 'btn-ghost'}
+                                  onClick={() => chooseTool(c, 'character')}
+                                >
+                                  Character builds
+                                </button>
                                 <span style={{ flex: 1 }} />
                                 <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
                               </div>
@@ -1540,6 +1545,12 @@ export default function AdminPage() {
                               {activeTool === 'intake' && renderIntakeTool(c)}
                               {activeTool === 'files' && renderFilesTool(c)}
                               {activeTool === 'info' && <ClientInfoForm client={c} siteUrl={siteUrl} onSaved={loadClients} />}
+                              {activeTool === 'character' && (
+                                <div style={{ padding: '8px 2px' }}>
+                                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>Pick a character for this client, then download their build sheet.</p>
+                                  <CharacterSheetPicker client={c} />
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
