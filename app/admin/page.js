@@ -351,6 +351,7 @@ export default function AdminPage() {
     { value: 'hollywood', label: 'Hollywood — gold on black, slow + cinematic' },
     { value: 'timeless', label: 'Timeless — ivory, elegant, gentle' },
     { value: 'party', label: 'Party — fast, punchy, high energy' },
+    { value: 'party2', label: 'Party 2 — energetic, drift + varied transitions' },
   ];
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
