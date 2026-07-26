@@ -371,6 +371,15 @@ export default function AdminPage() {
   const [showRef, setShowRef] = useState(false);         // numbered reference strip
   const [genBusy, setGenBusy] = useState(false);
 
+  // Photo Editor (per-client): per-photo framing/fit/size/removed + global
+  // colorCorrect. Persisted on the client row and applied to EVERY style render.
+  const [photoEdits, setPhotoEdits] = useState({ photos: {}, colorCorrect: false });
+  const [editsClientId, setEditsClientId] = useState(null);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editsSaving, setEditsSaving] = useState(false);
+  const [editsSaved, setEditsSaved] = useState(false);
+  const editsTimer = useRef(null);
+
   // client intake (read-only view in the workspace)
   const [intake, setIntake] = useState(null);
   const [intakeClientId, setIntakeClientId] = useState(null);
@@ -473,7 +482,7 @@ export default function AdminPage() {
   function chooseTool(c, tool) {
     const next = activeTool === tool ? null : tool;
     setActiveTool(next);
-    if (next === 'montage') loadProjPhotos(c.id); // need the photo count + numbering
+    if (next === 'montage') { loadProjPhotos(c.id); loadPhotoEdits(c.id); } // photos + saved edits
     if (next === 'intake') loadIntake(c.id);
     if (next === 'files') loadMedia(c.id);
   }
@@ -545,6 +554,51 @@ export default function AdminPage() {
       setMMsg(err.message);
     }
     setProjPhotosLoading(false);
+  }
+
+  // Load this client's saved photo edits (defaults if none yet).
+  async function loadPhotoEdits(clientId) {
+    if (editsClientId === clientId) return;
+    try {
+      const { edits } = await api(`/api/admin/montage/photo-edits?clientId=${clientId}`);
+      setPhotoEdits(edits && edits.photos ? edits : { photos: {}, colorCorrect: false });
+    } catch {
+      setPhotoEdits({ photos: {}, colorCorrect: false });
+    }
+    setEditsClientId(clientId);
+    setEditsSaved(false);
+  }
+
+  // Debounced persist — the edits are refresh-proof and shared by every render.
+  function persistEdits(clientId, next) {
+    setEditsSaving(true);
+    setEditsSaved(false);
+    if (editsTimer.current) clearTimeout(editsTimer.current);
+    editsTimer.current = setTimeout(() => {
+      api('/api/admin/montage/photo-edits', {
+        method: 'POST',
+        body: JSON.stringify({ clientId, edits: next }),
+      })
+        .then(() => { setEditsSaving(false); setEditsSaved(true); })
+        .catch(() => setEditsSaving(false));
+    }, 500);
+  }
+
+  function editPhoto(clientId, key, patch) {
+    setPhotoEdits((prev) => {
+      const cur = prev.photos[key] || { anchor: 'top', fit: 'fill', size: 100, removed: false };
+      const next = { ...prev, photos: { ...prev.photos, [key]: { ...cur, ...patch } } };
+      persistEdits(clientId, next);
+      return next;
+    });
+  }
+
+  function setColorCorrect(clientId, on) {
+    setPhotoEdits((prev) => {
+      const next = { ...prev, colorCorrect: !!on };
+      persistEdits(clientId, next);
+      return next;
+    });
   }
 
   const addSegment = () => setSegments((s) => [...s, newSegment()]);
@@ -1125,6 +1179,104 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* Photo editor — per-photo framing/fit/size/remove + full-res download.
+            Edits persist on the client and apply to EVERY style rendered. */}
+        {projPhotos.length > 0 && (
+          <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <strong style={{ fontSize: 13 }}>
+                Photo editor{' '}
+                <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— these edits apply to every style you render for this client</span>
+              </strong>
+              <button type="button" className="linklike" onClick={() => setShowEditor((v) => !v)}>
+                {showEditor ? 'Hide editor' : 'Edit photos'}
+              </button>
+            </div>
+
+            {showEditor && (
+              <>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0 12px' }}>
+                  <label className="choice" style={{ color: 'var(--text)', margin: 0 }}>
+                    <input type="checkbox" checked={!!photoEdits.colorCorrect} onChange={(e) => setColorCorrect(c.id, e.target.checked)} />
+                    Auto color-correct
+                  </label>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {editsSaving ? 'Saving…' : editsSaved ? 'Saved' : ''}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
+                    {Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed · Top / Fill are the defaults
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+                  {projPhotos.map((p) => {
+                    const e = photoEdits.photos[p.key] || { anchor: 'top', fit: 'fill', size: 100, removed: false };
+                    const objPos = e.anchor === 'top' ? '50% 0%' : e.anchor === 'bottom' ? '50% 100%' : '50% 50%';
+                    const origin = e.anchor === 'top' ? 'center top' : e.anchor === 'bottom' ? 'center bottom' : 'center';
+                    return (
+                      <div key={p.key || p.index} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: 8, opacity: e.removed ? 0.45 : 1 }}>
+                        {/* 16:9 preview — approximates how the photo sits in the frame */}
+                        <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', background: '#000', borderRadius: 6, overflow: 'hidden' }}>
+                          <img
+                            src={p.url}
+                            alt={p.filename}
+                            style={{
+                              width: '100%', height: '100%',
+                              objectFit: e.fit === 'fit' ? 'contain' : 'cover',
+                              objectPosition: e.fit === 'fit' ? 'center' : objPos,
+                              transform: `scale(${(e.size || 100) / 100})`,
+                              transformOrigin: origin,
+                            }}
+                          />
+                          <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 5px', borderRadius: 4 }}>{p.index}</span>
+                        </div>
+
+                        {/* framing anchor */}
+                        <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                          {['top', 'center', 'bottom'].map((a) => (
+                            <button
+                              key={a}
+                              type="button"
+                              className={e.anchor === a ? 'btn-primary' : 'btn-ghost'}
+                              style={{ flex: 1, padding: '3px 0', fontSize: 11 }}
+                              onClick={() => editPhoto(c.id, p.key, { anchor: a })}
+                            >
+                              {a[0].toUpperCase() + a.slice(1)}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* fill vs fit (retain aspect) */}
+                        <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                          <button type="button" className={e.fit === 'fill' ? 'btn-primary' : 'btn-ghost'} style={{ flex: 1, padding: '3px 0', fontSize: 11 }} onClick={() => editPhoto(c.id, p.key, { fit: 'fill' })}>Fill</button>
+                          <button type="button" className={e.fit === 'fit' ? 'btn-primary' : 'btn-ghost'} style={{ flex: 1, padding: '3px 0', fontSize: 11 }} onClick={() => editPhoto(c.id, p.key, { fit: 'fit' })} title="Retain the photo's native aspect (black bars)">Fit</button>
+                        </div>
+
+                        {/* size */}
+                        <div style={{ marginTop: 6 }}>
+                          <input type="range" min="60" max="140" step="5" value={e.size || 100} style={{ width: '100%' }} onChange={(ev) => editPhoto(c.id, p.key, { size: Number(ev.target.value) })} />
+                          <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center' }}>{e.size || 100}%</div>
+                        </div>
+
+                        {/* actions */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                          <a href={p.url} target="_blank" rel="noopener noreferrer" download={p.filename} className="linklike" style={{ fontSize: 11 }}>Download</a>
+                          <button type="button" className="linklike" style={{ fontSize: 11 }} onClick={() => editPhoto(c.id, p.key, { removed: !e.removed })}>
+                            {e.removed ? 'Restore' : 'Remove'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
+                  Download pulls the original full-resolution file for another editor. Removed photos are skipped in every render.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Segment plan */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {segments.map((s, idx) => {
@@ -1499,7 +1651,7 @@ export default function AdminPage() {
                                   className={activeTool === 'montage' ? 'btn-primary' : 'btn-ghost'}
                                   onClick={() => chooseTool(c, 'montage')}
                                 >
-                                  Generate montage
+                                  Montage Maker
                                 </button>
                                 <button
                                   type="button"

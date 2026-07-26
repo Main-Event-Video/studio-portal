@@ -40,11 +40,30 @@ export async function POST(request) {
   const db = createServiceClient();
   const { data: client, error: cErr } = await db
     .from('studio_clients')
-    .select('id, display_name, archived')
+    .select('id, display_name, archived, photo_edits')
     .eq('id', clientId)
     .single();
   if (cErr || !client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
   if (client.archived) return NextResponse.json({ error: 'That client is archived' }, { status: 400 });
+
+  // Per-client Photo Editor edits (from studio_clients.photo_edits) — applied to
+  // EVERY render for this client, whatever style is chosen. Default framing is
+  // TOP (keep heads); a per-render Fix-framing adjustment still overrides it.
+  const pe = client.photo_edits && typeof client.photo_edits === 'object' ? client.photo_edits : {};
+  const pePhotos = pe.photos && typeof pe.photos === 'object' ? pe.photos : {};
+  const editFor = (k) => {
+    const e = pePhotos[k] || {};
+    return {
+      anchor: ['top', 'center', 'bottom'].includes(e.anchor) ? e.anchor : 'top',
+      fit: e.fit === 'fit' ? 'fit' : 'fill',
+      size: Math.min(140, Math.max(60, Number(e.size) || 100)),
+      removed: !!e.removed,
+    };
+  };
+  const photoObj = (k) => {
+    const e = editFor(k);
+    return { type: 'photo', r2_key: k, framing: (adjustments && adjustments[k]) || e.anchor, fit: e.fit, size: e.size };
+  };
 
   // Full timeline (photos + videos) in play order. Photos define the 1..N
   // numbering the admin strip uses; each video becomes a green-screen placeholder
@@ -78,7 +97,7 @@ export async function POST(request) {
       const ct = it.content_type || '';
       if (ct.startsWith('image/')) {
         const num = numByKey.get(it.r2_key);
-        if (selected.has(num)) sequence.push({ type: 'photo', r2_key: it.r2_key, framing: (adjustments && adjustments[it.r2_key]) || null });
+        if (selected.has(num) && !editFor(it.r2_key).removed) sequence.push(photoObj(it.r2_key));
       } else if (ct.startsWith('video/')) {
         sequence.push({ type: 'placeholder', name: it.filename });
       }
@@ -87,7 +106,8 @@ export async function POST(request) {
     while (sequence.length && sequence[sequence.length - 1].type === 'placeholder') sequence.pop();
   } else {
     sequence = indexes.map((i) => photosAll[i - 1]).filter(Boolean)
-      .map((m) => ({ type: 'photo', r2_key: m.r2_key, framing: (adjustments && adjustments[m.r2_key]) || null }));
+      .filter((m) => !editFor(m.r2_key).removed)
+      .map((m) => photoObj(m.r2_key));
   }
 
   const photoItems = sequence.filter((s) => s.type === 'photo');
@@ -126,6 +146,7 @@ export async function POST(request) {
         includeCards: includeCards !== false,
         videoPlaceholders: videoPlaceholders !== false,
         videoGaps: gapCount,
+        colorCorrect: !!pe.colorCorrect,
       },
     })
     .select('id')
@@ -139,7 +160,7 @@ export async function POST(request) {
     const items = await Promise.all(
       sequence.map(async (s) => (
         s.type === 'photo'
-          ? { type: 'photo', url: await getViewUrl(s.r2_key, 21600), framing: s.framing }
+          ? { type: 'photo', url: await getViewUrl(s.r2_key, 21600), framing: s.framing, fit: s.fit, size: s.size }
           : { type: 'placeholder', name: s.name }
       ))
     );
