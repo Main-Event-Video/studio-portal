@@ -379,6 +379,9 @@ export default function AdminPage() {
   const [editsSaving, setEditsSaving] = useState(false);
   const [editsSaved, setEditsSaved] = useState(false);
   const editsTimer = useRef(null);
+  const replaceInputRef = useRef(null);
+  const replaceKeyRef = useRef(null);
+  const [replacing, setReplacing] = useState(null); // r2_key currently uploading
 
   // client intake (read-only view in the workspace)
   const [intake, setIntake] = useState(null);
@@ -542,8 +545,8 @@ export default function AdminPage() {
 
   // This client's photos (numbered 1..N in montage order) — powers range
   // validation, the live per-segment preview, and the numbered reference strip.
-  async function loadProjPhotos(clientId) {
-    if (projPhotosClientId === clientId && projPhotos.length) return; // already have them
+  async function loadProjPhotos(clientId, force = false) {
+    if (!force && projPhotosClientId === clientId && projPhotos.length) return; // already have them
     setProjPhotosLoading(true);
     try {
       const { photos } = await api(`/api/admin/montage/photos?clientId=${clientId}`);
@@ -599,6 +602,35 @@ export default function AdminPage() {
       persistEdits(clientId, next);
       return next;
     });
+  }
+
+  // Replace one photo in place: upload the fixed file straight to R2 (presigned
+  // PUT — big files skip Vercel), then repoint the media row so the montage uses
+  // it in the same slot. The slot's edits carry over; the original stays in R2.
+  async function replacePhoto(clientId, oldKey, file) {
+    if (!file) return;
+    if (!file.type || !file.type.startsWith('image/')) {
+      setMErr(true); setMMsg('Replacement must be an image file.'); return;
+    }
+    setReplacing(oldKey);
+    setMErr(false); setMMsg('');
+    try {
+      const { url, key: newKey } = await api('/api/admin/upload-url', {
+        method: 'POST',
+        body: JSON.stringify({ clientId, contentType: file.type }),
+      });
+      const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      if (!put.ok) throw new Error('Upload to storage failed');
+      await api('/api/admin/montage/replace-photo', {
+        method: 'POST',
+        body: JSON.stringify({ clientId, oldKey, newKey, filename: file.name, contentType: file.type, sizeBytes: file.size }),
+      });
+      await loadProjPhotos(clientId, true); // refresh with the swapped-in image
+      setMMsg('Photo replaced — the montage will use the new version.');
+    } catch (err) {
+      setMErr(true); setMMsg('Replace failed: ' + err.message);
+    }
+    setReplacing(null);
   }
 
   const addSegment = () => setSegments((s) => [...s, newSegment()]);
@@ -1259,8 +1291,17 @@ export default function AdminPage() {
                         </div>
 
                         {/* actions */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 6 }}>
                           <a href={p.url} target="_blank" rel="noopener noreferrer" download={p.filename} className="linklike" style={{ fontSize: 11 }}>Download</a>
+                          <button
+                            type="button"
+                            className="linklike"
+                            style={{ fontSize: 11 }}
+                            disabled={replacing === p.key}
+                            onClick={() => { replaceKeyRef.current = p.key; if (replaceInputRef.current) replaceInputRef.current.click(); }}
+                          >
+                            {replacing === p.key ? 'Uploading…' : 'Replace'}
+                          </button>
                           <button type="button" className="linklike" style={{ fontSize: 11 }} onClick={() => editPhoto(c.id, p.key, { removed: !e.removed })}>
                             {e.removed ? 'Restore' : 'Remove'}
                           </button>
@@ -1270,8 +1311,20 @@ export default function AdminPage() {
                   })}
                 </div>
                 <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-                  Download pulls the original full-resolution file for another editor. Removed photos are skipped in every render.
+                  Download pulls the original full-resolution file for another editor; Replace swaps your fixed version back into the same slot. Removed photos are skipped in every render.
                 </p>
+                <input
+                  ref={replaceInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={(ev) => {
+                    const f = ev.target.files && ev.target.files[0];
+                    ev.target.value = '';
+                    const key = replaceKeyRef.current;
+                    if (f && key) replacePhoto(c.id, key, f);
+                  }}
+                />
               </>
             )}
           </div>
