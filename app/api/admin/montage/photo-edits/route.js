@@ -19,7 +19,7 @@ function clean(edits) {
   for (const [key, v] of Object.entries(photos)) {
     if (!v || typeof v !== 'object') continue;
     const anchor = ['top', 'center', 'bottom'].includes(v.anchor) ? v.anchor : 'top';
-    const fit = v.fit === 'fit' ? 'fit' : 'fill';
+    const fit = v.fit === 'fill' ? 'fill' : 'fit';
     let size = Number(v.size);
     if (!Number.isFinite(size)) size = 100;
     size = Math.min(140, Math.max(60, Math.round(size)));

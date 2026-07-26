@@ -589,7 +589,7 @@ export default function AdminPage() {
 
   function editPhoto(clientId, key, patch) {
     setPhotoEdits((prev) => {
-      const cur = prev.photos[key] || { anchor: 'top', fit: 'fill', size: 100, removed: false };
+      const cur = prev.photos[key] || { anchor: 'top', fit: 'fit', size: 100, removed: false };
       const next = { ...prev, photos: { ...prev.photos, [key]: { ...cur, ...patch } } };
       persistEdits(clientId, next);
       return next;
@@ -1236,13 +1236,13 @@ export default function AdminPage() {
                     {editsSaving ? 'Saving…' : editsSaved ? 'Saved' : ''}
                   </span>
                   <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
-                    {Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed · Top / Fill are the defaults
+                    {Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed · Default: Fit (native aspect — pillars on 9:16); Top/Center/Bottom apply when a photo is set to Fill
                   </span>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
                   {projPhotos.map((p) => {
-                    const e = photoEdits.photos[p.key] || { anchor: 'top', fit: 'fill', size: 100, removed: false };
+                    const e = photoEdits.photos[p.key] || { anchor: 'top', fit: 'fit', size: 100, removed: false };
                     const objPos = e.anchor === 'top' ? '50% 0%' : e.anchor === 'bottom' ? '50% 100%' : '50% 50%';
                     const origin = e.anchor === 'top' ? 'center top' : e.anchor === 'bottom' ? 'center bottom' : 'center';
                     return (
@@ -1311,7 +1311,7 @@ export default function AdminPage() {
                   })}
                 </div>
                 <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-                  Download pulls the original full-resolution file for another editor; Replace swaps your fixed version back into the same slot. Removed photos are skipped in every render.
+                  Photos default to Fit (native aspect — nothing cropped, pillars on verticals); switch a photo to Fill to crop it to the frame. Download pulls the original full-res file; Replace swaps your fixed version back into the same slot. Removed photos are skipped in every render.
                 </p>
                 <input
                   ref={replaceInputRef}

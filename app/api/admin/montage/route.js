@@ -55,7 +55,7 @@ export async function POST(request) {
     const e = pePhotos[k] || {};
     return {
       anchor: ['top', 'center', 'bottom'].includes(e.anchor) ? e.anchor : 'top',
-      fit: e.fit === 'fit' ? 'fit' : 'fill',
+      fit: e.fit === 'fill' ? 'fill' : 'fit',
       size: Math.min(140, Math.max(60, Number(e.size) || 100)),
       removed: !!e.removed,
     };
