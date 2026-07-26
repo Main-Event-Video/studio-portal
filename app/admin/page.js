@@ -352,6 +352,8 @@ export default function AdminPage() {
     { value: 'timeless', label: 'Timeless — ivory, elegant, gentle' },
     { value: 'party', label: 'Party — fast, punchy, high energy' },
     { value: 'party2', label: 'Party 2 — energetic, drift + varied transitions' },
+    { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
+    { value: 'polaroid', label: 'Polaroid — tilted prints on a soft background' },
   ];
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
