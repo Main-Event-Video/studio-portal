@@ -23,7 +23,15 @@ function clean(edits) {
     let size = Number(v.size);
     if (!Number.isFinite(size)) size = 100;
     size = Math.min(140, Math.max(60, Math.round(size)));
-    out.photos[key] = { anchor, fit, size, removed: !!v.removed, colorCorrect: !!v.colorCorrect };
+    const mode = ['color', 'bw', 'sepia'].includes(v.mode) ? v.mode : 'color';
+    let contrast = Number(v.contrast); if (!Number.isFinite(contrast)) contrast = 100;
+    contrast = Math.min(160, Math.max(50, Math.round(contrast)));
+    let saturation = Number(v.saturation); if (!Number.isFinite(saturation)) saturation = 100;
+    saturation = Math.min(200, Math.max(0, Math.round(saturation)));
+    let posX = Number(v.posX), posY = Number(v.posY);
+    posX = Number.isFinite(posX) ? Math.min(100, Math.max(0, Math.round(posX))) : null;
+    posY = Number.isFinite(posY) ? Math.min(100, Math.max(0, Math.round(posY))) : null;
+    out.photos[key] = { anchor, fit, size, removed: !!v.removed, colorCorrect: !!v.colorCorrect, mode, contrast, saturation, posX, posY };
   }
   return out;
 }

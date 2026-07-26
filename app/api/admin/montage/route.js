@@ -59,11 +59,14 @@ export async function POST(request) {
       size: Math.min(140, Math.max(60, Number(e.size) || 100)),
       removed: !!e.removed,
       colorCorrect: !!e.colorCorrect,
+      mode: ['color', 'bw', 'sepia'].includes(e.mode) ? e.mode : 'color',
+      posX: Number.isFinite(Number(e.posX)) ? Number(e.posX) : null,
+      posY: Number.isFinite(Number(e.posY)) ? Number(e.posY) : null,
     };
   };
   const photoObj = (k) => {
     const e = editFor(k);
-    return { type: 'photo', r2_key: k, framing: (adjustments && adjustments[k]) || e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect };
+    return { type: 'photo', r2_key: k, framing: (adjustments && adjustments[k]) || e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect, mode: e.mode, posX: e.posX, posY: e.posY };
   };
 
   // Full timeline (photos + videos) in play order. Photos define the 1..N
@@ -161,7 +164,7 @@ export async function POST(request) {
     const items = await Promise.all(
       sequence.map(async (s) => (
         s.type === 'photo'
-          ? { type: 'photo', url: await getViewUrl(s.r2_key, 21600), framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect }
+          ? { type: 'photo', url: await getViewUrl(s.r2_key, 21600), framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, posX: s.posX, posY: s.posY }
           : { type: 'placeholder', name: s.name }
       ))
     );

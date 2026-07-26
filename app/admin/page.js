@@ -386,6 +386,8 @@ export default function AdminPage() {
   const replaceInputRef = useRef(null);
   const replaceKeyRef = useRef(null);
   const [replacing, setReplacing] = useState(null); // r2_key currently uploading
+  const [selKey, setSelKey] = useState(null);        // photo open in the big editor
+  const bigDragRef = useRef(null);                   // drag-to-position state
 
   // client intake (read-only view in the workspace)
   const [intake, setIntake] = useState(null);
@@ -593,7 +595,7 @@ export default function AdminPage() {
 
   function editPhoto(clientId, key, patch) {
     setPhotoEdits((prev) => {
-      const cur = prev.photos[key] || { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false };
+      const cur = prev.photos[key] || { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null };
       const next = { ...prev, photos: { ...prev.photos, [key]: { ...cur, ...patch } } };
       persistEdits(clientId, next);
       return next;
@@ -1224,130 +1226,127 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Photo editor — per-photo framing/fit/size/remove + full-res download.
-            Edits persist on the client and apply to EVERY style rendered. */}
-        {projPhotos.length > 0 && (
-          <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <strong style={{ fontSize: 13 }}>
-                Photo editor{' '}
-                <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— these edits apply to every style you render for this client</span>
-              </strong>
-              <button type="button" className="linklike" onClick={() => setShowEditor((v) => !v)}>
-                {showEditor ? 'Hide editor' : 'Edit photos'}
-              </button>
-            </div>
+        {/* Photo editor — click a thumbnail to edit it large. Edits persist on the
+            client and apply to EVERY style. Thumbnails mirror each photo's edits. */}
+        {projPhotos.length > 0 && (() => {
+          const defE = { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null };
+          const styleFor = (e) => {
+            const pos = e.fit === 'fill'
+              ? ((Number.isFinite(e.posX) && Number.isFinite(e.posY)) ? `${e.posX}% ${e.posY}%`
+                 : e.anchor === 'top' ? '50% 0%' : e.anchor === 'bottom' ? '50% 100%' : e.anchor === 'left' ? '0% 50%' : e.anchor === 'right' ? '100% 50%' : '50% 50%')
+              : 'center';
+            let f = e.mode === 'bw' ? 'grayscale(1) ' : e.mode === 'sepia' ? 'sepia(.8) ' : '';
+            f += `contrast(${(e.contrast || 100) / 100}) saturate(${e.mode === 'bw' ? 0 : (e.saturation || 100) / 100})`;
+            return { objectFit: e.fit === 'fill' ? 'cover' : 'contain', objectPosition: pos, transform: `scale(${(e.size || 100) / 100})`, filter: f };
+          };
+          const selP = projPhotos.find((p) => p.key === selKey) || projPhotos[0];
+          const e = { ...defE, ...(photoEdits.photos[selP.key] || {}) };
+          const startDrag = (ev) => {
+            if (e.fit !== 'fill') return;
+            const r = ev.currentTarget.getBoundingClientRect();
+            const px = Number.isFinite(e.posX) ? e.posX : (e.anchor === 'top' ? 0 : e.anchor === 'bottom' ? 100 : 50);
+            const py = Number.isFinite(e.posY) ? e.posY : 50;
+            bigDragRef.current = { sx: ev.clientX, sy: ev.clientY, px, py, w: r.width, h: r.height };
+            try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch (_) {}
+          };
+          const moveDrag = (ev) => {
+            const d = bigDragRef.current; if (!d) return;
+            const nx = Math.max(0, Math.min(100, d.px - (ev.clientX - d.sx) / d.w * 140));
+            const ny = Math.max(0, Math.min(100, d.py - (ev.clientY - d.sy) / d.h * 140));
+            editPhoto(c.id, selP.key, { posX: Math.round(nx), posY: Math.round(ny) });
+          };
+          const endDrag = () => { bigDragRef.current = null; };
+          return (
+            <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <strong style={{ fontSize: 13 }}>Photo editor{' '}
+                  <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— click a photo to edit it large; edits apply to every style</span></strong>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{editsSaving ? 'Saving…' : editsSaved ? 'Saved' : ''}</span>
+                <button type="button" className="linklike" onClick={() => setShowEditor((v) => !v)}>{showEditor ? 'Hide editor' : 'Edit photos'}</button>
+              </div>
 
-            {showEditor && (
-              <>
-                <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0 12px' }}>
-                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                    {editsSaving ? 'Saving…' : editsSaved ? 'Saved' : 'Auto color-correct is per photo (button on each tile)'}
-                  </span>
-                  <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
-                    {Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed · Default: Fit (native aspect — pillars on 9:16); Top/Center/Bottom apply when a photo is set to Fill
-                  </span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
-                  {projPhotos.map((p) => {
-                    const e = photoEdits.photos[p.key] || { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false };
-                    const objPos = e.anchor === 'top' ? '50% 0%' : e.anchor === 'bottom' ? '50% 100%' : '50% 50%';
-                    const origin = e.anchor === 'top' ? 'center top' : e.anchor === 'bottom' ? 'center bottom' : 'center';
-                    return (
-                      <div key={p.key || p.index} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: 8, opacity: e.removed ? 0.45 : 1 }}>
-                        {/* 16:9 preview — approximates how the photo sits in the frame */}
-                        <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', background: '#000', borderRadius: 6, overflow: 'hidden' }}>
-                          <img
-                            src={p.url}
-                            alt={p.filename}
-                            style={{
-                              width: '100%', height: '100%',
-                              objectFit: e.fit === 'fit' ? 'contain' : 'cover',
-                              objectPosition: e.fit === 'fit' ? 'center' : objPos,
-                              transform: `scale(${(e.size || 100) / 100})`,
-                              transformOrigin: origin,
-                            }}
-                          />
-                          <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 5px', borderRadius: 4 }}>{p.index}</span>
-                        </div>
-
-                        {/* framing anchor */}
-                        <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                          {['top', 'center', 'bottom'].map((a) => (
-                            <button
-                              key={a}
-                              type="button"
-                              className={e.anchor === a ? 'btn-primary' : 'btn-ghost'}
-                              style={{ flex: 1, padding: '3px 0', fontSize: 11 }}
-                              onClick={() => editPhoto(c.id, p.key, { anchor: a })}
-                            >
-                              {a[0].toUpperCase() + a.slice(1)}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* fill vs fit (retain aspect) */}
-                        <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                          <button type="button" className={e.fit === 'fill' ? 'btn-primary' : 'btn-ghost'} style={{ flex: 1, padding: '3px 0', fontSize: 11 }} onClick={() => editPhoto(c.id, p.key, { fit: 'fill' })}>Fill</button>
-                          <button type="button" className={e.fit === 'fit' ? 'btn-primary' : 'btn-ghost'} style={{ flex: 1, padding: '3px 0', fontSize: 11 }} onClick={() => editPhoto(c.id, p.key, { fit: 'fit' })} title="Retain the photo's native aspect (black bars)">Fit</button>
-                        </div>
-
-                        {/* size */}
-                        <div style={{ marginTop: 6 }}>
-                          <input type="range" min="60" max="140" step="5" value={e.size || 100} style={{ width: '100%' }} onChange={(ev) => editPhoto(c.id, p.key, { size: Number(ev.target.value) })} />
-                          <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center' }}>{e.size || 100}%</div>
-                        </div>
-
-                        {/* auto color-correct (per photo) */}
-                        <button
-                          type="button"
-                          className={e.colorCorrect ? 'btn-primary' : 'btn-ghost'}
-                          style={{ width: '100%', padding: '3px 0', fontSize: 11, marginTop: 4 }}
-                          onClick={() => editPhoto(c.id, p.key, { colorCorrect: !e.colorCorrect })}
-                        >
-                          Auto color {e.colorCorrect ? 'On' : 'Off'}
-                        </button>
-
-                        {/* actions */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 6 }}>
-                          <a href={p.url} target="_blank" rel="noopener noreferrer" download={p.filename} className="linklike" style={{ fontSize: 11 }}>Download</a>
-                          <button
-                            type="button"
-                            className="linklike"
-                            style={{ fontSize: 11 }}
-                            disabled={replacing === p.key}
-                            onClick={() => { replaceKeyRef.current = p.key; if (replaceInputRef.current) replaceInputRef.current.click(); }}
-                          >
-                            {replacing === p.key ? 'Uploading…' : 'Replace'}
-                          </button>
-                          <button type="button" className="linklike" style={{ fontSize: 11 }} onClick={() => editPhoto(c.id, p.key, { removed: !e.removed })}>
-                            {e.removed ? 'Restore' : 'Remove'}
-                          </button>
-                        </div>
+              {showEditor && (
+                <>
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, margin: '12px 0', background: 'rgba(127,127,127,0.04)' }}>
+                    <div
+                      onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag}
+                      style={{ position: 'relative', width: '100%', maxWidth: 720, margin: '0 auto', aspectRatio: '16 / 9', background: '#000', borderRadius: 10, overflow: 'hidden', cursor: e.fit === 'fill' ? 'grab' : 'default' }}
+                    >
+                      <img src={selP.url} alt={selP.filename} draggable={false} style={{ width: '100%', height: '100%', userSelect: 'none', ...styleFor(e) }} />
+                      <span style={{ position: 'absolute', top: 8, left: 8, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '2px 8px', borderRadius: 6 }}>Photo {selP.index}</span>
+                      <span style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#e9dcc0', padding: '3px 10px', borderRadius: 6 }}>
+                        {e.fit === 'fill' ? 'Fill — drag the photo to position it' : 'Fit — whole photo, nothing cropped'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', maxWidth: 720, margin: '12px auto 0', fontSize: 12, color: 'var(--muted)' }}>
+                      <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Framing
+                        {['top', 'center', 'bottom', 'left', 'right'].map((a) => (
+                          <button key={a} type="button" className={e.anchor === a && e.fit === 'fill' && !Number.isFinite(e.posX) ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }}
+                            onClick={() => editPhoto(c.id, selP.key, { anchor: a, fit: 'fill', posX: null, posY: null })}>{a[0].toUpperCase() + a.slice(1)}</button>
+                        ))}
                       </div>
-                    );
-                  })}
-                </div>
-                <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-                  Photos default to Fit (native aspect — nothing cropped, pillars on verticals); switch a photo to Fill to crop it to the frame. Download pulls the original full-res file; Replace swaps your fixed version back into the same slot. Removed photos are skipped in every render.
-                </p>
-                <input
-                  ref={replaceInputRef}
-                  type="file"
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  onChange={(ev) => {
-                    const f = ev.target.files && ev.target.files[0];
-                    ev.target.value = '';
-                    const key = replaceKeyRef.current;
-                    if (f && key) replacePhoto(c.id, key, f);
-                  }}
-                />
-              </>
-            )}
-          </div>
-        )}
+                      <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Fit
+                        <button type="button" className={e.fit === 'fill' ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { fit: 'fill' })}>Fill</button>
+                        <button type="button" className={e.fit === 'fit' ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { fit: 'fit' })}>Fit</button>
+                        <span style={{ marginLeft: 6 }}>Size</span>
+                        <input type="range" min="60" max="140" step="5" value={e.size || 100} style={{ width: 110 }} onChange={(ev) => editPhoto(c.id, selP.key, { size: Number(ev.target.value) })} />
+                        <span style={{ display: 'inline-block', minWidth: 40 }}>{e.size || 100}%</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', maxWidth: 720, margin: '10px auto 0', fontSize: 12, color: 'var(--muted)' }}>
+                      <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Look
+                        {[['color', 'Colour'], ['bw', 'B&W'], ['sepia', 'Sepia']].map((mm) => (
+                          <button key={mm[0]} type="button" className={e.mode === mm[0] ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { mode: mm[0] })}>{mm[1]}</button>
+                        ))}
+                      </div>
+                      <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Contrast
+                        <input type="range" min="50" max="160" step="5" value={e.contrast || 100} style={{ width: 100 }} onChange={(ev) => editPhoto(c.id, selP.key, { contrast: Number(ev.target.value) })} />
+                        <span style={{ display: 'inline-block', minWidth: 40 }}>{e.contrast || 100}%</span>
+                        <span style={{ marginLeft: 8 }}>Saturation</span>
+                        <input type="range" min="0" max="200" step="5" value={e.saturation || 100} style={{ width: 100 }} onChange={(ev) => editPhoto(c.id, selP.key, { saturation: Number(ev.target.value) })} />
+                        <span style={{ display: 'inline-block', minWidth: 40 }}>{e.saturation || 100}%</span>
+                      </div>
+                      <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Auto color
+                        <button type="button" className={!e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { colorCorrect: false })}>Off</button>
+                        <button type="button" className={e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { colorCorrect: true })}>On</button>
+                      </div>
+                      <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
+                        <a href={selP.url} target="_blank" rel="noopener noreferrer" download={selP.filename} className="linklike" style={{ fontSize: 12 }}>Download</a>
+                        <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={replacing === selP.key} onClick={() => { replaceKeyRef.current = selP.key; if (replaceInputRef.current) replaceInputRef.current.click(); }}>{replacing === selP.key ? 'Uploading…' : 'Replace'}</button>
+                        <button type="button" className="linklike" style={{ fontSize: 12 }} onClick={() => editPhoto(c.id, selP.key, { removed: !e.removed })}>{e.removed ? 'Restore' : 'Remove'}</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>
+                    {Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed · click a photo to edit it above
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(122px, 1fr))', gap: 10 }}>
+                    {projPhotos.map((p) => {
+                      const pe = { ...defE, ...(photoEdits.photos[p.key] || {}) };
+                      const isSel = p.key === selP.key;
+                      return (
+                        <div key={p.key || p.index} onClick={() => setSelKey(p.key)}
+                          style={{ border: isSel ? '2px solid #d8b56b' : '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', opacity: pe.removed ? 0.4 : 1, position: 'relative' }}>
+                          <div style={{ aspectRatio: '16 / 9', background: '#000', overflow: 'hidden' }}>
+                            <img src={p.url} alt={p.filename} draggable={false} style={{ width: '100%', height: '100%', ...styleFor(pe) }} />
+                          </div>
+                          <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{p.index}</span>
+                          {pe.removed && <span style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 9, background: '#e23b3b', color: '#fff', padding: '1px 5px', borderRadius: 4 }}>removed</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
+                    Default is Fit (native aspect, nothing cropped). Fill crops — then drag the big photo to position it. B&amp;W / Sepia and Auto-color render in the montage; contrast &amp; saturation preview in the editor (render tuning pending a test render). Removed photos are skipped.
+                  </p>
+                  <input ref={replaceInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+                    onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; const key = replaceKeyRef.current; if (f && key) replacePhoto(c.id, key, f); }} />
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Segment plan */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
