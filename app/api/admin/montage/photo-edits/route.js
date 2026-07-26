@@ -23,7 +23,7 @@ function clean(edits) {
     let size = Number(v.size);
     if (!Number.isFinite(size)) size = 100;
     size = Math.min(140, Math.max(60, Math.round(size)));
-    out.photos[key] = { anchor, fit, size, removed: !!v.removed };
+    out.photos[key] = { anchor, fit, size, removed: !!v.removed, colorCorrect: !!v.colorCorrect };
   }
   return out;
 }

@@ -370,6 +370,7 @@ export default function AdminPage() {
   const [projPhotosLoading, setProjPhotosLoading] = useState(false);
   const [showRef, setShowRef] = useState(false);         // numbered reference strip
   const [genBusy, setGenBusy] = useState(false);
+  const [showHidden, setShowHidden] = useState(false); // reveal hidden renders
 
   // Photo Editor (per-client): per-photo framing/fit/size/removed + global
   // colorCorrect. Persisted on the client row and applied to EVERY style render.
@@ -589,20 +590,13 @@ export default function AdminPage() {
 
   function editPhoto(clientId, key, patch) {
     setPhotoEdits((prev) => {
-      const cur = prev.photos[key] || { anchor: 'top', fit: 'fit', size: 100, removed: false };
+      const cur = prev.photos[key] || { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false };
       const next = { ...prev, photos: { ...prev.photos, [key]: { ...cur, ...patch } } };
       persistEdits(clientId, next);
       return next;
     });
   }
 
-  function setColorCorrect(clientId, on) {
-    setPhotoEdits((prev) => {
-      const next = { ...prev, colorCorrect: !!on };
-      persistEdits(clientId, next);
-      return next;
-    });
-  }
 
   // Replace one photo in place: upload the fixed file straight to R2 (presigned
   // PUT — big files skip Vercel), then repoint the media row so the montage uses
@@ -696,6 +690,20 @@ export default function AdminPage() {
       setMMsg(err.message);
     }
     setAdjBusy(false);
+  }
+
+  // Hide/unhide a render (non-destructive — just filters it from the list).
+  async function hideMontage(id, hidden) {
+    try {
+      await api('/api/admin/montage/visibility', {
+        method: 'POST',
+        body: JSON.stringify({ montageId: id, hidden }),
+      });
+      loadMontages();
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
   }
 
   async function syncMontage(id) {
@@ -1154,7 +1162,9 @@ export default function AdminPage() {
   }
 
   function renderMontageTool(c) {
-    const rows = montages.filter((x) => x.clientId === c.id);
+    const allRows = montages.filter((x) => x.clientId === c.id);
+    const hiddenCount = allRows.filter((m) => m.hidden).length;
+    const rows = allRows.filter((m) => showHidden || !m.hidden);
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
@@ -1228,12 +1238,8 @@ export default function AdminPage() {
             {showEditor && (
               <>
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', margin: '10px 0 12px' }}>
-                  <label className="choice" style={{ color: 'var(--text)', margin: 0 }}>
-                    <input type="checkbox" checked={!!photoEdits.colorCorrect} onChange={(e) => setColorCorrect(c.id, e.target.checked)} />
-                    Auto color-correct
-                  </label>
                   <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                    {editsSaving ? 'Saving…' : editsSaved ? 'Saved' : ''}
+                    {editsSaving ? 'Saving…' : editsSaved ? 'Saved' : 'Auto color-correct is per photo (button on each tile)'}
                   </span>
                   <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
                     {Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed · Default: Fit (native aspect — pillars on 9:16); Top/Center/Bottom apply when a photo is set to Fill
@@ -1242,7 +1248,7 @@ export default function AdminPage() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
                   {projPhotos.map((p) => {
-                    const e = photoEdits.photos[p.key] || { anchor: 'top', fit: 'fit', size: 100, removed: false };
+                    const e = photoEdits.photos[p.key] || { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false };
                     const objPos = e.anchor === 'top' ? '50% 0%' : e.anchor === 'bottom' ? '50% 100%' : '50% 50%';
                     const origin = e.anchor === 'top' ? 'center top' : e.anchor === 'bottom' ? 'center bottom' : 'center';
                     return (
@@ -1289,6 +1295,16 @@ export default function AdminPage() {
                           <input type="range" min="60" max="140" step="5" value={e.size || 100} style={{ width: '100%' }} onChange={(ev) => editPhoto(c.id, p.key, { size: Number(ev.target.value) })} />
                           <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center' }}>{e.size || 100}%</div>
                         </div>
+
+                        {/* auto color-correct (per photo) */}
+                        <button
+                          type="button"
+                          className={e.colorCorrect ? 'btn-primary' : 'btn-ghost'}
+                          style={{ width: '100%', padding: '3px 0', fontSize: 11, marginTop: 4 }}
+                          onClick={() => editPhoto(c.id, p.key, { colorCorrect: !e.colorCorrect })}
+                        >
+                          Auto color {e.colorCorrect ? 'On' : 'Off'}
+                        </button>
 
                         {/* actions */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: 6 }}>
@@ -1400,7 +1416,14 @@ export default function AdminPage() {
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h3 className="folder-head" style={{ margin: 0 }}>Renders</h3>
-            <button className="btn-ghost" type="button" onClick={loadMontages}>Refresh</button>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {hiddenCount > 0 && (
+                <button type="button" className="linklike" style={{ fontSize: 13 }} onClick={() => setShowHidden((v) => !v)}>
+                  {showHidden ? `Hide hidden (${hiddenCount})` : `Show hidden (${hiddenCount})`}
+                </button>
+              )}
+              <button className="btn-ghost" type="button" onClick={loadMontages}>Refresh</button>
+            </div>
           </div>
           {rows.length === 0 ? (
             <p style={{ color: 'var(--muted)', fontSize: 14 }}>No montages yet for this client.</p>
@@ -1434,6 +1457,12 @@ export default function AdminPage() {
                       </>
                     )}
                   </span>
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  <button type="button" className="linklike" style={{ fontSize: 12 }} onClick={() => hideMontage(m.id, !m.hidden)}>
+                    {m.hidden ? 'Unhide' : 'Hide'}
+                  </button>
+                  {m.hidden && <span className="pill" style={{ marginLeft: 8 }}>hidden</span>}
                 </div>
                 {m.status === 'failed' && m.error && (
                   <p className="msg-error" style={{ marginTop: 6, fontSize: 13 }}>{m.error}</p>
