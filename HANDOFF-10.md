@@ -91,3 +91,19 @@ alter table public.studio_characters add column if not exists deleted_at timesta
 - Admin editor edits persist per-client in `photo_edits` (sql/012) and apply to every
   style. Contrast/saturation still preview-only in the editor (render wiring pending
   a calibration render — see earlier handoffs).
+
+---
+
+## ⭐ MONTAGE STYLES — SOURCE OF TRUTH (added 2026-07-27)
+`MONTAGES-MASTER.md` is the canonical reference for ALL montage styles — read it
+before editing `lib/montage.js`. It documents the SIX shipped styles (hollywood,
+timeless, party, party2, duotone, polaroid) with verbatim params + how each renders,
+the shared engine rules, and a verify checklist. `POLAROID-FIX.md` has the Polaroid
+stacking builder in full.
+
+Rules: never delete/rename a style key; `MONTAGE_STYLES` in app/admin/page.js must
+list every key in `STYLES`; restore any lost/broken style with
+`git checkout 7c2db4f -- lib/montage.js`. The TWO Collage Wall styles (Classic
+uniform grid, Featured large heroes) are approved MOCKS only — never built into the
+engine — build them from the spec in MONTAGES-MASTER.md (mocks: collage-wall-optionA-
+MASTER.html / collage-wall-optionB.html / collage_v3_template.html).
