@@ -372,7 +372,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', style: 'hollywood', speed: '', cards: true });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', cards: true });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -1592,6 +1592,15 @@ export default function AdminPage() {
           {segments.map((s, idx) => {
             const N = projPhotos.length;
             const matched = parsePhotoSpec(s.photos, N).length;
+            // Album ranges (contiguous runs in play order) so a segment can output a
+            // whole album by name — the pulldown just fills the photo numbers below.
+            const albumRanges = [];
+            projPhotos.forEach((p, i) => {
+              const a = p.album || ''; const pos = i + 1;
+              const prev = albumRanges[albumRanges.length - 1];
+              if (a && prev && prev.name === a && prev.to === pos - 1) prev.to = pos;
+              else if (a) albumRanges.push({ name: a, from: pos, to: pos });
+            });
             return (
               <div key={s.key} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -1600,12 +1609,31 @@ export default function AdminPage() {
                     <button type="button" className="linklike" onClick={() => removeSegment(s.key)}>Remove</button>
                   )}
                 </div>
+                {albumRanges.length > 0 && (
+                  <div className="field-group" style={{ marginBottom: 8 }}>
+                    <label htmlFor={`al_${s.key}`}>Album to output</label>
+                    <select
+                      id={`al_${s.key}`}
+                      value={s.album || ''}
+                      onChange={(e) => {
+                        const name = e.target.value;
+                        const r = albumRanges.find((x) => x.name === name);
+                        updateSegment(s.key, { album: name, photos: r ? `${r.from}-${r.to}` : '' });
+                      }}
+                    >
+                      <option value="">All photos</option>
+                      {albumRanges.map((r) => (
+                        <option key={r.name} value={r.name}>{r.name} (#{r.from}–{r.to}, {r.to - r.from + 1} photos)</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <label htmlFor={`ph_${s.key}`}>Photos (blank = all; e.g. 1-50 or 1-10, 15, 11-51)</label>
                 <input
                   id={`ph_${s.key}`}
                   placeholder="1-50"
                   value={s.photos}
-                  onChange={(e) => updateSegment(s.key, { photos: e.target.value })}
+                  onChange={(e) => updateSegment(s.key, { photos: e.target.value, album: '' })}
                 />
                 <p style={{ fontSize: 12, margin: '4px 0 8px', color: N > 0 && matched === 0 ? 'var(--red)' : 'var(--muted)' }}>
                   {N === 0
