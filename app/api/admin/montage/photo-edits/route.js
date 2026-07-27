@@ -25,7 +25,7 @@ function clean(edits) {
     size = Math.min(140, Math.max(60, Math.round(size)));
     const mode = ['color', 'bw', 'sepia'].includes(v.mode) ? v.mode : 'color';
     let contrast = Number(v.contrast); if (!Number.isFinite(contrast)) contrast = 100;
-    contrast = Math.min(160, Math.max(50, Math.round(contrast)));
+    contrast = Math.min(200, Math.max(50, Math.round(contrast)));
     let saturation = Number(v.saturation); if (!Number.isFinite(saturation)) saturation = 100;
     saturation = Math.min(200, Math.max(0, Math.round(saturation)));
     let posX = Number(v.posX), posY = Number(v.posY);

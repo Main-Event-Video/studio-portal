@@ -1323,7 +1323,7 @@ export default function AdminPage() {
                     ))}
                   </div>
                   <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Contrast
-                    <input type="range" min="50" max="160" step="5" value={e.contrast || 100} style={{ width: 100 }} onChange={(ev) => editPhoto(c.id, selP.key, { contrast: Number(ev.target.value) })} />
+                    <input type="range" min="50" max="200" step="2" value={e.contrast || 100} style={{ width: 100 }} onChange={(ev) => editPhoto(c.id, selP.key, { contrast: Number(ev.target.value) })} />
                     <span style={{ display: 'inline-block', minWidth: 40 }}>{e.contrast || 100}%</span>
                     <span style={{ marginLeft: 8 }}>Saturation</span>
                     <input type="range" min="0" max="200" step="5" value={e.saturation || 100} style={{ width: 100 }} onChange={(ev) => editPhoto(c.id, selP.key, { saturation: Number(ev.target.value) })} />
@@ -1390,6 +1390,11 @@ export default function AdminPage() {
                 return (
                   <button key={o.value} type="button" onClick={() => setSegments((arr) => arr.map((x) => ({ ...x, style: o.value })))}
                     style={{ textAlign: 'left', border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 12, padding: 12, cursor: 'pointer', background: sel ? 'rgba(47,107,255,0.08)' : 'transparent', color: 'var(--text)' }}>
+                    <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', marginBottom: 8, background: '#000' }}>
+                      <video src={`/style-previews/${o.value}.mp4`} muted loop autoPlay playsInline preload="auto"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        onError={(ev) => { const w = ev.currentTarget.parentElement; if (w) w.style.display = 'none'; }} />
+                    </div>
                     <strong style={{ fontSize: 13 }}>{o.label.split(' \u2014 ')[0]}</strong>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{o.label.split(' \u2014 ')[1] || ''}</div>
                     {sel && <div style={{ color: '#2f6bff', fontSize: 12, marginTop: 4 }}>{'\u2713 selected'}</div>}
