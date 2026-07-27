@@ -5,7 +5,7 @@ import { buildTimeline } from '@/lib/timelineOrder';
 import { isCharacterFolder } from '@/lib/characterPoses';
 import CharacterCapture from './CharacterCapture';
 
-// Files moved here are set aside for the studio to clear. Clients can also delete their own uploads outright (the \u2715 on each photo).
+// Files moved here are set aside for the studio to clear. Clients can also delete their own uploads outright (the ✕ on each photo).
 const TRASH_FOLDER = 'Trash';
 
 // Thumbnail sizes for the timeline zoom (px). Index into this array.
@@ -218,6 +218,8 @@ export default function Uploader({ token }) {
   const [openAlbums, setOpenAlbums] = useState(() => new Set());
   const [libOpen, setLibOpen] = useState(false);       // Photo Library grid
   const libDragRef = useRef(null);                      // { scope, id }
+  const [lastTrashed, setLastTrashed] = useState(null); // { id, filename, prev } for Undo
+  const undoTimer = useRef(null);
   const frameRef = useRef(null);
   const zoomRef = useRef(2);
 
@@ -472,8 +474,25 @@ export default function Uploader({ token }) {
       saveTl(nextTl);
     }
   }
-  async function libDelete(m) {
-    if (!window.confirm(`Delete "${m.filename}"? This removes it from your uploads and can't be undone.`)) return;
+  // Soft delete: move to Trash (recoverable) + show an Undo. Never a hard delete
+  // from a single tap — clients restore from Trash or Undo right after.
+  async function trashPhoto(m) {
+    const prev = m.folderPath || '';
+    setLastTrashed({ id: m.id, filename: m.filename, prev });
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setLastTrashed(null), 9000);
+    await organize({ action: 'update', id: m.id, folderPath: TRASH_FOLDER });
+  }
+  async function restorePhoto(id, toFolder) {
+    await organize({ action: 'update', id, folderPath: toFolder || '' });
+  }
+  async function undoTrash() {
+    if (!lastTrashed) return;
+    const lt = lastTrashed; setLastTrashed(null);
+    await restorePhoto(lt.id, lt.prev);
+  }
+  async function deleteForever(m) {
+    if (!window.confirm(`Permanently delete "${m.filename}"? This can't be undone.`)) return;
     await organize({ action: 'delete', id: m.id });
   }
 
@@ -591,9 +610,9 @@ export default function Uploader({ token }) {
         <button
           type="button"
           title="Delete this photo"
-          onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${m.filename}"? This removes it from your uploads and can't be undone.`)) organize({ action: 'delete', id: m.id }); }}
+          onClick={(e) => { e.stopPropagation(); trashPhoto(m); }}
           style={{ position: 'absolute', top: 6, right: 6, zIndex: 6, width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.62)', color: '#fff', fontSize: 13, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >\u2715</button>
+        >✕</button>
         <div className="cap">{m.filename}</div>
       </div>
     );
@@ -879,7 +898,7 @@ export default function Uploader({ token }) {
           <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0' }}>
             <button type="button" onClick={() => setLibOpen(true)}
               style={{ border: '1.5px solid var(--neon)', background: 'var(--bluedim)', color: '#e6eef5', borderRadius: 12, padding: '12px 20px', fontWeight: 800, cursor: 'pointer', fontSize: 15 }}>
-              \uD83D\uDCDA Photo Library \u2014 reorder & delete
+              📚 Photo Library — reorder & delete
             </button>
           </div>
           <div className="savebar">
@@ -892,8 +911,8 @@ export default function Uploader({ token }) {
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(8,7,12,0.96)', overflowY: 'auto', padding: 20 }}>
           <div style={{ maxWidth: 1100, margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <h2 style={{ color: '#fff', margin: 0, fontSize: 20 }}>Photo Library <span style={{ fontSize: 13, color: '#9fb3c8', fontWeight: 400 }}>\u2014 drag to reorder within a group, \u2715 to delete</span></h2>
-              <button type="button" onClick={() => setLibOpen(false)} style={{ border: '1px solid #38b6ff', background: 'transparent', color: '#e6eef5', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontWeight: 700 }}>Done \u2713</button>
+              <h2 style={{ color: '#fff', margin: 0, fontSize: 20 }}>Photo Library <span style={{ fontSize: 13, color: '#9fb3c8', fontWeight: 400 }}>— drag to reorder within a group, ✕ to delete</span></h2>
+              <button type="button" onClick={() => setLibOpen(false)} style={{ border: '1px solid #38b6ff', background: 'transparent', color: '#e6eef5', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontWeight: 700 }}>Done ✓</button>
             </div>
             {tl.length === 0 ? (
               <p style={{ color: '#9fb3c8' }}>No photos yet.</p>
@@ -913,11 +932,11 @@ export default function Uploader({ token }) {
                           onDrop={(e) => { e.preventDefault(); const d = libDragRef.current; if (d && d.scope === scope) libReorder(scope, d.id, m.id); libDragRef.current = null; }}
                           style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #2a3340', background: '#000', aspectRatio: '1 / 1', cursor: 'grab' }}>
                           {isVideo
-                            ? (<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9fb3c8' }}>\u25B6 Video</div>)
+                            ? (<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9fb3c8' }}>▶ Video</div>)
                             : (<img src={m.url} alt={m.filename} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)}
                           <span style={{ position: 'absolute', top: 5, left: 5, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{i + 1}</span>
-                          <button type="button" onClick={() => libDelete(m)} title="Delete"
-                            style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.66)', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>\u2715</button>
+                          <button type="button" onClick={() => trashPhoto(m)} title="Delete"
+                            style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.66)', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>✕</button>
                         </div>
                       );
                     })}
@@ -928,12 +947,41 @@ export default function Uploader({ token }) {
                 <>
                   {section('Not in an album', 'loose', loose)}
                   {albums.map((a) => section(a.name, a.name, a.items))}
+                  {(() => {
+                    const trashed = mine.filter((m) => (m.folderPath || '') === TRASH_FOLDER);
+                    return trashed.length === 0 ? null : (
+                      <div style={{ marginBottom: 22, borderTop: '1px solid #2a3340', paddingTop: 16 }}>
+                        <div style={{ color: '#e6a3a3', fontWeight: 800, fontSize: 14, margin: '0 0 10px' }}>🗑 Trash <span style={{ color: '#7d8ea0', fontWeight: 400 }}>({trashed.length}) — restore, or delete forever</span></div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
+                          {trashed.map((m) => {
+                            const isVideo = (m.contentType || '').startsWith('video');
+                            return (
+                              <div key={m.id} style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #402a2a', background: '#000', aspectRatio: '1 / 1', opacity: 0.85 }}>
+                                {isVideo ? (<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9fb3c8' }}>▶ Video</div>) : (<img src={m.url} alt={m.filename} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)}
+                                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, display: 'flex', gap: 4, padding: 4, background: 'rgba(0,0,0,.55)' }}>
+                                  <button type="button" onClick={() => restorePhoto(m.id, '')} style={{ flex: 1, border: 'none', borderRadius: 6, padding: '5px 0', background: '#2fbf71', color: '#04210f', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}>Restore</button>
+                                  <button type="button" onClick={() => deleteForever(m)} title="Delete forever" style={{ border: 'none', borderRadius: 6, padding: '5px 8px', background: '#7a2333', color: '#fff', fontSize: 11, cursor: 'pointer' }}>✕</button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {orgMsg && <p style={{ color: '#ff6b8a', fontSize: 13 }}>{orgMsg}</p>}
-                  <p style={{ color: '#7d8ea0', fontSize: 12, marginTop: 8 }}>Drag to reorder within a group. Reorder across groups on the timeline. Deleting removes a photo from your uploads permanently.</p>
+                  <p style={{ color: '#7d8ea0', fontSize: 12, marginTop: 8 }}>Drag to reorder within a group. Reorder across groups on the timeline. Deleting moves a photo to Trash — restore it here, or Undo right after.</p>
                 </>
               );
             })()}
           </div>
+        </div>
+      )}
+      {lastTrashed && (
+        <div style={{ position: 'fixed', left: '50%', bottom: 20, transform: 'translateX(-50%)', zIndex: 1000, background: '#12233a', border: '1px solid #38b6ff', borderRadius: 12, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 14, color: '#e6eef5', boxShadow: '0 8px 24px rgba(0,0,0,.5)', maxWidth: '92vw' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Moved “{lastTrashed.filename}” to Trash.</span>
+          <button type="button" onClick={undoTrash} style={{ border: 'none', background: '#38b6ff', color: '#04210f', fontWeight: 800, borderRadius: 8, padding: '6px 14px', cursor: 'pointer' }}>Undo</button>
+          <button type="button" onClick={() => setLastTrashed(null)} style={{ border: 'none', background: 'transparent', color: '#9fb3c8', cursor: 'pointer', fontSize: 16 }}>✕</button>
         </div>
       )}
       {activeChar && (
