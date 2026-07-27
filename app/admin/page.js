@@ -354,6 +354,8 @@ export default function AdminPage() {
     { value: 'party2', label: 'Party 2 — energetic, drift + varied transitions' },
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
     { value: 'polaroid', label: 'Polaroid — tilted prints on a soft background' },
+    { value: 'collage_classic', label: 'Collage Wall Classic — uniform photo grid, camera glides across' },
+    { value: 'collage_featured', label: 'Collage Wall Featured — big hero photos + smaller tiles' },
   ];
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
@@ -1390,7 +1392,7 @@ export default function AdminPage() {
                     style={{ textAlign: 'left', border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 12, padding: 12, cursor: 'pointer', background: sel ? 'rgba(47,107,255,0.08)' : 'transparent', color: 'var(--text)' }}>
                     <strong style={{ fontSize: 13 }}>{o.label.split(' \u2014 ')[0]}</strong>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{o.label.split(' \u2014 ')[1] || ''}</div>
-                    {sel && <div style={{ color: '#2f6bff', fontSize: 12, marginTop: 4 }}>\u2713 selected</div>}
+                    {sel && <div style={{ color: '#2f6bff', fontSize: 12, marginTop: 4 }}>{'\u2713 selected'}</div>}
                   </button>
                 );
               })}
