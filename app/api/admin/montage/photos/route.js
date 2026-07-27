@@ -4,7 +4,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
-import { getViewUrl } from '@/lib/r2';
+import { getViewUrl, getDownloadUrl } from '@/lib/r2';
 import { orderedClientMedia } from '@/lib/clientTimeline';
 
 export const runtime = 'nodejs';
@@ -30,6 +30,7 @@ export async function GET(request) {
       key: m.r2_key,
       filename: m.filename,
       url: await getViewUrl(m.r2_key, 3600),
+      downloadUrl: await getDownloadUrl(m.r2_key, m.filename, 3600),
     }))
   );
   return NextResponse.json({ photos });

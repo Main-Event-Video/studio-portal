@@ -310,12 +310,21 @@ export default function Uploader({ token }) {
 
   async function deleteCharacter(ch) {
     if (typeof window !== 'undefined' && !window.confirm(`Delete the character “${ch.name || 'Unnamed'}”? Main Event Studio can restore it if you change your mind.`)) return;
+    // Optimistic: drop it from the roster immediately so the tap clearly did something.
+    setCharacters((cur) => cur.filter((x) => x.id !== ch.id));
     try {
-      await fetch('/api/portal/character', {
+      const res = await fetch('/api/portal/character', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, action: 'delete', characterId: ch.id }),
       });
-    } catch { /* best-effort; roster reload reflects the result */ }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        // Surface WHY it failed (e.g. a missing deleted_at column) instead of silently reappearing.
+        if (typeof window !== 'undefined') window.alert(`Couldn't delete this character${j.error ? `: ${j.error}` : ''}${j.detail ? ` (${j.detail})` : ''}.`);
+      }
+    } catch {
+      if (typeof window !== 'undefined') window.alert("Couldn't reach the server to delete this character.");
+    }
     loadCharacters();
   }
 
