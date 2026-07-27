@@ -216,6 +216,8 @@ export default function Uploader({ token }) {
   const [picked, setPicked] = useState(null);  // { scope:'top'|'album', album, id, kind:'media'|'album' }
   const [zoomIdx, setZoomIdx] = useState(2);
   const [openAlbums, setOpenAlbums] = useState(() => new Set());
+  const [libOpen, setLibOpen] = useState(false);       // Photo Library grid
+  const libDragRef = useRef(null);                      // { scope, id }
   const frameRef = useRef(null);
   const zoomRef = useRef(2);
 
@@ -435,6 +437,44 @@ export default function Uploader({ token }) {
       await loadMine();
     } catch (e) { setOrgMsg(e.message || 'Something went wrong.'); }
     setOrgBusy(false);
+  }
+
+  // ---- Photo Library: grouped grid, reorder within a group + delete ----
+  function saveTl(nextTl) {
+    const top = nextTl.map((n) => (n.type === 'media' ? { type: 'media', id: n.item.id } : { type: 'album', name: n.name }));
+    const albums = {};
+    nextTl.forEach((n) => { if (n.type === 'album') albums[n.name] = n.items.map((m) => m.id); });
+    setTl(nextTl);
+    organize({ action: 'setArrangement', top, albums });
+  }
+  function libReorder(scope, dragId, dropId) {
+    if (!dragId || dragId === dropId) return;
+    if (scope === 'loose') {
+      const media = tl.filter((n) => n.type === 'media');
+      const fi = media.findIndex((n) => n.item.id === dragId);
+      const ti = media.findIndex((n) => n.item.id === dropId);
+      if (fi < 0 || ti < 0) return;
+      const arr = [...media]; const [mv] = arr.splice(fi, 1); arr.splice(ti, 0, mv);
+      let k = 0; const nextTl = tl.map((n) => (n.type === 'media' ? arr[k++] : n));
+      saveTl(nextTl);
+    } else {
+      const nextTl = tl.map((n) => {
+        if (n.type === 'album' && n.name === scope) {
+          const arr = [...n.items];
+          const fi = arr.findIndex((m) => m.id === dragId);
+          const ti = arr.findIndex((m) => m.id === dropId);
+          if (fi < 0 || ti < 0) return n;
+          const [mv] = arr.splice(fi, 1); arr.splice(ti, 0, mv);
+          return { ...n, items: arr };
+        }
+        return n;
+      });
+      saveTl(nextTl);
+    }
+  }
+  async function libDelete(m) {
+    if (!window.confirm(`Delete "${m.filename}"? This removes it from your uploads and can't be undone.`)) return;
+    await organize({ action: 'delete', id: m.id });
   }
 
   // ---- derived (upload view) ----
@@ -836,12 +876,66 @@ export default function Uploader({ token }) {
             Videos are shown too, marked <b>▶</b> — place them anywhere, loose or inside an album.
           </p>
 
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0' }}>
+            <button type="button" onClick={() => setLibOpen(true)}
+              style={{ border: '1.5px solid var(--neon)', background: 'var(--bluedim)', color: '#e6eef5', borderRadius: 12, padding: '12px 20px', fontWeight: 800, cursor: 'pointer', fontSize: 15 }}>
+              \uD83D\uDCDA Photo Library \u2014 reorder & delete
+            </button>
+          </div>
           <div className="savebar">
             <button className="savebtn" onClick={() => goView('upload')}>{orgBusy ? 'Saving…' : '✓ Done — order saved'}</button>
           </div>
         </>
       )}
 
+      {libOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(8,7,12,0.96)', overflowY: 'auto', padding: 20 }}>
+          <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <h2 style={{ color: '#fff', margin: 0, fontSize: 20 }}>Photo Library <span style={{ fontSize: 13, color: '#9fb3c8', fontWeight: 400 }}>\u2014 drag to reorder within a group, \u2715 to delete</span></h2>
+              <button type="button" onClick={() => setLibOpen(false)} style={{ border: '1px solid #38b6ff', background: 'transparent', color: '#e6eef5', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontWeight: 700 }}>Done \u2713</button>
+            </div>
+            {tl.length === 0 ? (
+              <p style={{ color: '#9fb3c8' }}>No photos yet.</p>
+            ) : (() => {
+              const loose = tl.filter((n) => n.type === 'media').map((n) => n.item);
+              const albums = tl.filter((n) => n.type === 'album');
+              const section = (title, scope, list) => (list.length === 0 ? null : (
+                <div key={scope} style={{ marginBottom: 22 }}>
+                  <div style={{ color: '#cbd6e2', fontWeight: 800, fontSize: 14, margin: '0 0 10px' }}>{title} <span style={{ color: '#7d8ea0', fontWeight: 400 }}>({list.length})</span></div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
+                    {list.map((m, i) => {
+                      const isVideo = (m.contentType || '').startsWith('video');
+                      return (
+                        <div key={m.id} draggable
+                          onDragStart={() => { libDragRef.current = { scope, id: m.id }; }}
+                          onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === scope) e.preventDefault(); }}
+                          onDrop={(e) => { e.preventDefault(); const d = libDragRef.current; if (d && d.scope === scope) libReorder(scope, d.id, m.id); libDragRef.current = null; }}
+                          style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #2a3340', background: '#000', aspectRatio: '1 / 1', cursor: 'grab' }}>
+                          {isVideo
+                            ? (<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9fb3c8' }}>\u25B6 Video</div>)
+                            : (<img src={m.url} alt={m.filename} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)}
+                          <span style={{ position: 'absolute', top: 5, left: 5, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{i + 1}</span>
+                          <button type="button" onClick={() => libDelete(m)} title="Delete"
+                            style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.66)', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>\u2715</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ));
+              return (
+                <>
+                  {section('Not in an album', 'loose', loose)}
+                  {albums.map((a) => section(a.name, a.name, a.items))}
+                  {orgMsg && <p style={{ color: '#ff6b8a', fontSize: 13 }}>{orgMsg}</p>}
+                  <p style={{ color: '#7d8ea0', fontSize: 12, marginTop: 8 }}>Drag to reorder within a group. Reorder across groups on the timeline. Deleting removes a photo from your uploads permanently.</p>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
       {activeChar && (
         <CharacterCapture
           token={token}
