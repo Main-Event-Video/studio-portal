@@ -474,6 +474,19 @@ export default function Uploader({ token }) {
       saveTl(nextTl);
     }
   }
+  // Reorder across the WHOLE top level — loose photos AND albums interleave in
+  // one sequence, so the Library mirrors the real timeline play order. Keys are
+  // prefixed ('m:'+id for a loose photo, 'a:'+name for an album) so a photo id
+  // and an album name can never collide.
+  function libReorderTop(dragKey, dropKey) {
+    if (!dragKey || dragKey === dropKey) return;
+    const keyOf = (n) => (n.type === 'album' ? `a:${n.name}` : `m:${n.item.id}`);
+    const fi = tl.findIndex((n) => keyOf(n) === dragKey);
+    const ti = tl.findIndex((n) => keyOf(n) === dropKey);
+    if (fi < 0 || ti < 0) return;
+    const arr = [...tl]; const [mv] = arr.splice(fi, 1); arr.splice(ti, 0, mv);
+    saveTl(arr);
+  }
   // Soft delete: move to Trash (recoverable) + show an Undo. Never a hard delete
   // from a single tap — clients restore from Trash or Undo right after.
   async function trashPhoto(m) {
@@ -591,6 +604,31 @@ export default function Uploader({ token }) {
 
   // Plain builders (not components) so React doesn't remount them — which would
   // reload every thumbnail on each zoom/move. Each sets its own key.
+  // Classify an upload so tiles show the right thing: a real photo, or a
+  // labelled placeholder for things that can't preview / aren't part of a video
+  // (audio, HEIC that failed to convert, other files).
+  function mediaKind(m) {
+    const ct = (m.contentType || '').toLowerCase();
+    const name = (m.filename || '').toLowerCase();
+    if (ct.startsWith('video') || /\.(mp4|mov|m4v|webm|avi|mkv)$/.test(name)) return 'video';
+    if (ct.startsWith('audio') || /\.(mp3|wav|m4a|aac|flac|ogg)$/.test(name)) return 'audio';
+    if (/\.(heic|heif)$/.test(name) || ct.includes('heic') || ct.includes('heif')) return 'heic';
+    if (ct.startsWith('image') || /\.(jpe?g|png|gif|webp|avif|bmp|tiff?)$/.test(name)) return 'image';
+    return 'file';
+  }
+  // Inner content of a square Library tile (photo, or a labelled placeholder).
+  function tileInner(m) {
+    const k = mediaKind(m);
+    if (k === 'image') return (<img src={m.url} alt={m.filename} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />);
+    const label = k === 'video' ? '▶ Video' : k === 'audio' ? '🎵 Audio' : k === 'heic' ? 'HEIC' : '📄 File';
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9fb3c8', gap: 4, padding: 6, textAlign: 'center' }}>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>{label}</div>
+        <div style={{ fontSize: 10, color: '#7d8ea0', lineHeight: 1.2, wordBreak: 'break-word' }}>{m.filename}</div>
+      </div>
+    );
+  }
+
   function mediaCard(m, num, scope, album) {
     const isVideo = (m.contentType || '').startsWith('video');
     const isPk = picked && picked.scope === scope && (picked.album || null) === (album || null) && picked.id === m.id;
@@ -604,7 +642,13 @@ export default function Uploader({ token }) {
         onClick={(e) => { e.stopPropagation(); pickToggle({ scope, album: album || null, id: m.id, kind: 'media' }); }}
       >
         <div className="thumb">
-          {isVideo ? (<><span className="vplay">▶</span><span className="vdur">Video</span></>) : (<img src={m.url} alt={m.filename} loading="lazy" draggable={false} />)}
+          {(() => {
+            const k = mediaKind(m);
+            if (k === 'image') return (<img src={m.url} alt={m.filename} loading="lazy" draggable={false} />);
+            const ic = k === 'audio' ? '🎵' : k === 'video' ? '▶' : '📄';
+            const lbl = k === 'video' ? 'Video' : k === 'audio' ? 'Audio' : k === 'heic' ? 'HEIC' : 'File';
+            return (<><span className="vplay">{ic}</span><span className="vdur">{lbl}</span></>);
+          })()}
         </div>
         <span className="num">{num}</span>
         <button
@@ -911,66 +955,97 @@ export default function Uploader({ token }) {
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(8,7,12,0.96)', overflowY: 'auto', padding: 20 }}>
           <div style={{ maxWidth: 1100, margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <h2 style={{ color: '#fff', margin: 0, fontSize: 20 }}>Photo Library <span style={{ fontSize: 13, color: '#9fb3c8', fontWeight: 400 }}>— drag to reorder within a group, ✕ to delete</span></h2>
+              <h2 style={{ color: '#fff', margin: 0, fontSize: 20 }}>Photo Library <span style={{ fontSize: 13, color: '#9fb3c8', fontWeight: 400 }}>— drag photos & albums to reorder, ✕ to delete</span></h2>
               <button type="button" onClick={() => setLibOpen(false)} style={{ border: '1px solid #38b6ff', background: 'transparent', color: '#e6eef5', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontWeight: 700 }}>Done ✓</button>
             </div>
             {tl.length === 0 ? (
               <p style={{ color: '#9fb3c8' }}>No photos yet.</p>
             ) : (() => {
-              const loose = tl.filter((n) => n.type === 'media').map((n) => n.item);
-              const albums = tl.filter((n) => n.type === 'album');
-              const section = (title, scope, list) => (list.length === 0 ? null : (
-                <div key={scope} style={{ marginBottom: 22 }}>
-                  <div style={{ color: '#cbd6e2', fontWeight: 800, fontSize: 14, margin: '0 0 10px' }}>{title} <span style={{ color: '#7d8ea0', fontWeight: 400 }}>({list.length})</span></div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
-                    {list.map((m, i) => {
-                      const isVideo = (m.contentType || '').startsWith('video');
+              // Play-order number for every photo, counted across the whole
+              // interleaved sequence (loose photos + album contents) so the
+              // badges match the real timeline exactly.
+              let pn = 0; const playNo = {};
+              tl.forEach((node) => {
+                if (node.type === 'media') { pn += 1; playNo[node.item.id] = pn; }
+                else node.items.forEach((m) => { pn += 1; playNo[m.id] = pn; });
+              });
+
+              // One square tile: photo (or labelled placeholder) + play number + ✕ to Trash.
+              const tile = (m) => (
+                <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #2a3340', background: '#000', width: 120, height: 120 }}>
+                  {tileInner(m)}
+                  <span style={{ position: 'absolute', top: 5, left: 5, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{playNo[m.id]}</span>
+                  <button type="button" onClick={() => trashPhoto(m)} title="Move to Trash"
+                    style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.66)', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>✕</button>
+                </div>
+              );
+
+              const trashed = mine.filter((m) => (m.folderPath || '') === TRASH_FOLDER);
+              return (
+                <>
+                  {/* One interleaved flow: loose photos and album blocks in true play order. */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
+                    {tl.map((node) => {
+                      if (node.type === 'media') {
+                        const m = node.item; const key = `m:${m.id}`;
+                        return (
+                          <div key={key} draggable
+                            onDragStart={() => { libDragRef.current = { scope: 'top', key }; }}
+                            onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === 'top') e.preventDefault(); }}
+                            onDrop={(e) => { e.preventDefault(); const d = libDragRef.current; if (d && d.scope === 'top') libReorderTop(d.key, key); libDragRef.current = null; }}
+                            style={{ cursor: 'grab' }}>
+                            {tile(m)}
+                          </div>
+                        );
+                      }
+                      // Album block: outlined in brand blue; the header is the top-level drag handle.
+                      const a = node; const akey = `a:${a.name}`;
                       return (
-                        <div key={m.id} draggable
-                          onDragStart={() => { libDragRef.current = { scope, id: m.id }; }}
-                          onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === scope) e.preventDefault(); }}
-                          onDrop={(e) => { e.preventDefault(); const d = libDragRef.current; if (d && d.scope === scope) libReorder(scope, d.id, m.id); libDragRef.current = null; }}
-                          style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #2a3340', background: '#000', aspectRatio: '1 / 1', cursor: 'grab' }}>
-                          {isVideo
-                            ? (<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9fb3c8' }}>▶ Video</div>)
-                            : (<img src={m.url} alt={m.filename} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)}
-                          <span style={{ position: 'absolute', top: 5, left: 5, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{i + 1}</span>
-                          <button type="button" onClick={() => trashPhoto(m)} title="Delete"
-                            style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.66)', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>✕</button>
+                        <div key={akey}
+                          onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === 'top') e.preventDefault(); }}
+                          onDrop={(e) => { e.preventDefault(); const d = libDragRef.current; if (d && d.scope === 'top') libReorderTop(d.key, akey); libDragRef.current = null; }}
+                          style={{ border: '2px solid var(--neon)', borderRadius: 14, padding: 10, background: 'rgba(56,182,255,0.06)', maxWidth: '100%' }}>
+                          <div draggable
+                            onDragStart={(e) => { e.stopPropagation(); libDragRef.current = { scope: 'top', key: akey }; }}
+                            title="Drag to move this album in the order"
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'grab', color: '#cfe8ff', fontWeight: 800, fontSize: 13, margin: '0 2px 8px' }}>
+                            <span style={{ opacity: 0.7 }}>⠿</span> {a.name} <span style={{ color: '#7d8ea0', fontWeight: 400 }}>({a.items.length})</span>
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {a.items.map((m) => (
+                              <div key={m.id} draggable
+                                onDragStart={(e) => { e.stopPropagation(); libDragRef.current = { scope: a.name, id: m.id }; }}
+                                onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === a.name) { e.preventDefault(); e.stopPropagation(); } }}
+                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const d = libDragRef.current; if (d && d.scope === a.name) libReorder(a.name, d.id, m.id); libDragRef.current = null; }}
+                                style={{ cursor: 'grab' }}>
+                                {tile(m)}
+                              </div>
+                            ))}
+                            {a.items.length === 0 && <div style={{ color: '#7d8ea0', fontSize: 12, padding: '30px 12px' }}>Empty album</div>}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                </div>
-              ));
-              return (
-                <>
-                  {section('Not in an album', 'loose', loose)}
-                  {albums.map((a) => section(a.name, a.name, a.items))}
-                  {(() => {
-                    const trashed = mine.filter((m) => (m.folderPath || '') === TRASH_FOLDER);
-                    return trashed.length === 0 ? null : (
-                      <div style={{ marginBottom: 22, borderTop: '1px solid #2a3340', paddingTop: 16 }}>
-                        <div style={{ color: '#e6a3a3', fontWeight: 800, fontSize: 14, margin: '0 0 10px' }}>🗑 Trash <span style={{ color: '#7d8ea0', fontWeight: 400 }}>({trashed.length}) — restore, or delete forever</span></div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
-                          {trashed.map((m) => {
-                            const isVideo = (m.contentType || '').startsWith('video');
-                            return (
-                              <div key={m.id} style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #402a2a', background: '#000', aspectRatio: '1 / 1', opacity: 0.85 }}>
-                                {isVideo ? (<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9fb3c8' }}>▶ Video</div>) : (<img src={m.url} alt={m.filename} draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />)}
-                                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, display: 'flex', gap: 4, padding: 4, background: 'rgba(0,0,0,.55)' }}>
-                                  <button type="button" onClick={() => restorePhoto(m.id, '')} style={{ flex: 1, border: 'none', borderRadius: 6, padding: '5px 0', background: '#2fbf71', color: '#04210f', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}>Restore</button>
-                                  <button type="button" onClick={() => deleteForever(m)} title="Delete forever" style={{ border: 'none', borderRadius: 6, padding: '5px 8px', background: '#7a2333', color: '#fff', fontSize: 11, cursor: 'pointer' }}>✕</button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+
+                  {trashed.length > 0 && (
+                    <div style={{ marginTop: 24, borderTop: '1px solid #2a3340', paddingTop: 16 }}>
+                      <div style={{ color: '#e6a3a3', fontWeight: 800, fontSize: 14, margin: '0 0 10px' }}>🗑 Trash <span style={{ color: '#7d8ea0', fontWeight: 400 }}>({trashed.length}) — restore, or delete forever</span></div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
+                        {trashed.map((m) => (
+                          <div key={m.id} style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #402a2a', background: '#000', aspectRatio: '1 / 1', opacity: 0.85 }}>
+                            {tileInner(m)}
+                            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, display: 'flex', gap: 4, padding: 4, background: 'rgba(0,0,0,.55)' }}>
+                              <button type="button" onClick={() => restorePhoto(m.id, '')} style={{ flex: 1, border: 'none', borderRadius: 6, padding: '5px 0', background: '#2fbf71', color: '#04210f', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}>Restore</button>
+                              <button type="button" onClick={() => deleteForever(m)} title="Delete forever" style={{ border: 'none', borderRadius: 6, padding: '5px 8px', background: '#7a2333', color: '#fff', fontSize: 11, cursor: 'pointer' }}>✕</button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })()}
+                    </div>
+                  )}
                   {orgMsg && <p style={{ color: '#ff6b8a', fontSize: 13 }}>{orgMsg}</p>}
-                  <p style={{ color: '#7d8ea0', fontSize: 12, marginTop: 8 }}>Drag to reorder within a group. Reorder across groups on the timeline. Deleting moves a photo to Trash — restore it here, or Undo right after.</p>
+                  <p style={{ color: '#7d8ea0', fontSize: 12, marginTop: 12 }}>Drag any photo or album to reorder — loose photos and albums share one order, exactly like the timeline. Drag a photo inside an album to reorder within it. ✕ moves a photo to Trash — restore it here, or Undo right after.</p>
                 </>
               );
             })()}

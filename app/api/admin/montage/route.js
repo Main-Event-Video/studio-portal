@@ -10,6 +10,7 @@ import { getViewUrl } from '@/lib/r2';
 import { buildMontageSource, STYLES, parsePhotoSpec } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
+import { isHeic } from '@/lib/heic';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,7 +75,7 @@ export async function POST(request) {
   // the editor keys their real clip into.
   const { items: timelineItems, error: mErr } = await orderedClientTimeline(db, clientId);
   if (mErr) return NextResponse.json({ error: 'Could not load media', detail: mErr.message }, { status: 500 });
-  const photosAll = (timelineItems || []).filter((m) => (m.content_type || '').startsWith('image/'));
+  const photosAll = (timelineItems || []).filter((m) => (m.content_type || '').startsWith('image/') && !isHeic({ filename: m.filename, contentType: m.content_type }));
   if (photosAll.length < 1) {
     return NextResponse.json(
       { error: 'This client has no photo uploads yet. Upload photos first.' },
