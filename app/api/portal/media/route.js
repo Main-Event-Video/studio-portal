@@ -191,7 +191,7 @@ export async function POST(request) {
     return NextResponse.json({ ok: true });
   }
 
-  const result = await applyMediaAction(db, client.id, body, { allowDelete: false });
+  const result = await applyMediaAction(db, client.id, body, { allowDelete: true }); // clients may delete their OWN uploads (scoped to client_upload)
   if (result.error) {
     return NextResponse.json({ error: result.error, detail: result.detail }, { status: result.status || 500 });
   }

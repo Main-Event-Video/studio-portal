@@ -5,7 +5,7 @@ import { buildTimeline } from '@/lib/timelineOrder';
 import { isCharacterFolder } from '@/lib/characterPoses';
 import CharacterCapture from './CharacterCapture';
 
-// Files moved here are set aside for the studio to clear — clients never delete.
+// Files moved here are set aside for the studio to clear. Clients can also delete their own uploads outright (the \u2715 on each photo).
 const TRASH_FOLDER = 'Trash';
 
 // Thumbnail sizes for the timeline zoom (px). Index into this array.
@@ -548,6 +548,12 @@ export default function Uploader({ token }) {
           {isVideo ? (<><span className="vplay">▶</span><span className="vdur">Video</span></>) : (<img src={m.url} alt={m.filename} loading="lazy" draggable={false} />)}
         </div>
         <span className="num">{num}</span>
+        <button
+          type="button"
+          title="Delete this photo"
+          onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${m.filename}"? This removes it from your uploads and can't be undone.`)) organize({ action: 'delete', id: m.id }); }}
+          style={{ position: 'absolute', top: 6, right: 6, zIndex: 6, width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.62)', color: '#fff', fontSize: 13, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >\u2715</button>
         <div className="cap">{m.filename}</div>
       </div>
     );
