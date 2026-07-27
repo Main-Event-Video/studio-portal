@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
-import { getViewUrl } from '@/lib/r2';
+import { getViewUrl, getDownloadUrl } from '@/lib/r2';
 import { buildMontageSource, STYLES, parsePhotoSpec } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
@@ -180,6 +180,7 @@ export async function POST(request) {
       title: String(title).toUpperCase(),
       subtitle: subtitle ? String(subtitle).toUpperCase() : null,
       watermarkUrl: watermark ? `${siteUrl}/watermark.png` : null,
+      assetBase: siteUrl || null,   // for collage light-leak overlays (public/overlays/*)
     });
 
     const render = await createRender({
@@ -235,6 +236,12 @@ export async function GET(request) {
       createdAt: m.created_at,
       // Prefer our permanent R2 copy; fall back to Creatomate's temp URL.
       url: m.r2_key ? await getViewUrl(m.r2_key, 3600) : m.video_url || null,
+      // Force-download URL (Content-Disposition: attachment) so "Download MP4"
+      // saves to a folder instead of navigating to the video (cross-origin
+      // `download` is ignored by browsers). Only available for our R2 copies.
+      downloadUrl: m.r2_key
+        ? await getDownloadUrl(m.r2_key, `${(m.studio_clients?.display_name || 'montage').replace(/[^\w-]+/g, '_')}_${m.style}_${m.photo_count || 0}_${(m.created_at || '').slice(0, 10)}.mp4`, 3600)
+        : null,
       archived: !!m.r2_key, // false = still only on Creatomate's 30-day hosting
     }))
   );

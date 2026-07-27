@@ -174,6 +174,8 @@ const CSS = `
 #uploadflow .album .lane{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:2px;min-height:calc(var(--tz) + 30px);}
 #uploadflow .album .ahead .acount{margin-right:auto;}
 #uploadflow .album .ahead .amoveout{font-size:12px;font-weight:800;color:#0d0913;background:var(--neon);border:none;border-radius:999px;padding:5px 12px;cursor:pointer;}
+#uploadflow .album .ahead .ahide{font-size:12px;font-weight:800;color:#ff9db0;background:none;border:1.5px solid #6b2a3a;border-radius:999px;padding:4px 10px;cursor:pointer;}
+#uploadflow .album .ahead .ahide:hover{border-color:var(--red);background:rgba(255,59,99,.10);}
 #uploadflow .album .ahead .aclose{margin-left:0;}
 #uploadflow .album .ahint{font-size:12px;color:#cbb8ff;margin:0 2px 8px;}
 #uploadflow .album .adrop{margin-top:6px;font-size:11px;font-weight:800;color:#0d0913;background:var(--neon);border-radius:999px;padding:4px 10px;}
@@ -450,6 +452,16 @@ export default function Uploader({ token }) {
       await loadMine();
     } catch (e) { setOrgMsg(e.message || 'Something went wrong.'); }
     setOrgBusy(false);
+  }
+
+  // Hide a whole album (non-destructive). The album + all its photos leave the
+  // timeline everywhere, but nothing is deleted — Main Event Studio can restore it.
+  async function hideAlbum(name, count) {
+    if (typeof window !== 'undefined' && !window.confirm(
+      `Hide the album “${name}” and all ${count} photo${count === 1 ? '' : 's'} inside it?\n\n` +
+      `They'll be removed from your timeline, but nothing is deleted — Main Event Studio can bring them back anytime.`
+    )) return;
+    await organize({ action: 'hideBox', name });
   }
 
   // ---- Photo Library: grouped grid, reorder within a group + delete ----
@@ -754,6 +766,7 @@ export default function Uploader({ token }) {
           {picked && picked.scope === 'album' && picked.album === name && (
             <button className="amoveout" onClick={(e) => { e.stopPropagation(); moveOut(name); }}>⤴ Move out</button>
           )}
+          <button className="ahide" onClick={(e) => { e.stopPropagation(); hideAlbum(name, count); }} title="Hide this album and its photos (reversible)">🕶 Hide</button>
           <button className="aclose" onClick={(e) => { e.stopPropagation(); toggleOpen(name); }}>Done ✓</button>
         </div>
         {count === 0 && !laneLive ? (

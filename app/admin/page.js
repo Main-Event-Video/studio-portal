@@ -353,9 +353,13 @@ export default function AdminPage() {
     { value: 'party', label: 'Party — fast, punchy, high energy' },
     { value: 'party2', label: 'Party 2 — energetic, drift + varied transitions' },
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
+    { value: 'duotone2', label: 'Duotone Split 2 — frantic, bg & hero transition separately' },
     { value: 'polaroid', label: 'Polaroid — tilted prints on a soft background' },
     { value: 'collage_classic', label: 'Collage Wall Classic — uniform photo grid, camera glides across' },
     { value: 'collage_featured', label: 'Collage Wall Featured — big hero photos + smaller tiles' },
+    { value: 'gallery150', label: 'Gallery 150 — scattered tilted prints, camera flies over' },
+    { value: 'epic_vintage', label: 'Epic Vintage — one hero print, blurred bokeh, heavy light leaks' },
+    { value: 'trendy', label: 'Trendy Photo Wall — 3D angled grid of matte prints' },
   ];
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
@@ -407,6 +411,11 @@ export default function AdminPage() {
   const [mediaBusy, setMediaBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [pendingEmpty, setPendingEmpty] = useState(false);
+  // Multi-select (checkbox / shift-range / lasso) for bulk download in the files tool.
+  const [selIds, setSelIds] = useState(() => new Set());
+  const [zipBusy, setZipBusy] = useState(false);
+  const [pendingHide, setPendingHide] = useState(null); // album name awaiting hide-confirm
+  const lastPickRef = useRef(null);
 
   // deliver a cut (step 6)
   const [dKind, setDKind] = useState('rough_cut');
@@ -506,6 +515,7 @@ export default function AdminPage() {
     try {
       const { files } = await api(`/api/admin/media?clientId=${clientId}`);
       setMediaFiles(files || []);
+      if (mediaClientId !== clientId) { setSelIds(new Set()); lastPickRef.current = null; }
       setMediaClientId(clientId);
     } catch (err) {
       setMErr(true);
@@ -524,6 +534,75 @@ export default function AdminPage() {
       setMMsg(err.message);
     }
     setMediaBusy(false);
+  }
+
+  // ---- Multi-select + bulk ZIP download (files tool) ----
+  const filesBoxRef = useRef(null);
+  const lassoRef = useRef(null);
+  const [lassoBox, setLassoBox] = useState(null);
+  // Drag a rectangle over the photos to select them (adds to the current
+  // selection; hold nothing to start fresh, shift to keep what's selected).
+  function lassoDown(e) {
+    if (e.button !== 0 || e.target.closest('input,button,a,textarea,select')) return;
+    const sx = e.pageX, sy = e.pageY;
+    lassoRef.current = { active: true };
+    if (!e.shiftKey) clearSel();
+    const move = (ev) => {
+      if (!lassoRef.current?.active) return;
+      const x = Math.min(ev.pageX, sx), y = Math.min(ev.pageY, sy), w = Math.abs(ev.pageX - sx), h = Math.abs(ev.pageY - sy);
+      setLassoBox({ x, y, w, h });
+      const r = { left: x, top: y, right: x + w, bottom: y + h };
+      const el = filesBoxRef.current; if (!el) return;
+      const hits = [];
+      el.querySelectorAll('[data-fid]').forEach((row) => {
+        const b = row.getBoundingClientRect();
+        const bb = { left: b.left + window.scrollX, top: b.top + window.scrollY, right: b.right + window.scrollX, bottom: b.bottom + window.scrollY };
+        if (!(bb.right < r.left || bb.left > r.right || bb.bottom < r.top || bb.top > r.bottom)) hits.push(row.getAttribute('data-fid'));
+      });
+      if (hits.length) selectIds(hits, true);
+    };
+    const up = () => { lassoRef.current = null; setLassoBox(null); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    e.preventDefault();
+  }
+  function clearSel() { setSelIds(new Set()); lastPickRef.current = null; }
+  // Toggle one file; shift+click selects the range from the last picked, using the
+  // current on-screen order (what `orderedIds` passes in).
+  function toggleSel(id, shift, orderedIds) {
+    setSelIds((prev) => {
+      const next = new Set(prev);
+      if (shift && lastPickRef.current && orderedIds) {
+        let a = orderedIds.indexOf(lastPickRef.current), b = orderedIds.indexOf(id);
+        if (a > -1 && b > -1) { if (a > b) [a, b] = [b, a]; for (let i = a; i <= b; i++) next.add(orderedIds[i]); }
+      } else {
+        next.has(id) ? next.delete(id) : next.add(id);
+      }
+      return next;
+    });
+    lastPickRef.current = id;
+  }
+  function selectIds(ids, on = true) {
+    setSelIds((prev) => { const next = new Set(prev); ids.forEach((id) => (on ? next.add(id) : next.delete(id))); return next; });
+  }
+  async function downloadSelectedZip(clientId) {
+    const ids = [...selIds];
+    if (!ids.length) return;
+    setZipBusy(true);
+    try {
+      const res = await fetch('/api/admin/media/download-zip', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, ids }),
+      });
+      if (!res.ok) { let d = ''; try { d = (await res.json()).error; } catch {} throw new Error(d || `Download failed (${res.status})`); }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `photos_${ids.length}.zip`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (err) { setMErr(true); setMMsg(err.message); }
+    setZipBusy(false);
   }
 
   // Reorder within a folder: swap two neighbours, then renumber the folder 1..n.
@@ -1011,30 +1090,58 @@ export default function AdminPage() {
     }
     const keys = Object.keys(groups).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, undefined, { numeric: true })));
     const folderNames = keys.filter((k) => k !== '');
+    const orderedIds = keys.flatMap((k) => groups[k].map((f) => f.id)); // on-screen order (shift-range)
+    const selN = selIds.size;
     return (
-      <div className="tool-window" style={{ marginTop: 16 }}>
+      <div className="tool-window" style={{ marginTop: 16, position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>
             {mediaLoading && !showing
               ? 'Loading files…'
-              : `${files.length} file${files.length === 1 ? '' : 's'}. Edit a number to reorder, rename files or folders, type a folder to move a file, or delete. Changes save as you make them — this view auto-refreshes, so you can watch a client organize live.`}
+              : `${files.length} file${files.length === 1 ? '' : 's'}. Edit a number to reorder, rename files or folders, type a folder to move a file, or delete. Tick photos (or drag a box across them) to select, then Download selected. Changes save as you make them — this view auto-refreshes.`}
           </p>
           <button type="button" className="btn-ghost" onClick={() => loadMedia(c.id, true)}>Refresh</button>
         </div>
+
+        {selN > 0 && (
+          <div style={{ position: 'sticky', top: 8, zIndex: 20, display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0 4px', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--blue)', background: 'linear-gradient(180deg, rgba(61,123,255,0.16), rgba(61,123,255,0.06))', boxShadow: '0 6px 22px rgba(61,123,255,0.20)' }}>
+            <strong style={{ fontSize: 14 }}><span style={{ color: 'var(--blue)' }}>{selN}</span> selected</strong>
+            <span style={{ flex: 1 }} />
+            <button type="button" className="btn-primary" style={{ padding: '5px 12px', fontSize: 12.5 }} disabled={zipBusy} onClick={() => downloadSelectedZip(c.id)}>{zipBusy ? 'Zipping…' : `⬇ Download ${selN} as ZIP`}</button>
+            <button type="button" className="btn-ghost" style={{ padding: '5px 10px', fontSize: 12.5 }} onClick={clearSel}>Clear</button>
+          </div>
+        )}
+
         <datalist id={`folders_${c.id}`}>
           {folderNames.map((n) => <option key={n} value={n} />)}
         </datalist>
         {showing && files.length === 0 && !mediaLoading && (
           <p style={{ color: 'var(--muted)', fontSize: 14 }}>This client hasn’t uploaded any files yet.</p>
         )}
+
+        <div ref={filesBoxRef} onMouseDown={lassoDown} style={{ position: 'relative' }}>
         {keys.map((k) => {
           const list = groups[k];
+          const isLoose = k === '';
+          const isTrash = k === TRASH_FOLDER;
+          const isAlbum = !isLoose && !isTrash;
+          const hidden = isAlbum && list.length > 0 && list.every((f) => f.hidden);
+          const allSel = list.length > 0 && list.every((f) => selIds.has(f.id));
+          // Squared-off card per section: purple for albums, muted for loose/trash,
+          // dashed + dimmed for a hidden album.
+          const cardStyle = {
+            marginTop: 16, borderRadius: 14, padding: '12px 14px 8px',
+            border: hidden ? '1.5px dashed var(--line)' : isAlbum ? '1.5px solid #4a3d6b' : '1px solid var(--line)',
+            background: hidden ? 'rgba(127,127,127,0.03)' : isAlbum ? 'linear-gradient(160deg, rgba(124,92,255,0.07), rgba(124,92,255,0.02))' : 'rgba(127,127,127,0.03)',
+            opacity: hidden ? 0.6 : 1,
+          };
           return (
-            <section key={k || '__loose__'} style={{ marginTop: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                {k === '' ? (
+            <section key={k || '__loose__'} style={cardStyle}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                {isAlbum && <span style={{ width: 10, height: 10, borderRadius: 3, background: hidden ? 'var(--muted)' : '#7c5cff', flex: '0 0 auto' }} />}
+                {isLoose ? (
                   <h3 className="folder-head" style={{ margin: 0 }}>Loose files</h3>
-                ) : k === TRASH_FOLDER ? (
+                ) : isTrash ? (
                   <h3 className="folder-head" style={{ margin: 0 }}>
                     Trash <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 12 }}>· client-flagged for removal</span>
                   </h3>
@@ -1042,17 +1149,22 @@ export default function AdminPage() {
                   <input
                     key={`fname_${k}`}
                     defaultValue={k}
-                    title="Rename this whole folder"
+                    title="Rename this whole album"
                     onBlur={(e) => {
                       const v = e.target.value.trim();
                       if (v && v !== k) mediaAction(c.id, { action: 'renameFolder', from: k, to: v });
                       else if (!v) e.target.value = k;
                     }}
-                    style={{ fontWeight: 700, maxWidth: 280 }}
+                    style={{ fontWeight: 700, maxWidth: 240 }}
                   />
                 )}
+                {hidden && <span className="pill" style={{ fontSize: 10.5, color: 'var(--muted)' }}>hidden</span>}
+                <span style={{ color: 'var(--muted)', fontSize: 12 }}>{list.length}</span>
                 <span style={{ flex: 1 }} />
-                {k === TRASH_FOLDER ? (
+                {list.length > 0 && (
+                  <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => selectIds(list.map((m) => m.id), !allSel)}>{allSel ? 'Deselect' : 'Select all'}</button>
+                )}
+                {isTrash ? (
                   pendingEmpty ? (
                     <span style={{ whiteSpace: 'nowrap' }}>
                       <button type="button" className="btn-ghost" style={{ color: 'var(--red)' }} disabled={mediaBusy} onClick={() => { mediaAction(c.id, { action: 'deleteMany', ids: list.map((m) => m.id) }); setPendingEmpty(false); }}>
@@ -1066,17 +1178,41 @@ export default function AdminPage() {
                     </button>
                   )
                 ) : (
-                  <button type="button" className="btn-ghost" disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'renumber', ids: list.map((m) => m.id) })}>
-                    Renumber 1…{list.length}
-                  </button>
+                  <>
+                    <button type="button" className="btn-ghost" style={{ fontSize: 12 }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'renumber', ids: list.map((m) => m.id) })}>
+                      Renumber 1…{list.length}
+                    </button>
+                    {isAlbum && (hidden ? (
+                      <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--ok)' }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'unhideBox', name: k })}>↩ Restore album</button>
+                    ) : pendingHide === k ? (
+                      <span style={{ whiteSpace: 'nowrap' }}>
+                        <span style={{ color: 'var(--muted)', fontSize: 12, marginRight: 6 }}>Hide album + its {list.length} photos? (reversible)</span>
+                        <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--blue)' }} disabled={mediaBusy} onClick={() => { mediaAction(c.id, { action: 'hideBox', name: k }); setPendingHide(null); }}>Confirm hide</button>{' '}
+                        <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setPendingHide(null)}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--muted)' }} onClick={() => setPendingHide(k)} title="Hide this album and all its photos from the timeline, montage maker and client — reversible">🕶 Hide album</button>
+                    ))}
+                  </>
                 )}
               </div>
-              {list.map((f, idx) => (
+              {list.map((f, idx) => {
+                const sel = selIds.has(f.id);
+                return (
                 <div
                   key={`${f.id}-${f.sortNumber}-${f.folderPath}-${f.filename}`}
+                  data-fid={f.id}
                   className="upload-row"
-                  style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap', borderBottom: '1px solid var(--line)', padding: '8px 0' }}
+                  style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap', borderBottom: '1px solid var(--line)', padding: '8px 6px', borderRadius: 8, background: sel ? 'rgba(61,123,255,0.12)' : 'transparent' }}
                 >
+                  <input
+                    type="checkbox"
+                    checked={sel}
+                    title="Select for download"
+                    onClick={(e) => toggleSel(f.id, e.shiftKey, orderedIds)}
+                    onChange={() => {}}
+                    style={{ width: 18, height: 18, accentColor: 'var(--blue)', cursor: 'pointer', flex: '0 0 auto' }}
+                  />
                   <input
                     type="number"
                     defaultValue={f.sortNumber ?? ''}
@@ -1128,10 +1264,15 @@ export default function AdminPage() {
                     <button type="button" className="linklike" style={{ color: 'var(--red)' }} onClick={() => setPendingDelete(f.id)}>Delete</button>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </section>
           );
         })}
+        {lassoBox && (
+          <div style={{ position: 'absolute', left: lassoBox.x - (filesBoxRef.current ? filesBoxRef.current.getBoundingClientRect().left + window.scrollX : 0), top: lassoBox.y - (filesBoxRef.current ? filesBoxRef.current.getBoundingClientRect().top + window.scrollY : 0), width: lassoBox.w, height: lassoBox.h, border: '1.5px solid var(--blue)', background: 'rgba(61,123,255,0.14)', pointerEvents: 'none', zIndex: 30 }} />
+        )}
+        </div>
       </div>
     );
   }
@@ -1250,8 +1391,15 @@ export default function AdminPage() {
               ? ((Number.isFinite(e.posX) && Number.isFinite(e.posY)) ? `${e.posX}% ${e.posY}%`
                  : e.anchor === 'top' ? '50% 0%' : e.anchor === 'bottom' ? '50% 100%' : e.anchor === 'left' ? '0% 50%' : e.anchor === 'right' ? '100% 50%' : '50% 50%')
               : 'center';
+            // Auto color = one-tap enhance (a starting point to fine-tune with the
+            // sliders): a brightness + contrast + saturation lift, multiplied on top
+            // of the manual contrast/saturation. Now shown in the preview so On/Off
+            // is visibly different (was omitted here → toggling looked identical).
+            const cc = e.colorCorrect ? { b: 1.08, c: 1.14, s: 1.20 } : { b: 1, c: 1, s: 1 };
             let f = e.mode === 'bw' ? 'grayscale(1) ' : e.mode === 'sepia' ? 'sepia(.8) ' : '';
-            f += `contrast(${(e.contrast || 100) / 100}) saturate(${e.mode === 'bw' ? 0 : (e.saturation || 100) / 100})`;
+            const contrast = ((e.contrast || 100) / 100) * cc.c;
+            const sat = (e.mode === 'bw' ? 0 : (e.saturation || 100) / 100) * cc.s;
+            f += `brightness(${cc.b}) contrast(${contrast.toFixed(3)}) saturate(${sat.toFixed(3)})`;
             return { objectFit: e.fit === 'fill' ? 'cover' : 'contain', objectPosition: pos, transform: `scale(${(e.size || 100) / 100})`, filter: f };
           };
           // The inline editor for ONE photo — opens directly under its
@@ -1538,7 +1686,7 @@ export default function AdminPage() {
                         {showVid[m.id] ? 'Hide preview' : 'Show preview'}
                       </button>
                       {' '}·{' '}
-                      <a href={m.url} download>Download MP4</a>
+                      <a href={m.downloadUrl || m.url} download>Download MP4</a>
                       {' '}·{' '}
                       <button type="button" className="linklike" onClick={() => openAdjust(m)}>
                         {adjFor?.id === m.id ? 'Close framing fixes' : 'Fix framing (head cut off, etc.)'}

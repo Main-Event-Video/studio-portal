@@ -31,22 +31,27 @@ export async function GET(request) {
 
   const kinds = scope === 'mine' ? ['client_upload'] : ['rough_cut', 'final'];
   const db = createServiceClient();
-  const runQuery = (cols) => db
-    .from('studio_media')
-    .select(cols)
-    .eq('client_id', client.id)
-    .in('kind', kinds)
-    .order('folder_path', { ascending: true, nullsFirst: true })
-    .order('sort_number', { ascending: true, nullsFirst: false })
-    .order('created_at', { ascending: true });
+  const runQuery = (cols, hide) => {
+    let q = db
+      .from('studio_media')
+      .select(cols)
+      .eq('client_id', client.id)
+      .in('kind', kinds);
+    if (hide) q = q.is('hidden_at', null); // skip soft-hidden albums/photos
+    return q
+      .order('folder_path', { ascending: true, nullsFirst: true })
+      .order('sort_number', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
+  };
 
-  // Prefer the full set (with timeline_pos). If that column doesn't exist yet
-  // (sql/006 not run), fall back so the portal NEVER shows an empty list —
-  // ordering still works, timelinePos is just treated as null.
-  let { data, error } = await runQuery('id, filename, content_type, r2_key, kind, note, sort_number, folder_path, timeline_pos, created_at');
-  if (error) {
-    ({ data, error } = await runQuery('id, filename, content_type, r2_key, kind, note, sort_number, folder_path, created_at'));
-  }
+  // Prefer the full set (hidden filtered + timeline_pos). Fall back progressively
+  // if a newer column isn't there yet (hidden_at → sql/013, timeline_pos →
+  // sql/006) so the portal NEVER shows an empty list.
+  const fullCols = 'id, filename, content_type, r2_key, kind, note, sort_number, folder_path, timeline_pos, created_at';
+  const baseCols = 'id, filename, content_type, r2_key, kind, note, sort_number, folder_path, created_at';
+  let { data, error } = await runQuery(fullCols, true);
+  if (error) ({ data, error } = await runQuery(fullCols, false));
+  if (error) ({ data, error } = await runQuery(baseCols, false));
   if (error) {
     return NextResponse.json({ error: 'Could not load media', detail: error.message }, { status: 500 });
   }
@@ -66,14 +71,25 @@ export async function GET(request) {
     }))
   );
 
-  // Pre-made albums (persist even when empty). Non-fatal if the table isn't there.
+  // Pre-made albums (persist even when empty). Hidden albums are excluded (the
+  // .is filter is dropped pre-migration). Non-fatal if the table isn't there.
   let boxes = [];
-  const { data: boxRows } = await db
+  let boxRows = null;
+  ({ data: boxRows } = await db
     .from('studio_boxes')
     .select('name, position, created_at')
     .eq('client_id', client.id)
+    .is('hidden_at', null)
     .order('position', { ascending: true })
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true }));
+  if (!Array.isArray(boxRows)) {
+    ({ data: boxRows } = await db
+      .from('studio_boxes')
+      .select('name, position, created_at')
+      .eq('client_id', client.id)
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: true }));
+  }
   if (Array.isArray(boxRows)) boxes = boxRows.map((b) => ({ name: b.name, position: b.position }));
 
   return NextResponse.json({ media, boxes });

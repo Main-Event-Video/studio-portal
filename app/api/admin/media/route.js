@@ -21,14 +21,20 @@ export async function GET(request) {
   if (!clientId) return NextResponse.json({ error: 'Missing clientId' }, { status: 400 });
 
   const db = createServiceClient();
-  const { data, error } = await db
+  // Admin SEES hidden photos (unlike the portal/render) so hidden albums can be
+  // restored — each carries a `hidden` flag. Select hidden_at when present; fall
+  // back if sql/013 hasn't run yet.
+  const cols = 'id, filename, content_type, r2_key, sort_number, folder_path, size_bytes, created_at';
+  const run = (c) => db
     .from('studio_media')
-    .select('id, filename, content_type, r2_key, sort_number, folder_path, size_bytes, created_at')
+    .select(c)
     .eq('client_id', clientId)
     .eq('kind', 'client_upload')
     .order('folder_path', { ascending: true, nullsFirst: true })
     .order('sort_number', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true });
+  let { data, error } = await run(`${cols}, hidden_at`);
+  if (error) ({ data, error } = await run(cols));
   if (error) return NextResponse.json({ error: 'Could not load files', detail: error.message }, { status: 500 });
 
   const files = await Promise.all(
@@ -40,6 +46,7 @@ export async function GET(request) {
       sortNumber: m.sort_number,
       folderPath: m.folder_path,
       sizeBytes: m.size_bytes,
+      hidden: !!m.hidden_at,
       url: await getViewUrl(m.r2_key, 3600),
     }))
   );
