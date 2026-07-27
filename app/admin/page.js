@@ -1491,12 +1491,11 @@ export default function AdminPage() {
             );
           };
 
-          // Thumbnails with the editor inlined right after the open one.
-          const cells = [];
-          projPhotos.forEach((p) => {
+          // One thumbnail cell.
+          const photoCell = (p) => {
             const pe = { ...defE, ...(photoEdits.photos[p.key] || {}) };
             const isSel = p.key === selKey;
-            cells.push(
+            return (
               <div key={`t:${p.key || p.index}`} onDoubleClick={() => setSelKey(isSel ? null : p.key)} title="Double-click to edit"
                 style={{ border: isSel ? '2px solid #d8b56b' : '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', opacity: pe.removed ? 0.4 : 1, position: 'relative' }}>
                 <div style={{ aspectRatio: '16 / 9', background: '#000', overflow: 'hidden' }}>
@@ -1506,8 +1505,24 @@ export default function AdminPage() {
                 {pe.removed && <span style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 9, background: '#e23b3b', color: '#fff', padding: '1px 5px', borderRadius: 4 }}>removed</span>}
               </div>
             );
-            if (isSel) cells.push(<Fragment key={`e:${p.key}`}>{editorPanel(p)}</Fragment>);
+          };
+          // Group the montage photos into their albums (contiguous runs in play
+          // order) so the editor shows squared-off album sections, not one flat grid.
+          const groups = [];
+          projPhotos.forEach((p) => {
+            const a = p.album || '';
+            let g = groups.length && groups[groups.length - 1].album === a ? groups[groups.length - 1] : null;
+            if (!g) { g = { album: a, photos: [] }; groups.push(g); }
+            g.photos.push(p);
           });
+          const hasAlbums = groups.some((g) => g.album);
+          const gridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(122px, 1fr))', gap: 10 };
+          const renderCells = (photos) => photos.map((p) => (
+            <Fragment key={`c:${p.key || p.index}`}>
+              {photoCell(p)}
+              {p.key === selKey && editorPanel(p)}
+            </Fragment>
+          ));
 
           return (
             <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 16 }}>
@@ -1516,11 +1531,29 @@ export default function AdminPage() {
                   <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— double-click a photo to edit it; edits apply to every style</span></strong>
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>{Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(122px, 1fr))', gap: 10 }}>
-                {cells}
-              </div>
+              {hasAlbums ? (
+                groups.map((g, gi) => {
+                  const isAlbum = !!g.album;
+                  return (
+                    <section key={`g:${gi}:${g.album}`} style={{
+                      marginBottom: 12, borderRadius: 12, padding: '10px 12px',
+                      border: isAlbum ? '1.5px solid #4a3d6b' : '1px solid var(--line)',
+                      background: isAlbum ? 'linear-gradient(160deg, rgba(124,92,255,0.07), rgba(124,92,255,0.02))' : 'rgba(127,127,127,0.03)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        {isAlbum && <span style={{ width: 10, height: 10, borderRadius: 3, background: '#7c5cff', flex: '0 0 auto' }} />}
+                        <strong style={{ fontSize: 13 }}>{isAlbum ? g.album : 'Loose photos'}</strong>
+                        <span style={{ color: 'var(--muted)', fontSize: 12 }}>{g.photos.length} photo{g.photos.length === 1 ? '' : 's'}</span>
+                      </div>
+                      <div style={gridStyle}>{renderCells(g.photos)}</div>
+                    </section>
+                  );
+                })
+              ) : (
+                <div style={gridStyle}>{renderCells(groups[0] ? groups[0].photos : [])}</div>
+              )}
               <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-                Double-click a photo to open its editor right below it; use ‹ › to move between photos. Default is Fit (nothing cropped); Fill crops — then drag the big photo to position it. B&amp;W / Sepia and Auto-color render in the montage; contrast &amp; saturation preview in the editor (render tuning pending a test render). Removed photos are skipped.
+                Double-click a photo to open its editor right below it; use ‹ › to move between photos. Photos are grouped into their albums. Default is Fit (nothing cropped); Fill crops — then drag the big photo to position it. B&amp;W / Sepia and Auto-color render in the montage; contrast &amp; saturation preview in the editor (render tuning pending a test render). Removed photos are skipped.
               </p>
               <input ref={replaceInputRef} type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; const key = replaceKeyRef.current; if (f && key) replacePhoto(c.id, key, f); }} />

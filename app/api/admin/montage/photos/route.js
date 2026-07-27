@@ -29,6 +29,7 @@ export async function GET(request) {
       index: i + 1,
       key: m.r2_key,
       filename: m.filename,
+      album: m.folder_path || null,   // album (box) this photo belongs to → grouped sections in the editor
       url: await getViewUrl(m.r2_key, 3600),
       downloadUrl: await getDownloadUrl(m.r2_key, m.filename, 3600),
     }))
