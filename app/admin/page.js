@@ -374,6 +374,7 @@ export default function AdminPage() {
   const [showRef, setShowRef] = useState(false);         // numbered reference strip
   const [genBusy, setGenBusy] = useState(false);
   const [showHidden, setShowHidden] = useState(false); // reveal hidden renders
+  const [montageStep, setMontageStep] = useState(1); // 1 edit · 2 style · 3 finish
 
   // Photo Editor (per-client): per-photo framing/fit/size/removed + global
   // colorCorrect. Persisted on the client row and applied to EVERY style render.
@@ -1172,6 +1173,15 @@ export default function AdminPage() {
     const rows = allRows.filter((m) => showHidden || !m.hidden);
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          {[[1, 'Edit photos'], [2, 'Choose style'], [3, 'Finish & generate']].map((st) => (
+            <button key={st[0]} type="button" onClick={() => setMontageStep(st[0])}
+              style={{ flex: 1, textAlign: 'left', border: montageStep === st[0] ? '1px solid #2f6bff' : '1px solid var(--line)', background: montageStep === st[0] ? 'rgba(47,107,255,0.10)' : 'transparent', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', color: 'var(--text)' }}>
+              <span style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: '50%', alignItems: 'center', justifyContent: 'center', fontSize: 12, marginRight: 8, background: montageStep === st[0] ? '#2f6bff' : 'var(--line)', color: montageStep === st[0] ? '#fff' : 'var(--muted)' }}>{st[0]}</span>
+              <strong style={{ fontSize: 13 }}>{st[1]}</strong>
+            </button>
+          ))}
+        </div>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
           Build one or more montage segments from this client’s photos. Each segment renders as its
           own file — choose the photos (a range like <span className="mono">1-50</span>, or a mix like{' '}
@@ -1179,6 +1189,7 @@ export default function AdminPage() {
           pace, and whether it carries title cards. Generate them all at once and intercut in your edit.
         </p>
 
+        {montageStep === 3 && (<>
         {/* Shared across every segment */}
         <div className="grid-2">
           <div>
@@ -1196,7 +1207,9 @@ export default function AdminPage() {
             Watermark these drafts with the logo
           </label>
         </div>
+        </>)}
 
+        {montageStep === 1 && (<>
         {/* Photo count + numbered reference */}
         <p style={{ color: 'var(--muted)', fontSize: 13 }}>
           {projPhotosLoading
@@ -1347,7 +1360,28 @@ export default function AdminPage() {
             </div>
           );
         })()}
+        </>)}
 
+        {montageStep === 2 && (
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>Click a look to use it. For multiple styles in one pass, add segments in Finish.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+              {MONTAGE_STYLES.map((o) => {
+                const sel = segments.length > 0 && segments[0].style === o.value;
+                return (
+                  <button key={o.value} type="button" onClick={() => setSegments((arr) => arr.map((x) => ({ ...x, style: o.value })))}
+                    style={{ textAlign: 'left', border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 12, padding: 12, cursor: 'pointer', background: sel ? 'rgba(47,107,255,0.08)' : 'transparent', color: 'var(--text)' }}>
+                    <strong style={{ fontSize: 13 }}>{o.label.split(' \u2014 ')[0]}</strong>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{o.label.split(' \u2014 ')[1] || ''}</div>
+                    {sel && <div style={{ color: '#2f6bff', fontSize: 12, marginTop: 4 }}>\u2713 selected</div>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {montageStep === 3 && (<>
         {/* Segment plan */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {segments.map((s, idx) => {
@@ -1414,6 +1448,7 @@ export default function AdminPage() {
           </button>
         </div>
         {mMsg && <p className={mErr ? 'msg-error' : 'msg-ok'} style={{ fontSize: 14 }}>{mMsg}</p>}
+        </>)}
 
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
