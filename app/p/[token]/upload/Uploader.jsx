@@ -7,6 +7,8 @@ import CharacterCapture from './CharacterCapture';
 
 // Files moved here are set aside for the studio to clear. Clients can also delete their own uploads outright (the ✕ on each photo).
 const TRASH_FOLDER = 'Trash';
+// Sentinel drop target meaning "append to the very end" (Photo Library reorder).
+const END_DROP = '__end__';
 
 // Thumbnail sizes for the timeline zoom (px). Index into this array.
 const ZOOMS = [56, 72, 96, 128, 168, 210];
@@ -449,42 +451,39 @@ export default function Uploader({ token }) {
     setTl(nextTl);
     organize({ action: 'setArrangement', top, albums });
   }
+  // Reorder photos INSIDE one album. dropId === END_DROP appends to the end.
+  // ti is computed AFTER removing the dragged item, so the dragged photo always
+  // lands BEFORE the target regardless of drag direction (consistent + no drift).
   function libReorder(scope, dragId, dropId) {
     if (!dragId || dragId === dropId) return;
-    if (scope === 'loose') {
-      const media = tl.filter((n) => n.type === 'media');
-      const fi = media.findIndex((n) => n.item.id === dragId);
-      const ti = media.findIndex((n) => n.item.id === dropId);
-      if (fi < 0 || ti < 0) return;
-      const arr = [...media]; const [mv] = arr.splice(fi, 1); arr.splice(ti, 0, mv);
-      let k = 0; const nextTl = tl.map((n) => (n.type === 'media' ? arr[k++] : n));
-      saveTl(nextTl);
-    } else {
-      const nextTl = tl.map((n) => {
-        if (n.type === 'album' && n.name === scope) {
-          const arr = [...n.items];
-          const fi = arr.findIndex((m) => m.id === dragId);
-          const ti = arr.findIndex((m) => m.id === dropId);
-          if (fi < 0 || ti < 0) return n;
-          const [mv] = arr.splice(fi, 1); arr.splice(ti, 0, mv);
-          return { ...n, items: arr };
-        }
-        return n;
-      });
-      saveTl(nextTl);
-    }
+    const nextTl = tl.map((n) => {
+      if (n.type === 'album' && n.name === scope) {
+        const arr = [...n.items];
+        const fi = arr.findIndex((m) => m.id === dragId);
+        if (fi < 0) return n;
+        const [mv] = arr.splice(fi, 1);
+        if (dropId === END_DROP) { arr.push(mv); }
+        else { const ti = arr.findIndex((m) => m.id === dropId); if (ti < 0) arr.push(mv); else arr.splice(ti, 0, mv); }
+        return { ...n, items: arr };
+      }
+      return n;
+    });
+    saveTl(nextTl);
   }
   // Reorder across the WHOLE top level — loose photos AND albums interleave in
   // one sequence, so the Library mirrors the real timeline play order. Keys are
   // prefixed ('m:'+id for a loose photo, 'a:'+name for an album) so a photo id
-  // and an album name can never collide.
+  // and an album name can never collide. dropKey === END_DROP appends to the end
+  // (this is how you move something to the very last position).
   function libReorderTop(dragKey, dropKey) {
     if (!dragKey || dragKey === dropKey) return;
     const keyOf = (n) => (n.type === 'album' ? `a:${n.name}` : `m:${n.item.id}`);
-    const fi = tl.findIndex((n) => keyOf(n) === dragKey);
-    const ti = tl.findIndex((n) => keyOf(n) === dropKey);
-    if (fi < 0 || ti < 0) return;
-    const arr = [...tl]; const [mv] = arr.splice(fi, 1); arr.splice(ti, 0, mv);
+    const arr = [...tl];
+    const fi = arr.findIndex((n) => keyOf(n) === dragKey);
+    if (fi < 0) return;
+    const [mv] = arr.splice(fi, 1);
+    if (dropKey === END_DROP) { arr.push(mv); }
+    else { const ti = arr.findIndex((n) => keyOf(n) === dropKey); if (ti < 0) arr.push(mv); else arr.splice(ti, 0, mv); }
     saveTl(arr);
   }
   // Soft delete: move to Trash (recoverable) + show an Undo. Never a hard delete
@@ -1021,11 +1020,28 @@ export default function Uploader({ token }) {
                                 {tile(m)}
                               </div>
                             ))}
+                            {a.items.length > 0 && (
+                              <div
+                                onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === a.name) { e.preventDefault(); e.stopPropagation(); } }}
+                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const d = libDragRef.current; if (d && d.scope === a.name) libReorder(a.name, d.id, END_DROP); libDragRef.current = null; }}
+                                title="Drop here to move to the end of this album"
+                                style={{ width: 120, height: 120, borderRadius: 10, border: '2px dashed #2f5878', color: '#8aa0b5', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', fontSize: 11, lineHeight: 1.25, padding: 8 }}>
+                                ⇥ End of<br />album
+                              </div>
+                            )}
                             {a.items.length === 0 && <div style={{ color: '#7d8ea0', fontSize: 12, padding: '30px 12px' }}>Empty album</div>}
                           </div>
                         </div>
                       );
                     })}
+                    {/* Always-visible target so you can drop a photo or album at the very END. */}
+                    <div
+                      onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === 'top') e.preventDefault(); }}
+                      onDrop={(e) => { e.preventDefault(); const d = libDragRef.current; if (d && d.scope === 'top') libReorderTop(d.key, END_DROP); libDragRef.current = null; }}
+                      title="Drop here to move to the very end"
+                      style={{ width: 120, height: 120, borderRadius: 10, border: '2px dashed #3a4a5c', color: '#8aa0b5', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', fontSize: 12, lineHeight: 1.25, padding: 8, background: 'rgba(56,182,255,0.03)' }}>
+                      ⇥ Drop here<br />to move to the end
+                    </div>
                   </div>
 
                   {trashed.length > 0 && (
@@ -1045,7 +1061,7 @@ export default function Uploader({ token }) {
                     </div>
                   )}
                   {orgMsg && <p style={{ color: '#ff6b8a', fontSize: 13 }}>{orgMsg}</p>}
-                  <p style={{ color: '#7d8ea0', fontSize: 12, marginTop: 12 }}>Drag any photo or album to reorder — loose photos and albums share one order, exactly like the timeline. Drag a photo inside an album to reorder within it. ✕ moves a photo to Trash — restore it here, or Undo right after.</p>
+                  <p style={{ color: '#7d8ea0', fontSize: 12, marginTop: 12 }}>Drag any photo or album to reorder — loose photos and albums share one order, exactly like the timeline. Drop onto a tile to place it just before that tile, or onto the dashed “move to the end” box to send it last. Drag a photo inside an album to reorder within it. ✕ moves a photo to Trash — restore it here, or Undo right after.</p>
                 </>
               );
             })()}
