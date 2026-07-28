@@ -448,7 +448,22 @@ export default function AdminPage() {
   const loadMontages = useCallback(async () => {
     try {
       const { montages } = await api('/api/admin/montage');
-      setMontages(montages);
+      // Keep the playback URL we already issued for each render. The GET route
+      // presigns a FRESH url every call, so replacing it wholesale on each 7s
+      // auto-refresh poll swaps <video src> and forces the open preview to
+      // reload — jumping back to 0:00 (Josh: "won't play more than a second or
+      // two, keeps starting over"). Preserving the prior url keeps the element
+      // stable so it plays straight through. Fresh url only used the first time
+      // a render becomes ready (old.url still null then).
+      setMontages((prev) => {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        return montages.map((m) => {
+          const old = byId.get(m.id);
+          return old && old.url
+            ? { ...m, url: old.url, downloadUrl: old.downloadUrl || m.downloadUrl }
+            : m;
+        });
+      });
     } catch {
       /* panel shows empty; refresh button retries */
     }
@@ -1605,7 +1620,7 @@ export default function AdminPage() {
 
         {montageStep === 3 && (<>
         {/* Segment plan */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
           {segments.map((s, idx) => {
             const N = projPhotos.length;
             const matched = parsePhotoSpec(s.photos, N).length;
@@ -1619,9 +1634,12 @@ export default function AdminPage() {
               else if (a) albumRanges.push({ name: a, from: pos, to: pos });
             });
             return (
-              <div key={s.key} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <strong style={{ fontSize: 13 }}>Segment {idx + 1}</strong>
+              <div key={s.key} style={{ border: '1px solid var(--line)', borderLeft: '3px solid var(--blue)', borderRadius: 10, padding: 12, boxShadow: '0 3px 14px rgba(0,0,0,0.28)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '-12px -12px 14px', padding: '9px 12px', background: 'linear-gradient(var(--blue), var(--blue)) 0 0 / 132px 3px no-repeat, var(--panel-2)', borderBottom: '1px solid var(--line)', borderRadius: '8px 8px 0 0' }}>
+                  <strong style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: '50%', alignItems: 'center', justifyContent: 'center', fontSize: 12, background: 'var(--blue)', color: '#fff', fontWeight: 800 }}>{idx + 1}</span>
+                    Segment {idx + 1}
+                  </strong>
                   {segments.length > 1 && (
                     <button type="button" className="linklike" onClick={() => removeSegment(s.key)}>Remove</button>
                   )}
@@ -1661,49 +1679,47 @@ export default function AdminPage() {
                     ? `→ ${matched} of ${N} photos, in the order typed`
                     : `→ all ${N} photos`}
                 </p>
-                <div className="grid-2">
-                  <div>
-                    <label htmlFor={`st_${s.key}`}>Style</label>
-                    <select id={`st_${s.key}`} value={s.style} onChange={(e) => updateSegment(s.key, { style: e.target.value })}>
-                      {MONTAGE_STYLES.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor={`pm_${s.key}`}>Pace by</label>
-                    <select id={`pm_${s.key}`} value={s.paceMode || 'perphoto'} onChange={(e) => updateSegment(s.key, { paceMode: e.target.value })}>
-                      <option value="perphoto">Seconds per photo</option>
-                      <option value="total">Total length (time)</option>
-                    </select>
-                  </div>
+                <div className="field-group">
+                  <label htmlFor={`st_${s.key}`}>Style</label>
+                  <select id={`st_${s.key}`} value={s.style} onChange={(e) => updateSegment(s.key, { style: e.target.value })}>
+                    {MONTAGE_STYLES.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
                 </div>
-                {s.paceMode === 'total' ? (
-                  <div className="field-group">
-                    <label htmlFor={`tmin_${s.key}`}>Total length — the selected photos cycle to fit this time</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input id={`tmin_${s.key}`} type="number" min="0" max="30" step="1" placeholder="min" aria-label="minutes"
-                        value={s.tMin} onChange={(e) => updateSegment(s.key, { tMin: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
-                      <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
-                      <input type="number" min="0" max="59" step="1" placeholder="sec" aria-label="seconds"
-                        value={s.tSec} onChange={(e) => updateSegment(s.key, { tSec: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
-                      <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
-                      <input type="number" min="0" max="29" step="1" placeholder="fr" aria-label="frames"
-                        value={s.tFrames} onChange={(e) => updateSegment(s.key, { tFrames: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
-                      <span style={{ color: 'var(--muted)', fontSize: 12.5, marginLeft: 6 }}>min : sec : frames (30&nbsp;fps)</span>
+                <div className="field-group" style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, background: 'rgba(127,127,127,0.04)' }}>
+                  <label htmlFor={`pm_${s.key}`}>Pace by</label>
+                  <select id={`pm_${s.key}`} value={s.paceMode || 'perphoto'} onChange={(e) => updateSegment(s.key, { paceMode: e.target.value })}>
+                    <option value="perphoto">Seconds per photo</option>
+                    <option value="total">Total length (time)</option>
+                  </select>
+                  {s.paceMode === 'total' ? (
+                    <div style={{ marginTop: 12 }}>
+                      <label htmlFor={`tmin_${s.key}`}>Total length — the selected photos cycle to fit this time</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input id={`tmin_${s.key}`} type="number" min="0" max="30" step="1" placeholder="min" aria-label="minutes"
+                          value={s.tMin} onChange={(e) => updateSegment(s.key, { tMin: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
+                        <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
+                        <input type="number" min="0" max="59" step="1" placeholder="sec" aria-label="seconds"
+                          value={s.tSec} onChange={(e) => updateSegment(s.key, { tSec: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
+                        <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
+                        <input type="number" min="0" max="29" step="1" placeholder="fr" aria-label="frames"
+                          value={s.tFrames} onChange={(e) => updateSegment(s.key, { tFrames: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
+                        <span style={{ color: 'var(--muted)', fontSize: 12.5, marginLeft: 6 }}>min : sec : frames (30&nbsp;fps)</span>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="field-group">
-                    <label htmlFor={`sp_${s.key}`}>Seconds per photo</label>
-                    <select id={`sp_${s.key}`} value={s.speed} onChange={(e) => updateSegment(s.key, { speed: e.target.value })}>
-                      <option value="">Style default</option>
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                        <option key={n} value={n}>{n} second{n > 1 ? 's' : ''}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                  ) : (
+                    <div style={{ marginTop: 12 }}>
+                      <label htmlFor={`sp_${s.key}`}>Seconds per photo</label>
+                      <select id={`sp_${s.key}`} value={s.speed} onChange={(e) => updateSegment(s.key, { speed: e.target.value })}>
+                        <option value="">Style default</option>
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                          <option key={n} value={n}>{n} second{n > 1 ? 's' : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
                 <div className="field-group">
                   <label className="choice" style={{ color: 'var(--text)', display: 'flex' }}>
                     <input type="checkbox" checked={s.cards} onChange={(e) => updateSegment(s.key, { cards: e.target.checked })} />
