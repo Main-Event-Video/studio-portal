@@ -372,7 +372,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', cards: true, green: true });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', totalLen: '', cards: true, green: true });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -835,6 +835,7 @@ export default function AdminPage() {
             subtitle: mSubtitle.trim() || null,
             watermark: mWatermark,
             photoSeconds: s.speed ? Number(s.speed) : null,
+            totalSeconds: s.totalLen ? Number(s.totalLen) : null,
             photoSpec: s.photos.trim() || null,
             includeCards: s.cards,
             greenScreen: s.green !== false,
@@ -1656,12 +1657,23 @@ export default function AdminPage() {
                   </div>
                   <div>
                     <label htmlFor={`sp_${s.key}`}>Seconds per photo</label>
-                    <select id={`sp_${s.key}`} value={s.speed} onChange={(e) => updateSegment(s.key, { speed: e.target.value })}>
+                    <select id={`sp_${s.key}`} value={s.speed} disabled={!!s.totalLen} onChange={(e) => updateSegment(s.key, { speed: e.target.value })}>
                       <option value="">Style default</option>
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
                         <option key={n} value={n}>{n} second{n > 1 ? 's' : ''}</option>
                       ))}
                     </select>
+                  </div>
+                </div>
+                <div className="field-group">
+                  <label htmlFor={`tl_${s.key}`}>Total length (optional)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input id={`tl_${s.key}`} type="number" min="3" max="1800" step="1" placeholder="e.g. 60"
+                      value={s.totalLen} onChange={(e) => updateSegment(s.key, { totalLen: e.target.value })}
+                      style={{ width: 120 }} />
+                    <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>
+                      seconds — all selected photos cycle to fit this length (overrides seconds&nbsp;per&nbsp;photo). Leave blank for default pace.
+                    </span>
                   </div>
                 </div>
                 <div className="field-group">

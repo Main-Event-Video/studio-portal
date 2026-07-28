@@ -222,6 +222,9 @@ export default function Uploader({ token }) {
   const [openAlbums, setOpenAlbums] = useState(() => new Set());
   const [libOpen, setLibOpen] = useState(false);       // Photo Library grid
   const libDragRef = useRef(null);                      // { scope, id }
+  const [librarySel, setLibrarySel] = useState(() => new Set()); // selected photo ids in the Library
+  const libLastSel = useRef(null);                      // anchor id for shift-range select
+  const [libMenu, setLibMenu] = useState(null);         // { x, y, title, items:[{label,fn}] } popup
   const [lastTrashed, setLastTrashed] = useState(null); // { id, filename, prev } for Undo
   const undoTimer = useRef(null);
   const frameRef = useRef(null);
@@ -507,6 +510,124 @@ export default function Uploader({ token }) {
     else { const ti = arr.findIndex((n) => keyOf(n) === dropKey); if (ti < 0) arr.push(mv); else arr.splice(ti, 0, mv); }
     saveTl(arr);
   }
+
+  // ===== Photo Library organize (drag-free + drag) =====
+  // Derive display SECTIONS from the timeline: each album is a section; runs of
+  // consecutive loose photos coalesce into one "Loose photos" section. This is a
+  // pure view of `tl` (the single source of truth), so nothing reorders on load.
+  function libSections() {
+    const secs = [];
+    tl.forEach((n) => {
+      if (n.type === 'album') secs.push({ kind: 'album', name: n.name, items: n.items });
+      else {
+        const last = secs[secs.length - 1];
+        if (last && last.kind === 'loose') last.items.push(n.item);
+        else secs.push({ kind: 'loose', items: [n.item] });
+      }
+    });
+    return secs;
+  }
+  // Rebuild `tl` from a reordered section list and persist.
+  function saveSections(secs) {
+    const next = [];
+    secs.forEach((s) => {
+      if (s.kind === 'album') next.push({ type: 'album', name: s.name, items: s.items });
+      else s.items.forEach((m) => next.push({ type: 'media', item: m }));
+    });
+    saveTl(next);
+  }
+  // Move a whole section up/down in play order (swap with its neighbour).
+  function nudgeSection(idx, dir) {
+    const secs = libSections();
+    const j = idx + dir;
+    if (j < 0 || j >= secs.length) return;
+    [secs[idx], secs[j]] = [secs[j], secs[idx]];
+    saveSections(secs);
+  }
+  // Move an album section to an absolute section position.
+  function moveAlbumToPos(name, targetIdx) {
+    const secs = libSections();
+    const fi = secs.findIndex((s) => s.kind === 'album' && s.name === name);
+    if (fi < 0) return;
+    const [mv] = secs.splice(fi, 1);
+    secs.splice(Math.max(0, Math.min(secs.length, targetIdx)), 0, mv);
+    saveSections(secs);
+  }
+  // Move photo(s) into an album (target = album name) or out to loose (target =
+  // ''), optionally landing BEFORE beforeId (any position); else appended.
+  function moveToAlbum(ids, target, beforeId) {
+    const idset = ids instanceof Set ? ids : new Set(ids);
+    if (!idset.size) return;
+    const moved = [];
+    tl.forEach((n) => {
+      if (n.type === 'media') { if (idset.has(n.item.id)) moved.push(n.item); }
+      else n.items.forEach((m) => { if (idset.has(m.id)) moved.push(m); });
+    });
+    if (!moved.length) return;
+    let next = tl
+      .filter((n) => !(n.type === 'media' && idset.has(n.item.id)))
+      .map((n) => (n.type === 'album' ? { ...n, items: n.items.filter((m) => !idset.has(m.id)) } : n));
+    if (!target) {
+      const nodes = moved.map((m) => ({ type: 'media', item: { ...m, folderPath: '' } }));
+      let idx = next.length;
+      if (beforeId) { const bi = next.findIndex((n) => n.type === 'media' && n.item.id === beforeId); if (bi >= 0) idx = bi; }
+      next.splice(idx, 0, ...nodes);
+    } else {
+      let found = false;
+      next = next.map((n) => {
+        if (n.type === 'album' && n.name === target) {
+          found = true;
+          const arr = [...n.items];
+          let idx = arr.length;
+          if (beforeId) { const bi = arr.findIndex((m) => m.id === beforeId); if (bi >= 0) idx = bi; }
+          arr.splice(idx, 0, ...moved.map((m) => ({ ...m, folderPath: target })));
+          return { ...n, items: arr };
+        }
+        return n;
+      });
+      // Target album has no node yet (brand-new album, or an empty one not in the
+      // timeline) — create it so the photos are never dropped.
+      if (!found) next.push({ type: 'album', name: target, items: moved.map((m) => ({ ...m, folderPath: target })) });
+    }
+    saveTl(next);
+    setLibrarySel(new Set());
+  }
+  // Selection: click toggles; shift-click selects a range across play order.
+  function toggleLibSel(id, shift) {
+    setLibrarySel((cur) => {
+      const nextSel = new Set(cur);
+      if (shift && libLastSel.current) {
+        const order = [];
+        tl.forEach((n) => { if (n.type === 'media') order.push(n.item.id); else n.items.forEach((m) => order.push(m.id)); });
+        const a = order.indexOf(libLastSel.current), b = order.indexOf(id);
+        if (a >= 0 && b >= 0) { const [lo, hi] = a < b ? [a, b] : [b, a]; for (let i = lo; i <= hi; i++) nextSel.add(order[i]); }
+      } else {
+        if (nextSel.has(id)) nextSel.delete(id); else nextSel.add(id);
+        libLastSel.current = id;
+      }
+      return nextSel;
+    });
+  }
+  // Album names in current order (for the Move menus).
+  function libAlbumNames() { return libSections().filter((s) => s.kind === 'album').map((s) => s.name); }
+  function openMoveMenu(e, forIds) {
+    e.stopPropagation();
+    const ids = forIds || (librarySel.size ? [...librarySel] : []);
+    if (!ids.length) return;
+    const items = [
+      ...libAlbumNames().map((nm) => ({ label: `📁  ${nm}`, fn: () => moveToAlbum(ids, nm, null) })),
+      { label: '📥  Loose (no album)', fn: () => moveToAlbum(ids, '', null) },
+      { label: '＋  New album…', fn: () => { const nm = (typeof window !== 'undefined' && window.prompt('New album name:') || '').trim(); if (nm) { if (!allBoxes.includes(nm)) organize({ action: 'createBox', name: nm }); moveToAlbum(ids, nm, null); } } },
+    ];
+    setLibMenu({ x: e.clientX, y: e.clientY, title: `Move ${ids.length} to`, items });
+  }
+  function openAlbumPosMenu(e, name) {
+    e.stopPropagation();
+    const secs = libSections();
+    const items = secs.map((s, i) => ({ label: `${i + 1}.  ${s.kind === 'album' ? s.name : 'Loose photos'}`, fn: () => moveAlbumToPos(name, i) }));
+    setLibMenu({ x: e.clientX, y: e.clientY, title: 'Move album to position', items });
+  }
+
   // Soft delete: move to Trash (recoverable) + show an Undo. Never a hard delete
   // from a single tap — clients restore from Trash or Undo right after.
   async function trashPhoto(m) {
@@ -975,99 +1096,90 @@ export default function Uploader({ token }) {
       {libOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(8,7,12,0.96)', overflowY: 'auto', padding: 20 }}>
           <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <h2 style={{ color: '#fff', margin: 0, fontSize: 20 }}>Photo Library <span style={{ fontSize: 13, color: '#9fb3c8', fontWeight: 400 }}>— drag photos & albums to reorder, ✕ to delete</span></h2>
-              <button type="button" onClick={() => setLibOpen(false)} style={{ border: '1px solid #38b6ff', background: 'transparent', color: '#e6eef5', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontWeight: 700 }}>Done ✓</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+              <h2 style={{ color: '#fff', margin: 0, fontSize: 20 }}>Photo Library</h2>
+              <span style={{ flex: 1 }} />
+              <button type="button" onClick={() => { const nm = (typeof window !== 'undefined' && window.prompt('New album name:') || '').trim(); if (nm && !allBoxes.includes(nm)) organize({ action: 'createBox', name: nm }); }}
+                style={{ border: '1.5px solid #7c5cff', background: 'transparent', color: '#e9e2ff', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontWeight: 800, fontSize: 13.5 }}>+ New album</button>
+              <button type="button" onClick={() => { setLibrarySel(new Set()); setLibMenu(null); setLibOpen(false); }} style={{ border: '1px solid #38b6ff', background: 'transparent', color: '#e6eef5', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontWeight: 700 }}>Done ✓</button>
             </div>
+            <p style={{ color: '#9fb3c8', fontSize: 13, margin: '0 0 12px' }}>This top-to-bottom order is <b style={{ color: '#38b6ff' }}>exactly how your video plays</b> — every move updates it live. Click a photo to select (Shift-click for a range), then <b>Move ▾</b>. Drag a photo onto another to drop it right before that spot, in any album.</p>
+            {librarySel.size > 0 && (
+              <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(8,7,12,0.96)', padding: '8px 0', marginBottom: 6 }}>
+                <button type="button" onClick={(e) => openMoveMenu(e, [...librarySel])}
+                  style={{ border: 'none', background: '#7c5cff', color: '#0d0913', borderRadius: 11, padding: '9px 14px', cursor: 'pointer', fontWeight: 800, fontSize: 13.5 }}>Move {librarySel.size} selected to ▾</button>
+                <button type="button" onClick={() => setLibrarySel(new Set())}
+                  style={{ border: '1.5px solid #2a3340', background: 'transparent', color: '#9fb3c8', borderRadius: 11, padding: '9px 14px', cursor: 'pointer', fontWeight: 800, fontSize: 13.5 }}>Clear</button>
+                <span style={{ color: '#3ddc84', fontWeight: 800, fontSize: 13.5 }}>{librarySel.size} selected</span>
+              </div>
+            )}
             {tl.length === 0 ? (
               <p style={{ color: '#9fb3c8' }}>No photos yet.</p>
             ) : (() => {
-              // Play-order number for every photo, counted across the whole
-              // interleaved sequence (loose photos + album contents) so the
-              // badges match the real timeline exactly.
+              // Play-order number for every photo, across the whole interleaved
+              // sequence, so badges match the real timeline exactly.
               let pn = 0; const playNo = {};
               tl.forEach((node) => {
                 if (node.type === 'media') { pn += 1; playNo[node.item.id] = pn; }
                 else node.items.forEach((m) => { pn += 1; playNo[m.id] = pn; });
               });
+              const sections = libSections();
+              const trashed = mine.filter((m) => (m.folderPath || '') === TRASH_FOLDER);
+              const SEL = librarySel;
+              const startPhotoDrag = (id) => { const ids = (SEL.has(id) && SEL.size) ? [...SEL] : [id]; libDragRef.current = { photos: ids }; };
+              const dropOnTile = (sec, beforeM) => { const d = libDragRef.current; if (d && d.photos) moveToAlbum(d.photos, sec.kind === 'album' ? sec.name : '', beforeM.id); libDragRef.current = null; };
+              const dropOnSection = (sec) => { const d = libDragRef.current; if (d && d.photos) moveToAlbum(d.photos, sec.kind === 'album' ? sec.name : '', null); libDragRef.current = null; };
 
-              // One square tile: photo (or labelled placeholder) + play number + ✕ to Trash.
-              const tile = (m) => (
-                <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid #2a3340', background: '#000', width: 120, height: 120 }}>
+              const tile = (m, sec) => (
+                <div key={m.id} draggable
+                  onClick={(e) => toggleLibSel(m.id, e.shiftKey)}
+                  onDragStart={(e) => { if (!SEL.has(m.id)) { setLibrarySel(new Set([m.id])); libLastSel.current = m.id; } startPhotoDrag(m.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', m.id); } catch { /* older */ } }}
+                  onDragOver={(e) => { if (libDragRef.current && libDragRef.current.photos) { e.preventDefault(); e.stopPropagation(); } }}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); dropOnTile(sec, m); }}
+                  style={{ position: 'relative', width: 120, height: 120, borderRadius: 10, overflow: 'hidden', background: '#000', cursor: 'grab', border: SEL.has(m.id) ? '2px solid #38b6ff' : '2px solid transparent', boxShadow: SEL.has(m.id) ? '0 0 0 3px rgba(56,182,255,.28)' : 'none' }}>
                   {tileInner(m)}
-                  <span style={{ position: 'absolute', top: 5, left: 5, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{playNo[m.id]}</span>
-                  <button type="button" onClick={() => trashPhoto(m)} title="Move to Trash"
-                    style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.66)', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>✕</button>
+                  <span style={{ position: 'absolute', top: 5, left: 5, fontSize: 11, fontWeight: 800, background: 'rgba(0,0,0,.72)', color: '#fff', padding: '1px 6px', borderRadius: 999 }}>{playNo[m.id]}</span>
+                  {SEL.has(m.id) && <span style={{ position: 'absolute', top: 5, right: 5, width: 20, height: 20, borderRadius: 6, background: '#38b6ff', color: '#0d0913', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900 }}>✓</span>}
+                  <button type="button" onClick={(e) => { e.stopPropagation(); openMoveMenu(e, [m.id]); }} title="Move to an album"
+                    style={{ position: 'absolute', bottom: 5, left: 5, border: 'none', background: 'rgba(0,0,0,.72)', color: '#fff', borderRadius: 8, fontSize: 11.5, fontWeight: 800, padding: '3px 7px', cursor: 'pointer' }}>Move ▾</button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); trashPhoto(m); }} title="Move to Trash"
+                    style={{ position: 'absolute', bottom: 5, right: 5, width: 22, height: 22, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.66)', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>✕</button>
                 </div>
               );
 
-              const trashed = mine.filter((m) => (m.folderPath || '') === TRASH_FOLDER);
               return (
                 <>
-                  {/* One interleaved flow: loose photos and album blocks in true play order. */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
-                    {tl.map((node) => {
-                      if (node.type === 'media') {
-                        const m = node.item; const key = `m:${m.id}`;
-                        return (
-                          <div key={key} draggable
-                            onDragStart={() => { libDragRef.current = { scope: 'top', key }; }}
-                            onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === 'top') e.preventDefault(); }}
-                            onDrop={(e) => { e.preventDefault(); const d = libDragRef.current; if (d && d.scope === 'top') libReorderTop(d.key, key); libDragRef.current = null; }}
-                            style={{ cursor: 'grab' }}>
-                            {tile(m)}
-                          </div>
-                        );
-                      }
-                      // Album block: outlined in brand blue; the header is the top-level drag handle.
-                      const a = node; const akey = `a:${a.name}`;
-                      return (
-                        <div key={akey}
-                          onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === 'top') e.preventDefault(); }}
-                          onDrop={(e) => { e.preventDefault(); const d = libDragRef.current; if (d && d.scope === 'top') libReorderTop(d.key, akey); libDragRef.current = null; }}
-                          style={{ border: '2px solid var(--neon)', borderRadius: 14, padding: 10, background: 'rgba(56,182,255,0.06)', maxWidth: '100%' }}>
-                          <div draggable
-                            onDragStart={(e) => { e.stopPropagation(); libDragRef.current = { scope: 'top', key: akey }; }}
-                            title="Drag to move this album in the order"
-                            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'grab', color: '#cfe8ff', fontWeight: 800, fontSize: 13, margin: '0 2px 8px' }}>
-                            <span style={{ opacity: 0.7 }}>⠿</span> {a.name} <span style={{ color: '#7d8ea0', fontWeight: 400 }}>({a.items.length})</span>
-                          </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            {a.items.map((m) => (
-                              <div key={m.id} draggable
-                                onDragStart={(e) => { e.stopPropagation(); libDragRef.current = { scope: a.name, id: m.id }; }}
-                                onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === a.name) { e.preventDefault(); e.stopPropagation(); } }}
-                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const d = libDragRef.current; if (d && d.scope === a.name) libReorder(a.name, d.id, m.id); libDragRef.current = null; }}
-                                style={{ cursor: 'grab' }}>
-                                {tile(m)}
-                              </div>
-                            ))}
-                            {a.items.length > 0 && (
-                              <div
-                                onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === a.name) { e.preventDefault(); e.stopPropagation(); } }}
-                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const d = libDragRef.current; if (d && d.scope === a.name) libReorder(a.name, d.id, END_DROP); libDragRef.current = null; }}
-                                title="Drop here to move to the end of this album"
-                                style={{ width: 120, height: 120, borderRadius: 10, border: '2px dashed #2f5878', color: '#8aa0b5', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', fontSize: 11, lineHeight: 1.25, padding: 8 }}>
-                                ⇥ End of<br />album
-                              </div>
-                            )}
-                            {a.items.length === 0 && <div style={{ color: '#7d8ea0', fontSize: 12, padding: '30px 12px' }}>Empty album</div>}
-                          </div>
+                  {sections.map((sec, si) => {
+                    const isAlbum = sec.kind === 'album';
+                    return (
+                      <div key={isAlbum ? `a:${sec.name}` : `loose:${si}`}
+                        onDragOver={(e) => { const d = libDragRef.current; if (d && (d.photos || d.section != null)) e.preventDefault(); }}
+                        onDrop={(e) => {
+                          const d = libDragRef.current;
+                          if (d && d.photos) { e.preventDefault(); dropOnSection(sec); }
+                          else if (d && d.section != null) { e.preventDefault(); if (d.section !== si) { const secs = libSections(); const [mv] = secs.splice(d.section, 1); secs.splice(si, 0, mv); saveSections(secs); } libDragRef.current = null; }
+                        }}
+                        style={{ border: isAlbum ? '1.5px solid rgba(124,92,255,.5)' : '1.5px solid #2a3340', borderRadius: 14, background: isAlbum ? 'rgba(124,92,255,.06)' : 'rgba(56,182,255,.04)', marginBottom: 14, overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 13px', background: isAlbum ? 'linear-gradient(160deg,rgba(124,92,255,.14),rgba(124,92,255,.03))' : 'rgba(56,182,255,.06)' }}>
+                          <span draggable={isAlbum} onDragStart={() => { if (isAlbum) libDragRef.current = { section: si }; }}
+                            title={isAlbum ? 'Drag to reorder this album' : ''} style={{ cursor: isAlbum ? 'grab' : 'default', color: '#8a7fb0', fontSize: 16, letterSpacing: '-2px' }}>⠿</span>
+                          <span style={{ fontWeight: 800, fontSize: 15.5, color: '#eef' }}>{isAlbum ? `📁 ${sec.name}` : '📥 Loose photos'}</span>
+                          <span style={{ color: isAlbum ? '#cbb8ff' : '#9fc7e6', fontSize: 12.5 }}>{sec.items.length} photo{sec.items.length === 1 ? '' : 's'}</span>
+                          {!isAlbum && <span style={{ background: 'rgba(56,182,255,.14)', color: '#38b6ff', borderRadius: 6, padding: '1px 7px', fontSize: 11, fontWeight: 800 }}>not in an album</span>}
+                          <span style={{ flex: 1 }} />
+                          <button type="button" disabled={si === 0} onClick={() => nudgeSection(si, -1)} title="Move up" style={{ width: 30, height: 30, borderRadius: 8, border: '1.5px solid #2a3340', background: 'transparent', color: '#9fb3c8', cursor: si === 0 ? 'default' : 'pointer', opacity: si === 0 ? 0.3 : 1, fontSize: 14 }}>▲</button>
+                          <button type="button" disabled={si === sections.length - 1} onClick={() => nudgeSection(si, 1)} title="Move down" style={{ width: 30, height: 30, borderRadius: 8, border: '1.5px solid #2a3340', background: 'transparent', color: '#9fb3c8', cursor: si === sections.length - 1 ? 'default' : 'pointer', opacity: si === sections.length - 1 ? 0.3 : 1, fontSize: 14 }}>▼</button>
+                          {isAlbum && <button type="button" onClick={(e) => openAlbumPosMenu(e, sec.name)} style={{ border: '1.5px solid #7c5cff', color: '#e9e2ff', background: 'none', borderRadius: 999, padding: '5px 11px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>Move album ▾</button>}
                         </div>
-                      );
-                    })}
-                    {/* Always-visible target so you can drop a photo or album at the very END. */}
-                    <div
-                      onDragOver={(e) => { if (libDragRef.current && libDragRef.current.scope === 'top') e.preventDefault(); }}
-                      onDrop={(e) => { e.preventDefault(); const d = libDragRef.current; if (d && d.scope === 'top') libReorderTop(d.key, END_DROP); libDragRef.current = null; }}
-                      title="Drop here to move to the very end"
-                      style={{ width: 120, height: 120, borderRadius: 10, border: '2px dashed #3a4a5c', color: '#8aa0b5', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', fontSize: 12, lineHeight: 1.25, padding: 8, background: 'rgba(56,182,255,0.03)' }}>
-                      ⇥ Drop here<br />to move to the end
-                    </div>
-                  </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: 13 }}>
+                          {sec.items.length ? sec.items.map((m) => tile(m, sec)) : <div style={{ color: '#9fb0c4', fontSize: 12.5, padding: '18px 6px' }}>Empty — drag photos here, or use a photo’s Move ▾.</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
 
                   {trashed.length > 0 && (
-                    <div style={{ marginTop: 24, borderTop: '1px solid #2a3340', paddingTop: 16 }}>
+                    <div style={{ marginTop: 20, borderTop: '1px solid #2a3340', paddingTop: 16 }}>
                       <div style={{ color: '#e6a3a3', fontWeight: 800, fontSize: 14, margin: '0 0 10px' }}>🗑 Trash <span style={{ color: '#7d8ea0', fontWeight: 400 }}>({trashed.length}) — restore, or delete forever</span></div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
                         {trashed.map((m) => (
@@ -1083,10 +1195,24 @@ export default function Uploader({ token }) {
                     </div>
                   )}
                   {orgMsg && <p style={{ color: '#ff6b8a', fontSize: 13 }}>{orgMsg}</p>}
-                  <p style={{ color: '#7d8ea0', fontSize: 12, marginTop: 12 }}>Drag any photo or album to reorder — loose photos and albums share one order, exactly like the timeline. Drop onto a tile to place it just before that tile, or onto the dashed “move to the end” box to send it last. Drag a photo inside an album to reorder within it. ✕ moves a photo to Trash — restore it here, or Undo right after.</p>
+                  <p style={{ color: '#7d8ea0', fontSize: 12, marginTop: 12 }}>Tip: drag a photo onto another photo to drop it right before that spot — inside any album. Drag an album by its ⠿ handle, or use ▲▼ / Move album ▾, to reorder. ✕ sends a photo to Trash (restore here or Undo right after).</p>
                 </>
               );
             })()}
+            {libMenu && (
+              <>
+                <div onClick={() => setLibMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
+                <div style={{ position: 'fixed', left: Math.min(libMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 230), top: Math.min(libMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 40 - libMenu.items.length * 40), zIndex: 1001, background: '#221b30', border: '1.5px solid #7c5cff', borderRadius: 12, padding: 6, minWidth: 210, maxHeight: '70vh', overflowY: 'auto', boxShadow: '0 12px 34px rgba(0,0,0,.55)' }}>
+                  <div style={{ color: '#9a8fb0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.5px', padding: '6px 12px 4px' }}>{libMenu.title}</div>
+                  {libMenu.items.map((it, ix) => (
+                    <div key={ix} onClick={() => { it.fn(); setLibMenu(null); }}
+                      style={{ padding: '9px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, fontWeight: 700, color: '#eae6f0' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(124,92,255,.25)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>{it.label}</div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

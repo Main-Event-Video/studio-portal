@@ -27,9 +27,13 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true } = body || {};
   if (photoSeconds != null && !(Number(photoSeconds) >= 1 && Number(photoSeconds) <= 10)) {
     return NextResponse.json({ error: 'photoSeconds must be 1–10' }, { status: 400 });
+  }
+  // Total-length mode: photos cycle to fit this many seconds (overrides seconds/photo).
+  if (totalSeconds != null && !(Number(totalSeconds) >= 3 && Number(totalSeconds) <= 1800)) {
+    return NextResponse.json({ error: 'totalSeconds must be 3–1800' }, { status: 400 });
   }
   if (!clientId || !title) {
     return NextResponse.json({ error: 'clientId and title are required' }, { status: 400 });
@@ -145,6 +149,7 @@ export async function POST(request) {
       watermarked: !!watermark,
       params: {
         photoSeconds: photoSeconds ? Number(photoSeconds) : null,
+        totalSeconds: totalSeconds ? Number(totalSeconds) : null,
         adjustments: adjustments && typeof adjustments === 'object' ? adjustments : {},
         // Photo selection for this segment: the raw expression (for display) and
         // the resolved 1-based positions (for exact re-renders). Blank = all.
@@ -177,6 +182,7 @@ export async function POST(request) {
       items,
       style,
       photoSeconds: photoSeconds ? Number(photoSeconds) : null,
+      totalSeconds: totalSeconds ? Number(totalSeconds) : null,
       includeCards: includeCards !== false,
       greenBookends: greenScreen !== false,
       title: String(title).toUpperCase(),
