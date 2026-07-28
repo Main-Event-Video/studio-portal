@@ -225,6 +225,7 @@ export default function Uploader({ token }) {
   const [librarySel, setLibrarySel] = useState(() => new Set()); // selected photo ids in the Library
   const libLastSel = useRef(null);                      // anchor id for shift-range select
   const [libMenu, setLibMenu] = useState(null);         // { x, y, title, items:[{label,fn}] } popup
+  const [libUndo, setLibUndo] = useState([]);           // stack of pre-move timeline snapshots
   const [lastTrashed, setLastTrashed] = useState(null); // { id, filename, prev } for Undo
   const undoTimer = useRef(null);
   const frameRef = useRef(null);
@@ -527,8 +528,21 @@ export default function Uploader({ token }) {
     });
     return secs;
   }
+  // Undo: snapshot the whole timeline BEFORE a Library move so any move (or a
+  // wrong drag) is one click away from being reversed — nothing gets lost.
+  function pushLibUndo() {
+    setLibUndo((s) => [...s, tl.map((n) => (n.type === 'album' ? { ...n, items: [...n.items] } : { ...n }))].slice(-25));
+  }
+  function undoLibMove() {
+    if (!libUndo.length) return;
+    const snap = libUndo[libUndo.length - 1];
+    setLibUndo((s) => s.slice(0, -1));
+    setLibrarySel(new Set());
+    saveTl(snap); // persists the restored order (and reloads from server)
+  }
   // Rebuild `tl` from a reordered section list and persist.
   function saveSections(secs) {
+    pushLibUndo();
     const next = [];
     secs.forEach((s) => {
       if (s.kind === 'album') next.push({ type: 'album', name: s.name, items: s.items });
@@ -564,6 +578,7 @@ export default function Uploader({ token }) {
       else n.items.forEach((m) => { if (idset.has(m.id)) moved.push(m); });
     });
     if (!moved.length) return;
+    pushLibUndo();
     let next = tl
       .filter((n) => !(n.type === 'media' && idset.has(n.item.id)))
       .map((n) => (n.type === 'album' ? { ...n, items: n.items.filter((m) => !idset.has(m.id)) } : n));
@@ -1099,9 +1114,11 @@ export default function Uploader({ token }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
               <h2 style={{ color: '#fff', margin: 0, fontSize: 20 }}>Photo Library</h2>
               <span style={{ flex: 1 }} />
+              <button type="button" disabled={!libUndo.length} onClick={undoLibMove} title="Undo the last move"
+                style={{ border: '1.5px solid #f0b429', background: 'transparent', color: libUndo.length ? '#ffd873' : '#6a6350', borderRadius: 10, padding: '8px 14px', cursor: libUndo.length ? 'pointer' : 'default', fontWeight: 800, fontSize: 13.5, opacity: libUndo.length ? 1 : 0.5 }}>↩ Undo{libUndo.length ? ` (${libUndo.length})` : ''}</button>
               <button type="button" onClick={() => { const nm = (typeof window !== 'undefined' && window.prompt('New album name:') || '').trim(); if (nm && !allBoxes.includes(nm)) organize({ action: 'createBox', name: nm }); }}
                 style={{ border: '1.5px solid #7c5cff', background: 'transparent', color: '#e9e2ff', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontWeight: 800, fontSize: 13.5 }}>+ New album</button>
-              <button type="button" onClick={() => { setLibrarySel(new Set()); setLibMenu(null); setLibOpen(false); }} style={{ border: '1px solid #38b6ff', background: 'transparent', color: '#e6eef5', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontWeight: 700 }}>Done ✓</button>
+              <button type="button" onClick={() => { setLibrarySel(new Set()); setLibMenu(null); setLibUndo([]); setLibOpen(false); }} style={{ border: '1px solid #38b6ff', background: 'transparent', color: '#e6eef5', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', fontWeight: 700 }}>Done ✓</button>
             </div>
             <p style={{ color: '#9fb3c8', fontSize: 13, margin: '0 0 12px' }}>This top-to-bottom order is <b style={{ color: '#38b6ff' }}>exactly how your video plays</b> — every move updates it live. Click a photo to select (Shift-click for a range), then <b>Move ▾</b>. Drag a photo onto another to drop it right before that spot, in any album.</p>
             {librarySel.size > 0 && (
