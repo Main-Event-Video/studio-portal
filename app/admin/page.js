@@ -468,9 +468,17 @@ export default function AdminPage() {
   // its own once everything is Ready/Failed.
   useEffect(() => {
     if (!session) return undefined;
-    const pending = montages.some((m) => m.status === 'queued' || m.status === 'rendering');
-    if (!pending) return undefined;
-    const iv = setInterval(() => { loadMontages(); }, 7000);
+    const pendingIds = montages.filter((m) => m.status === 'queued' || m.status === 'rendering').map((m) => m.id);
+    if (!pendingIds.length) return undefined;
+    // Actively POLL Creatomate (via /sync) for each pending render, then reload.
+    // A plain GET only reflects the DB, which is updated by Creatomate's webhook —
+    // if that webhook doesn't fire, the status never flips. Polling sync makes the
+    // auto-check work regardless of the webhook.
+    const iv = setInterval(async () => {
+      await Promise.all(pendingIds.map((id) =>
+        api('/api/admin/montage/sync', { method: 'POST', body: JSON.stringify({ montageId: id }) }).catch(() => {})));
+      loadMontages();
+    }, 8000);
     return () => clearInterval(iv);
   }, [session, montages, loadMontages]);
 
@@ -812,6 +820,18 @@ export default function AdminPage() {
         method: 'POST',
         body: JSON.stringify({ montageId: id }),
       });
+      loadMontages();
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+  }
+
+  // Record review state (viewed / thumbs up-down) on a render. Stored in params
+  // server-side; reloads the list to reflect the new label/rating.
+  async function reviewMontage(id, patch) {
+    try {
+      await api('/api/admin/montage/review', { method: 'POST', body: JSON.stringify({ montageId: id, ...patch }) });
       loadMontages();
     } catch (err) {
       setMErr(true);
@@ -1809,20 +1829,22 @@ export default function AdminPage() {
                   <span>
                     <strong>{m.title}</strong>
                     <span style={{ color: 'var(--muted)' }}>
-                      {' '}· {m.style} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos
+                      {' '}· {m.style} · {m.watermarked ? 'Low rez' : 'High rez'} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos
                       {m.photoSpec ? ` · #${m.photoSpec}` : ''}
                     </span>
-                    {m.watermarked && <span className="pill" style={{ marginLeft: 8 }}>draft</span>}
+                    <span className="pill" style={{ marginLeft: 8 }}>{m.watermarked ? 'low rez' : 'high rez'}</span>
+                    {m.rating === 'up' && <span className="pill" style={{ marginLeft: 8, color: 'var(--ok)' }}>👍</span>}
+                    {m.rating === 'down' && <span className="pill" style={{ marginLeft: 8, color: 'var(--red)' }}>👎</span>}
                     {m.includeCards === false && <span className="pill" style={{ marginLeft: 8 }}>no cards</span>}
                   </span>
                   <span
                     style={{
                       color:
-                        m.status === 'ready' ? 'var(--ok)' : m.status === 'failed' ? 'var(--red)' : 'var(--muted)',
+                        m.status === 'failed' ? 'var(--red)' : (m.status === 'ready' && !m.viewed) ? 'var(--ok)' : 'var(--muted)',
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {m.status === 'rendering' ? 'Rendering…' : m.status}
+                    {m.status === 'rendering' ? 'Rendering…' : m.status === 'ready' ? (m.viewed ? 'Viewed' : 'Ready to view') : m.status}
                     {(m.status === 'rendering' || m.status === 'queued') && (
                       <>
                         {' '}
@@ -1848,7 +1870,7 @@ export default function AdminPage() {
                       <video src={m.url} controls preload="metadata" style={{ width: '100%', maxHeight: 320, borderRadius: 10, background: '#000' }} />
                     )}
                     <p style={{ marginTop: 8, fontSize: 13 }}>
-                      <button type="button" className="linklike" onClick={() => setShowVid((v) => ({ ...v, [m.id]: !v[m.id] }))}>
+                      <button type="button" className="linklike" onClick={() => { setShowVid((v) => ({ ...v, [m.id]: !v[m.id] })); if (!m.viewed) reviewMontage(m.id, { viewed: true }); }}>
                         {showVid[m.id] ? 'Hide Preview' : 'Show Preview'}
                       </button>
                       {' '}·{' '}
@@ -1863,6 +1885,10 @@ export default function AdminPage() {
                       ) : (
                         <button type="button" className="linklike" onClick={() => rerenderMontage(m.id, true)}>Export Full Rez</button>
                       )}
+                      {' '}·{' '}
+                      <button type="button" className="linklike" title="Thumbs up" style={{ color: m.rating === 'up' ? 'var(--ok)' : 'var(--muted)', fontSize: 15 }} onClick={() => reviewMontage(m.id, { rating: m.rating === 'up' ? null : 'up' })}>👍</button>
+                      {' '}
+                      <button type="button" className="linklike" title="Thumbs down" style={{ color: m.rating === 'down' ? 'var(--red)' : 'var(--muted)', fontSize: 15 }} onClick={() => reviewMontage(m.id, { rating: m.rating === 'down' ? null : 'down' })}>👎</button>
                       {!m.archived && (
                         <span style={{ color: 'var(--muted)' }}>
                           {' '}· not yet archived to our storage — this copy expires in ~30 days, download it

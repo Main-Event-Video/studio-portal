@@ -300,6 +300,8 @@ export async function GET(request) {
       includeCards: m.params?.includeCards !== false,
       greenScreen: m.params?.greenScreen !== false,
       hidden: m.params?.hidden === true,
+      viewed: m.params?.viewed === true,
+      rating: m.params?.rating || null,
       status: m.status,
       error: m.error,
       photoCount: m.photo_count,
