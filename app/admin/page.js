@@ -832,6 +832,21 @@ export default function AdminPage() {
     }
   }
 
+  // Stop a queued/rendering montage: clears it from the rendering state (and stops
+  // the auto-refresh polling) + best-effort asks Creatomate to drop the render.
+  async function cancelMontage(id) {
+    try {
+      await api('/api/admin/montage/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ montageId: id }),
+      });
+      loadMontages();
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+  }
+
   // Fire one render per segment, in order. Segments that select no photos are
   // skipped. Reports how many queued and surfaces any per-segment errors.
   async function generateAll(c) {
@@ -1792,6 +1807,10 @@ export default function AdminPage() {
                         {' '}
                         <button type="button" className="btn-ghost" onClick={() => syncMontage(m.id)}>
                           Check status
+                        </button>
+                        {' '}
+                        <button type="button" className="btn-ghost" style={{ color: 'var(--red)' }} onClick={() => cancelMontage(m.id)}>
+                          Cancel
                         </button>
                       </>
                     )}
