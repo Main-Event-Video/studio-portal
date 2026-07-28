@@ -360,6 +360,7 @@ export default function AdminPage() {
     { value: 'collage_featured', label: 'Collage Wall Featured — big hero photos + smaller tiles' },
     { value: 'gallery150', label: 'Gallery 150 — scattered tilted prints, camera flies over' },
     { value: 'epic_vintage', label: 'Epic Vintage — one hero print, blurred bokeh, heavy light leaks' },
+    { value: 'story_builder', label: 'Story Builder — one at a time, builds a story wall (green screen)' },
     { value: 'trendy', label: 'Trendy Photo Wall — 3D angled grid of matte prints' },
   ];
   const [mClientId, setMClientId] = useState('');
