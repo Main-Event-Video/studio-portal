@@ -27,7 +27,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true } = body || {};
   if (photoSeconds != null && !(Number(photoSeconds) >= 1 && Number(photoSeconds) <= 10)) {
     return NextResponse.json({ error: 'photoSeconds must be 1–10' }, { status: 400 });
   }
@@ -152,6 +152,7 @@ export async function POST(request) {
         photoIndexes: indexes,
         includeCards: includeCards !== false,
         videoPlaceholders: videoPlaceholders !== false,
+        greenScreen: greenScreen !== false,
         videoGaps: gapCount,
         colorCorrect: !!pe.colorCorrect,
       },
@@ -177,6 +178,7 @@ export async function POST(request) {
       style,
       photoSeconds: photoSeconds ? Number(photoSeconds) : null,
       includeCards: includeCards !== false,
+      greenBookends: greenScreen !== false,
       title: String(title).toUpperCase(),
       subtitle: subtitle ? String(subtitle).toUpperCase() : null,
       watermarkUrl: watermark ? `${siteUrl}/watermark.png` : null,
@@ -228,6 +230,7 @@ export async function GET(request) {
       adjustments: m.params?.adjustments || {},
       photoSpec: m.params?.photoSpec || null,
       includeCards: m.params?.includeCards !== false,
+      greenScreen: m.params?.greenScreen !== false,
       hidden: m.params?.hidden === true,
       status: m.status,
       error: m.error,

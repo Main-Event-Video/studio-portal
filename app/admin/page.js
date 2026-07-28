@@ -372,7 +372,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', cards: true });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', cards: true, green: true });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -837,6 +837,7 @@ export default function AdminPage() {
             photoSeconds: s.speed ? Number(s.speed) : null,
             photoSpec: s.photos.trim() || null,
             includeCards: s.cards,
+            greenScreen: s.green !== false,
           }),
         });
         ok++;
@@ -1667,6 +1668,10 @@ export default function AdminPage() {
                   <label className="choice" style={{ color: 'var(--text)' }}>
                     <input type="checkbox" checked={s.cards} onChange={(e) => updateSegment(s.key, { cards: e.target.checked })} />
                     Include title cards (opening + closing)
+                  </label>
+                  <label className="choice" style={{ color: 'var(--text)' }}>
+                    <input type="checkbox" checked={s.green !== false} onChange={(e) => updateSegment(s.key, { green: e.target.checked })} />
+                    Green-screen transition (keyable in / out wipe)
                   </label>
                 </div>
               </div>
