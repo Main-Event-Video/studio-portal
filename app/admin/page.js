@@ -461,6 +461,17 @@ export default function AdminPage() {
     }
   }, [session, loadClients, loadMontages]);
 
+  // Auto-refresh the renders list while anything is still queued/rendering, so
+  // the admin doesn't have to keep hitting Refresh. Polls every 7s and stops on
+  // its own once everything is Ready/Failed.
+  useEffect(() => {
+    if (!session) return undefined;
+    const pending = montages.some((m) => m.status === 'queued' || m.status === 'rendering');
+    if (!pending) return undefined;
+    const iv = setInterval(() => { loadMontages(); }, 7000);
+    return () => clearInterval(iv);
+  }, [session, montages, loadMontages]);
+
   // While the Files tool is open, auto-refresh every few seconds so the admin
   // can watch a client organize in near-real-time (e.g. guiding them on a call).
   // Paused during the admin's own edits so a poll can't clobber a field mid-type.
@@ -1677,11 +1688,13 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="field-group">
-                  <label className="choice" style={{ color: 'var(--text)' }}>
+                  <label className="choice" style={{ color: 'var(--text)', display: 'flex' }}>
                     <input type="checkbox" checked={s.cards} onChange={(e) => updateSegment(s.key, { cards: e.target.checked })} />
                     Include title cards (opening + closing)
                   </label>
-                  <label className="choice" style={{ color: 'var(--text)' }}>
+                </div>
+                <div className="field-group" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+                  <label className="choice" style={{ color: 'var(--text)', display: 'flex' }}>
                     <input type="checkbox" checked={s.green !== false} onChange={(e) => updateSegment(s.key, { green: e.target.checked })} />
                     Green-screen transition (keyable in / out wipe)
                   </label>
@@ -1708,6 +1721,12 @@ export default function AdminPage() {
                 <button type="button" className="linklike" style={{ fontSize: 13 }} onClick={() => setShowHidden((v) => !v)}>
                   {showHidden ? `Hide hidden (${hiddenCount})` : `Show hidden (${hiddenCount})`}
                 </button>
+              )}
+              {montages.some((m) => m.status === 'queued' || m.status === 'rendering') && (
+                <span style={{ fontSize: 12.5, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--blue)' }} />
+                  Auto‑refreshing…
+                </span>
               )}
               <button className="btn-ghost" type="button" onClick={loadMontages}>Refresh</button>
             </div>
