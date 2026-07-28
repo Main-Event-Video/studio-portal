@@ -17,6 +17,27 @@ export const dynamic = 'force-dynamic';
 
 const MAX_PHOTOS = 100; // spine cap: keeps renders + credits sane
 
+// Read a photo's real pixel dimensions from just its header bytes, so the
+// tiled/print styles can give a portrait its own tall cell (native shape). Range
+// fetch keeps it cheap (no full download); sharp parses the header; EXIF
+// orientation 5–8 means the displayed image is rotated 90°, so its aspect swaps.
+// Fully guarded: any failure (sharp missing, truncated header, odd format) just
+// returns null and the style falls back to treating the photo as landscape.
+async function probeDims(url) {
+  try {
+    const sharp = (await import('sharp')).default;
+    const res = await fetch(url, { headers: { Range: 'bytes=0-262143' } });
+    if (!res.ok && res.status !== 206) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    const md = await sharp(buf).metadata();
+    if (md && md.width && md.height) {
+      const rot = md.orientation >= 5 && md.orientation <= 8;
+      return { w: rot ? md.height : md.width, h: rot ? md.width : md.height };
+    }
+  } catch { /* unknown → caller defaults to landscape */ }
+  return null;
+}
+
 export async function POST(request) {
   const auth = await requireAdmin(request);
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -168,14 +189,20 @@ export async function POST(request) {
 
   try {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    // Only the tiled/print styles need each photo's real shape (portrait vs
+    // landscape) to lay out native-aspect cells; the one-at-a-time styles always
+    // cover-fill, so we skip the probe for them (keeps those renders fast).
+    const st = STYLES[style] || {};
+    const needsDims = !!(st.collage || st.epic || st.trendy);
     // Long-lived presigned URLs — Creatomate fetches these while rendering.
     // Placeholders carry only a name (a green gap the editor keys their clip into).
     const items = await Promise.all(
-      sequence.map(async (s) => (
-        s.type === 'photo'
-          ? { type: 'photo', url: await getViewUrl(s.r2_key, 21600), framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY }
-          : { type: 'placeholder', name: s.name }
-      ))
+      sequence.map(async (s) => {
+        if (s.type !== 'photo') return { type: 'placeholder', name: s.name };
+        const url = await getViewUrl(s.r2_key, 21600);
+        const dims = needsDims ? await probeDims(url) : null;
+        return { type: 'photo', url, framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY, w: dims?.w || null, h: dims?.h || null };
+      })
     );
 
     const source = buildMontageSource({
@@ -195,6 +222,10 @@ export async function POST(request) {
       source,
       webhookUrl: `${siteUrl}/api/webhooks/creatomate`,
       metadata: row.id, // webhook looks the row up by this
+      // Watermarked = a DRAFT (checking motion/framing), so render at half
+      // resolution → ~1/4 the Creatomate credits. Un-watermarked finals stay
+      // full-res. Big saver while iterating (see credit formula in creatomate.js).
+      renderScale: watermark ? 0.5 : null,
     });
 
     await db
