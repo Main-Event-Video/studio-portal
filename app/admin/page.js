@@ -372,7 +372,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', totalLen: '', cards: true, green: true });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -845,8 +845,12 @@ export default function AdminPage() {
             title: mTitle.trim(),
             subtitle: mSubtitle.trim() || null,
             watermark: mWatermark,
-            photoSeconds: s.speed ? Number(s.speed) : null,
-            totalSeconds: s.totalLen ? Number(s.totalLen) : null,
+            photoSeconds: (s.paceMode !== 'total' && s.speed) ? Number(s.speed) : null,
+            totalSeconds: (() => {
+              if (s.paceMode !== 'total') return null;
+              const t = Number(s.tMin || 0) * 60 + Number(s.tSec || 0) + Number(s.tFrames || 0) / 30;
+              return t > 0 ? Math.round(t * 1000) / 1000 : null;
+            })(),
             photoSpec: s.photos.trim() || null,
             includeCards: s.cards,
             greenScreen: s.green !== false,
@@ -1667,26 +1671,39 @@ export default function AdminPage() {
                     </select>
                   </div>
                   <div>
+                    <label htmlFor={`pm_${s.key}`}>Pace by</label>
+                    <select id={`pm_${s.key}`} value={s.paceMode || 'perphoto'} onChange={(e) => updateSegment(s.key, { paceMode: e.target.value })}>
+                      <option value="perphoto">Seconds per photo</option>
+                      <option value="total">Total length (time)</option>
+                    </select>
+                  </div>
+                </div>
+                {s.paceMode === 'total' ? (
+                  <div className="field-group">
+                    <label htmlFor={`tmin_${s.key}`}>Total length — the selected photos cycle to fit this time</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input id={`tmin_${s.key}`} type="number" min="0" max="30" step="1" placeholder="min" aria-label="minutes"
+                        value={s.tMin} onChange={(e) => updateSegment(s.key, { tMin: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
+                      <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
+                      <input type="number" min="0" max="59" step="1" placeholder="sec" aria-label="seconds"
+                        value={s.tSec} onChange={(e) => updateSegment(s.key, { tSec: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
+                      <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
+                      <input type="number" min="0" max="29" step="1" placeholder="fr" aria-label="frames"
+                        value={s.tFrames} onChange={(e) => updateSegment(s.key, { tFrames: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
+                      <span style={{ color: 'var(--muted)', fontSize: 12.5, marginLeft: 6 }}>min : sec : frames (30&nbsp;fps)</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="field-group">
                     <label htmlFor={`sp_${s.key}`}>Seconds per photo</label>
-                    <select id={`sp_${s.key}`} value={s.speed} disabled={!!s.totalLen} onChange={(e) => updateSegment(s.key, { speed: e.target.value })}>
+                    <select id={`sp_${s.key}`} value={s.speed} onChange={(e) => updateSegment(s.key, { speed: e.target.value })}>
                       <option value="">Style default</option>
                       {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
                         <option key={n} value={n}>{n} second{n > 1 ? 's' : ''}</option>
                       ))}
                     </select>
                   </div>
-                </div>
-                <div className="field-group">
-                  <label htmlFor={`tl_${s.key}`}>Total length (optional)</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input id={`tl_${s.key}`} type="number" min="3" max="1800" step="1" placeholder="e.g. 60"
-                      value={s.totalLen} onChange={(e) => updateSegment(s.key, { totalLen: e.target.value })}
-                      style={{ width: 120 }} />
-                    <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>
-                      seconds — all selected photos cycle to fit this length (overrides seconds&nbsp;per&nbsp;photo). Leave blank for default pace.
-                    </span>
-                  </div>
-                </div>
+                )}
                 <div className="field-group">
                   <label className="choice" style={{ color: 'var(--text)', display: 'flex' }}>
                     <input type="checkbox" checked={s.cards} onChange={(e) => updateSegment(s.key, { cards: e.target.checked })} />
@@ -1696,7 +1713,7 @@ export default function AdminPage() {
                 <div className="field-group" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
                   <label className="choice" style={{ color: 'var(--text)', display: 'flex' }}>
                     <input type="checkbox" checked={s.green !== false} onChange={(e) => updateSegment(s.key, { green: e.target.checked })} />
-                    Green-screen transition (keyable in / out wipe)
+                    Green-screen frame (keyable green photo, first &amp; last)
                   </label>
                 </div>
               </div>

@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
-import { getViewUrl, getDownloadUrl } from '@/lib/r2';
+import { getViewUrl } from '@/lib/r2';
 import { buildMontageSource, STYLES, parsePhotoSpec } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
@@ -16,27 +16,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_PHOTOS = 100; // spine cap: keeps renders + credits sane
-
-// Read a photo's real pixel dimensions from just its header bytes, so the
-// tiled/print styles can give a portrait its own tall cell (native shape). Range
-// fetch keeps it cheap (no full download); sharp parses the header; EXIF
-// orientation 5–8 means the displayed image is rotated 90°, so its aspect swaps.
-// Fully guarded: any failure (sharp missing, truncated header, odd format) just
-// returns null and the style falls back to treating the photo as landscape.
-async function probeDims(url) {
-  try {
-    const sharp = (await import('sharp')).default;
-    const res = await fetch(url, { headers: { Range: 'bytes=0-262143' } });
-    if (!res.ok && res.status !== 206) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    const md = await sharp(buf).metadata();
-    if (md && md.width && md.height) {
-      const rot = md.orientation >= 5 && md.orientation <= 8;
-      return { w: rot ? md.height : md.width, h: rot ? md.width : md.height };
-    }
-  } catch { /* unknown → caller defaults to landscape */ }
-  return null;
-}
 
 export async function POST(request) {
   const auth = await requireAdmin(request);
@@ -48,13 +27,9 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true } = body || {};
   if (photoSeconds != null && !(Number(photoSeconds) >= 1 && Number(photoSeconds) <= 10)) {
     return NextResponse.json({ error: 'photoSeconds must be 1–10' }, { status: 400 });
-  }
-  // Total-length mode: photos cycle to fit this many seconds (overrides seconds/photo).
-  if (totalSeconds != null && !(Number(totalSeconds) >= 3 && Number(totalSeconds) <= 1800)) {
-    return NextResponse.json({ error: 'totalSeconds must be 3–1800' }, { status: 400 });
   }
   if (!clientId || !title) {
     return NextResponse.json({ error: 'clientId and title are required' }, { status: 400 });
@@ -86,15 +61,13 @@ export async function POST(request) {
       removed: !!e.removed,
       colorCorrect: !!e.colorCorrect,
       mode: ['color', 'bw', 'sepia'].includes(e.mode) ? e.mode : 'color',
-      contrast: Number.isFinite(Number(e.contrast)) ? Math.min(200, Math.max(50, Math.round(Number(e.contrast)))) : 100,
-      saturation: Number.isFinite(Number(e.saturation)) ? Math.min(200, Math.max(0, Math.round(Number(e.saturation)))) : 100,
       posX: Number.isFinite(Number(e.posX)) ? Number(e.posX) : null,
       posY: Number.isFinite(Number(e.posY)) ? Number(e.posY) : null,
     };
   };
   const photoObj = (k) => {
     const e = editFor(k);
-    return { type: 'photo', r2_key: k, framing: (adjustments && adjustments[k]) || e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect, mode: e.mode, contrast: e.contrast, saturation: e.saturation, posX: e.posX, posY: e.posY };
+    return { type: 'photo', r2_key: k, framing: (adjustments && adjustments[k]) || e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect, mode: e.mode, posX: e.posX, posY: e.posY };
   };
 
   // Full timeline (photos + videos) in play order. Photos define the 1..N
@@ -102,7 +75,7 @@ export async function POST(request) {
   // the editor keys their real clip into.
   const { items: timelineItems, error: mErr } = await orderedClientTimeline(db, clientId);
   if (mErr) return NextResponse.json({ error: 'Could not load media', detail: mErr.message }, { status: 500 });
-  const photosAll = (timelineItems || []).filter((m) => (m.content_type || '').startsWith('image/') && !isHeic({ filename: m.filename, contentType: m.content_type }));
+  const photosAll = (timelineItems || []).filter((m) => (m.content_type || '').startsWith('image/'));
   if (photosAll.length < 1) {
     return NextResponse.json(
       { error: 'This client has no photo uploads yet. Upload photos first.' },
@@ -170,7 +143,6 @@ export async function POST(request) {
       watermarked: !!watermark,
       params: {
         photoSeconds: photoSeconds ? Number(photoSeconds) : null,
-        totalSeconds: totalSeconds ? Number(totalSeconds) : null,
         adjustments: adjustments && typeof adjustments === 'object' ? adjustments : {},
         // Photo selection for this segment: the raw expression (for display) and
         // the resolved 1-based positions (for exact re-renders). Blank = all.
@@ -178,7 +150,6 @@ export async function POST(request) {
         photoIndexes: indexes,
         includeCards: includeCards !== false,
         videoPlaceholders: videoPlaceholders !== false,
-        greenScreen: greenScreen !== false,
         videoGaps: gapCount,
         colorCorrect: !!pe.colorCorrect,
       },
@@ -189,54 +160,30 @@ export async function POST(request) {
 
   try {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-    // Only the tiled/print styles need each photo's real shape (portrait vs
-    // landscape) to lay out native-aspect cells; the one-at-a-time styles always
-    // cover-fill, so we skip the probe for them (keeps those renders fast).
-    const st = STYLES[style] || {};
-    const needsDims = !!(st.collage || st.epic || st.trendy);
     // Long-lived presigned URLs — Creatomate fetches these while rendering.
     // Placeholders carry only a name (a green gap the editor keys their clip into).
-    const photoItemsBuilt = await Promise.all(
-      sequence.map(async (s) => {
-        if (s.type !== 'photo') return { type: 'placeholder', name: s.name };
-        const url = await getViewUrl(s.r2_key, 21600);
-        const dims = needsDims ? await probeDims(url) : null;
-        return { type: 'photo', url, framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY, w: dims?.w || null, h: dims?.h || null };
-      })
+    const items = await Promise.all(
+      sequence.map(async (s) => (
+        s.type === 'photo'
+          ? { type: 'photo', url: await getViewUrl(s.r2_key, 21600), framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, posX: s.posX, posY: s.posY }
+          : { type: 'placeholder', name: s.name }
+      ))
     );
-
-    // GREEN SCREEN as a real PHOTO (Josh): when on, a broadcast-green frame is
-    // injected as the first AND last item, so every style just treats it like a
-    // photo — full-frame green on the slideshows, a green print in Polaroid, a
-    // green cell in the walls. It drops in like any photo (no overlay covering the
-    // opening), and the editor `green` flag keeps it keyable (duotone renders it
-    // pure, not tinted). public/green.png is the asset.
-    const greenItem = { type: 'photo', green: true, url: `${siteUrl}/green.png`, fit: 'fill', w: 1920, h: 1080 };
-    const items = (greenScreen !== false)
-      ? [greenItem, ...photoItemsBuilt, greenItem]
-      : photoItemsBuilt;
 
     const source = buildMontageSource({
       items,
       style,
       photoSeconds: photoSeconds ? Number(photoSeconds) : null,
-      totalSeconds: totalSeconds ? Number(totalSeconds) : null,
       includeCards: includeCards !== false,
-      greenBookends: false,   // green is now an injected photo, not an overlay
       title: String(title).toUpperCase(),
       subtitle: subtitle ? String(subtitle).toUpperCase() : null,
       watermarkUrl: watermark ? `${siteUrl}/watermark.png` : null,
-      assetBase: siteUrl || null,   // for collage light-leak overlays (public/overlays/*)
     });
 
     const render = await createRender({
       source,
       webhookUrl: `${siteUrl}/api/webhooks/creatomate`,
       metadata: row.id, // webhook looks the row up by this
-      // Watermarked = a DRAFT (checking motion/framing), so render at half
-      // resolution → ~1/4 the Creatomate credits. Un-watermarked finals stay
-      // full-res. Big saver while iterating (see credit formula in creatomate.js).
-      renderScale: watermark ? 0.5 : null,
     });
 
     await db
@@ -278,7 +225,6 @@ export async function GET(request) {
       adjustments: m.params?.adjustments || {},
       photoSpec: m.params?.photoSpec || null,
       includeCards: m.params?.includeCards !== false,
-      greenScreen: m.params?.greenScreen !== false,
       hidden: m.params?.hidden === true,
       status: m.status,
       error: m.error,
@@ -287,12 +233,6 @@ export async function GET(request) {
       createdAt: m.created_at,
       // Prefer our permanent R2 copy; fall back to Creatomate's temp URL.
       url: m.r2_key ? await getViewUrl(m.r2_key, 3600) : m.video_url || null,
-      // Force-download URL (Content-Disposition: attachment) so "Download MP4"
-      // saves to a folder instead of navigating to the video (cross-origin
-      // `download` is ignored by browsers). Only available for our R2 copies.
-      downloadUrl: m.r2_key
-        ? await getDownloadUrl(m.r2_key, `${(m.studio_clients?.display_name || 'montage').replace(/[^\w-]+/g, '_')}_${m.style}_${m.photo_count || 0}_${(m.created_at || '').slice(0, 10)}.mp4`, 3600)
-        : null,
       archived: !!m.r2_key, // false = still only on Creatomate's 30-day hosting
     }))
   );
