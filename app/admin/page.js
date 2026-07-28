@@ -354,7 +354,8 @@ export default function AdminPage() {
     { value: 'party2', label: 'Party 2 — energetic, drift + varied transitions' },
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
     { value: 'duotone2', label: 'Duotone Split 2 — frantic, bg & hero transition separately' },
-    { value: 'polaroid', label: 'Polaroid — tilted prints on a soft background' },
+    { value: 'polaroid', label: 'Polaroid Drop — square print, thick white bottom' },
+    { value: 'photo_drop', label: 'Photo Drop — whole photo, even white border', preview: 'polaroid' },
     { value: 'collage_classic', label: 'Collage Wall Classic — uniform photo grid, camera glides across' },
     { value: 'collage_featured', label: 'Collage Wall Featured — big hero photos + smaller tiles' },
     { value: 'gallery150', label: 'Gallery 150 — scattered tilted prints, camera flies over' },
@@ -372,7 +373,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgTint: '#102040', bgOpacity: '50' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -448,22 +449,7 @@ export default function AdminPage() {
   const loadMontages = useCallback(async () => {
     try {
       const { montages } = await api('/api/admin/montage');
-      // Keep the playback URL we already issued for each render. The GET route
-      // presigns a FRESH url every call, so replacing it wholesale on each 7s
-      // auto-refresh poll swaps <video src> and forces the open preview to
-      // reload — jumping back to 0:00 (Josh: "won't play more than a second or
-      // two, keeps starting over"). Preserving the prior url keeps the element
-      // stable so it plays straight through. Fresh url only used the first time
-      // a render becomes ready (old.url still null then).
-      setMontages((prev) => {
-        const byId = new Map(prev.map((m) => [m.id, m]));
-        return montages.map((m) => {
-          const old = byId.get(m.id);
-          return old && old.url
-            ? { ...m, url: old.url, downloadUrl: old.downloadUrl || m.downloadUrl }
-            : m;
-        });
-      });
+      setMontages(montages);
     } catch {
       /* panel shows empty; refresh button retries */
     }
@@ -832,14 +818,21 @@ export default function AdminPage() {
     }
   }
 
-  // Stop a queued/rendering montage: clears it from the rendering state (and stops
-  // the auto-refresh polling) + best-effort asks Creatomate to drop the render.
-  async function cancelMontage(id) {
+  // Re-render an existing render at the other resolution, keeping EXACTLY its
+  // settings (style, pace, cards, green-screen, and each photo's edits as they
+  // were snapshotted). full=true → 1920×1080 no watermark; full=false → low-res
+  // watermarked draft. Creates a new render row (uses Creatomate credits).
+  async function rerenderMontage(id, full) {
+    const label = full ? 'full-resolution (1920×1080, no watermark)' : 'low-resolution draft';
+    if (!window.confirm(`Export a ${label} version with the exact same settings? This starts a new render (uses credits).`)) return;
+    setMMsg('');
+    setMErr(false);
     try {
-      await api('/api/admin/montage/cancel', {
+      await api('/api/admin/montage/finalize', {
         method: 'POST',
-        body: JSON.stringify({ montageId: id }),
+        body: JSON.stringify({ montageId: id, full: !!full }),
       });
+      setMMsg(`${full ? 'Full-res' : 'Low-res'} render started — it’ll appear below when ready.`);
       loadMontages();
     } catch (err) {
       setMErr(true);
@@ -884,6 +877,11 @@ export default function AdminPage() {
             photoSpec: s.photos.trim() || null,
             includeCards: s.cards,
             greenScreen: s.green !== false,
+            background: s.bgMode === 'green'
+              ? { green: true }
+              : (s.bgMode === 'image' && s.bgUrl?.trim())
+                ? { url: s.bgUrl.trim(), tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
+                : null,
           }),
         });
         ok++;
@@ -1619,7 +1617,7 @@ export default function AdminPage() {
                   <button key={o.value} type="button" onClick={() => setSegments((arr) => arr.map((x) => ({ ...x, style: o.value })))}
                     style={{ textAlign: 'left', border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 12, padding: 12, cursor: 'pointer', background: sel ? 'rgba(47,107,255,0.08)' : 'transparent', color: 'var(--text)' }}>
                     <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', marginBottom: 8, background: '#000' }}>
-                      <video src={`/style-previews/${o.value}.mp4`} muted loop autoPlay playsInline preload="auto"
+                      <video src={`/style-previews/${o.preview || o.value}.mp4`} muted loop autoPlay playsInline preload="auto"
                         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                         onError={(ev) => { const w = ev.currentTarget.parentElement; if (w) w.style.display = 'none'; }} />
                     </div>
@@ -1635,7 +1633,7 @@ export default function AdminPage() {
 
         {montageStep === 3 && (<>
         {/* Segment plan */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {segments.map((s, idx) => {
             const N = projPhotos.length;
             const matched = parsePhotoSpec(s.photos, N).length;
@@ -1649,12 +1647,9 @@ export default function AdminPage() {
               else if (a) albumRanges.push({ name: a, from: pos, to: pos });
             });
             return (
-              <div key={s.key} style={{ border: '1px solid var(--line)', borderLeft: '3px solid var(--blue)', borderRadius: 10, padding: 12, boxShadow: '0 3px 14px rgba(0,0,0,0.28)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '-12px -12px 14px', padding: '9px 12px', background: 'linear-gradient(var(--blue), var(--blue)) 0 0 / 132px 3px no-repeat, var(--panel-2)', borderBottom: '1px solid var(--line)', borderRadius: '8px 8px 0 0' }}>
-                  <strong style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: '50%', alignItems: 'center', justifyContent: 'center', fontSize: 12, background: 'var(--blue)', color: '#fff', fontWeight: 800 }}>{idx + 1}</span>
-                    Segment {idx + 1}
-                  </strong>
+              <div key={s.key} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <strong style={{ fontSize: 13 }}>Segment {idx + 1}</strong>
                   {segments.length > 1 && (
                     <button type="button" className="linklike" onClick={() => removeSegment(s.key)}>Remove</button>
                   )}
@@ -1694,47 +1689,49 @@ export default function AdminPage() {
                     ? `→ ${matched} of ${N} photos, in the order typed`
                     : `→ all ${N} photos`}
                 </p>
-                <div className="field-group">
-                  <label htmlFor={`st_${s.key}`}>Style</label>
-                  <select id={`st_${s.key}`} value={s.style} onChange={(e) => updateSegment(s.key, { style: e.target.value })}>
-                    {MONTAGE_STYLES.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
+                <div className="grid-2">
+                  <div>
+                    <label htmlFor={`st_${s.key}`}>Style</label>
+                    <select id={`st_${s.key}`} value={s.style} onChange={(e) => updateSegment(s.key, { style: e.target.value })}>
+                      {MONTAGE_STYLES.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor={`pm_${s.key}`}>Pace by</label>
+                    <select id={`pm_${s.key}`} value={s.paceMode || 'perphoto'} onChange={(e) => updateSegment(s.key, { paceMode: e.target.value })}>
+                      <option value="perphoto">Seconds per photo</option>
+                      <option value="total">Total length (time)</option>
+                    </select>
+                  </div>
                 </div>
-                <div className="field-group" style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, background: 'rgba(127,127,127,0.04)' }}>
-                  <label htmlFor={`pm_${s.key}`}>Pace by</label>
-                  <select id={`pm_${s.key}`} value={s.paceMode || 'perphoto'} onChange={(e) => updateSegment(s.key, { paceMode: e.target.value })}>
-                    <option value="perphoto">Seconds per photo</option>
-                    <option value="total">Total length (time)</option>
-                  </select>
-                  {s.paceMode === 'total' ? (
-                    <div style={{ marginTop: 12 }}>
-                      <label htmlFor={`tmin_${s.key}`}>Total length — the selected photos cycle to fit this time</label>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <input id={`tmin_${s.key}`} type="number" min="0" max="30" step="1" placeholder="min" aria-label="minutes"
-                          value={s.tMin} onChange={(e) => updateSegment(s.key, { tMin: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
-                        <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
-                        <input type="number" min="0" max="59" step="1" placeholder="sec" aria-label="seconds"
-                          value={s.tSec} onChange={(e) => updateSegment(s.key, { tSec: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
-                        <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
-                        <input type="number" min="0" max="29" step="1" placeholder="fr" aria-label="frames"
-                          value={s.tFrames} onChange={(e) => updateSegment(s.key, { tFrames: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
-                        <span style={{ color: 'var(--muted)', fontSize: 12.5, marginLeft: 6 }}>min : sec : frames (30&nbsp;fps)</span>
-                      </div>
+                {s.paceMode === 'total' ? (
+                  <div className="field-group">
+                    <label htmlFor={`tmin_${s.key}`}>Total length — the selected photos cycle to fit this time</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input id={`tmin_${s.key}`} type="number" min="0" max="30" step="1" placeholder="min" aria-label="minutes"
+                        value={s.tMin} onChange={(e) => updateSegment(s.key, { tMin: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
+                      <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
+                      <input type="number" min="0" max="59" step="1" placeholder="sec" aria-label="seconds"
+                        value={s.tSec} onChange={(e) => updateSegment(s.key, { tSec: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
+                      <span style={{ color: 'var(--muted)', fontWeight: 800 }}>:</span>
+                      <input type="number" min="0" max="29" step="1" placeholder="fr" aria-label="frames"
+                        value={s.tFrames} onChange={(e) => updateSegment(s.key, { tFrames: e.target.value })} style={{ width: 66, textAlign: 'center' }} />
+                      <span style={{ color: 'var(--muted)', fontSize: 12.5, marginLeft: 6 }}>min : sec : frames (30&nbsp;fps)</span>
                     </div>
-                  ) : (
-                    <div style={{ marginTop: 12 }}>
-                      <label htmlFor={`sp_${s.key}`}>Seconds per photo</label>
-                      <select id={`sp_${s.key}`} value={s.speed} onChange={(e) => updateSegment(s.key, { speed: e.target.value })}>
-                        <option value="">Style default</option>
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                          <option key={n} value={n}>{n} second{n > 1 ? 's' : ''}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div className="field-group">
+                    <label htmlFor={`sp_${s.key}`}>Seconds per photo</label>
+                    <select id={`sp_${s.key}`} value={s.speed} onChange={(e) => updateSegment(s.key, { speed: e.target.value })}>
+                      <option value="">Style default</option>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                        <option key={n} value={n}>{n} second{n > 1 ? 's' : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="field-group">
                   <label className="choice" style={{ color: 'var(--text)', display: 'flex' }}>
                     <input type="checkbox" checked={s.cards} onChange={(e) => updateSegment(s.key, { cards: e.target.checked })} />
@@ -1746,6 +1743,29 @@ export default function AdminPage() {
                     <input type="checkbox" checked={s.green !== false} onChange={(e) => updateSegment(s.key, { green: e.target.checked })} />
                     Green-screen frame (keyable green photo, first &amp; last)
                   </label>
+                </div>
+                <div className="field-group" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+                  <label style={{ color: 'var(--text)', display: 'block', marginBottom: 4 }}>Background</label>
+                  <select value={s.bgMode || 'default'} onChange={(e) => updateSegment(s.key, { bgMode: e.target.value })}>
+                    <option value="default">Style default</option>
+                    <option value="green">Green screen (keyable)</option>
+                    <option value="image">Image…</option>
+                  </select>
+                  {s.bgMode === 'image' && (
+                    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <input type="text" placeholder="Background image URL" value={s.bgUrl || ''} onChange={(e) => updateSegment(s.key, { bgUrl: e.target.value })} style={{ width: '100%' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted)' }}>
+                        <span>Tint</span>
+                        <input type="color" value={s.bgTint || '#102040'} onChange={(e) => updateSegment(s.key, { bgTint: e.target.value })} />
+                        <span>Opacity</span>
+                        <input type="range" min="0" max="100" value={parseInt(s.bgOpacity || '50', 10)} onChange={(e) => updateSegment(s.key, { bgOpacity: e.target.value })} />
+                        <span>{parseInt(s.bgOpacity || '50', 10)}%</span>
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                    Default keeps the style’s own backdrop. Green screen is keyable; Image sits behind, tinted.
+                  </div>
                 </div>
               </div>
             );
@@ -1808,10 +1828,6 @@ export default function AdminPage() {
                         <button type="button" className="btn-ghost" onClick={() => syncMontage(m.id)}>
                           Check status
                         </button>
-                        {' '}
-                        <button type="button" className="btn-ghost" style={{ color: 'var(--red)' }} onClick={() => cancelMontage(m.id)}>
-                          Cancel
-                        </button>
                       </>
                     )}
                   </span>
@@ -1832,14 +1848,20 @@ export default function AdminPage() {
                     )}
                     <p style={{ marginTop: 8, fontSize: 13 }}>
                       <button type="button" className="linklike" onClick={() => setShowVid((v) => ({ ...v, [m.id]: !v[m.id] }))}>
-                        {showVid[m.id] ? 'Hide preview' : 'Show preview'}
+                        {showVid[m.id] ? 'Hide Preview' : 'Show Preview'}
                       </button>
                       {' '}·{' '}
-                      <a href={m.downloadUrl || m.url} download>Download MP4</a>
+                      {m.watermarked ? (
+                        <a href={m.downloadUrl || m.url} download>Export Low Rez</a>
+                      ) : (
+                        <button type="button" className="linklike" onClick={() => rerenderMontage(m.id, false)}>Export Low Rez</button>
+                      )}
                       {' '}·{' '}
-                      <button type="button" className="linklike" onClick={() => openAdjust(m)}>
-                        {adjFor?.id === m.id ? 'Close framing fixes' : 'Fix framing (head cut off, etc.)'}
-                      </button>
+                      {!m.watermarked ? (
+                        <a href={m.downloadUrl || m.url} download>Export Full Rez</a>
+                      ) : (
+                        <button type="button" className="linklike" onClick={() => rerenderMontage(m.id, true)}>Export Full Rez</button>
+                      )}
                       {!m.archived && (
                         <span style={{ color: 'var(--muted)' }}>
                           {' '}· not yet archived to our storage — this copy expires in ~30 days, download it

@@ -48,7 +48,18 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null } = body || {};
+  // "Add background" control: keyable green-screen (default) or an imported image
+  // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
+  const bgControl = (background && typeof background === 'object')
+    ? {
+        green: !!background.green,
+        url: background.url ? String(background.url) : null,
+        tint: background.tint ? String(background.tint) : null,
+        opacity: background.opacity ? String(background.opacity) : null,
+        blur: Number.isFinite(Number(background.blur)) ? Number(background.blur) : null,
+      }
+    : null;
   if (photoSeconds != null && !(Number(photoSeconds) >= 1 && Number(photoSeconds) <= 10)) {
     return NextResponse.json({ error: 'photoSeconds must be 1–10' }, { status: 400 });
   }
@@ -181,6 +192,14 @@ export async function POST(request) {
         greenScreen: greenScreen !== false,
         videoGaps: gapCount,
         colorCorrect: !!pe.colorCorrect,
+        background: bgControl,   // "Add background" control, so Export Final reuses it
+
+        // Fully-resolved play sequence (r2_keys + each photo's edits AT THIS
+        // MOMENT, placeholder names) — the snapshot the "Export Final" re-render
+        // rebuilds from, so a final reproduces THIS draft exactly even if the
+        // client's photo edits change afterward. URLs are NOT stored (they
+        // expire); finalize re-presigns from the r2_keys.
+        renderSequence: sequence,
       },
     })
     .select('id')
@@ -227,6 +246,7 @@ export async function POST(request) {
       subtitle: subtitle ? String(subtitle).toUpperCase() : null,
       watermarkUrl: watermark ? `${siteUrl}/watermark.png` : null,
       assetBase: siteUrl || null,   // for collage light-leak overlays (public/overlays/*)
+      background: bgControl,        // "Add background" control (green default / image+tint)
     });
 
     const render = await createRender({
