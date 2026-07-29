@@ -1838,41 +1838,53 @@ export default function AdminPage() {
             <p style={{ color: 'var(--muted)', fontSize: 14 }}>No montages yet for this client.</p>
           ) : (
             rows.map((m) => (
-              <div key={m.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--line)' }}>
-                <div className="upload-row" style={{ border: 'none', padding: 0 }}>
-                  <span>
-                    <strong>{m.title}</strong>
-                    <span style={{ color: 'var(--muted)' }}>
-                      {' '}· {m.style} · {m.watermarked ? 'Low rez' : 'High rez'} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos
-                      {m.photoSpec ? ` · #${m.photoSpec}` : ''}
-                    </span>
-                    <span className="pill" style={{ marginLeft: 8 }}>{m.watermarked ? 'low rez' : 'high rez'}</span>
-                    {m.starred && <span className="pill" style={{ marginLeft: 8, color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
-                    {m.includeCards === false && <span className="pill" style={{ marginLeft: 8 }}>no cards</span>}
-                  </span>
-                  <span
-                    style={{
-                      color:
-                        m.status === 'failed' ? 'var(--red)' : (m.status === 'ready' && !m.viewed) ? 'var(--ok)' : 'var(--muted)',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {m.status === 'rendering' ? 'Rendering…' : m.status === 'ready' ? (m.viewed ? 'Viewed' : 'Ready to view') : m.status}
-                    {(m.status === 'rendering' || m.status === 'queued') && (
-                      <>
-                        {' '}
-                        <button type="button" className="btn-ghost" onClick={() => syncMontage(m.id)}>
-                          Check status
-                        </button>
-                      </>
-                    )}
-                  </span>
+              <div key={m.id} style={{
+                border: '1px solid var(--line)',
+                borderLeft: m.watermarked ? '1px solid var(--line)' : '4px solid #2f6bff',
+                borderRadius: 10, padding: 14, marginBottom: 12,
+                background: m.watermarked ? 'rgba(255,255,255,0.02)' : 'rgba(47,107,255,0.06)',
+                opacity: m.hidden ? 0.5 : 1,
+              }}>
+                {/* Header: title + status badge */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <strong style={{ fontSize: 15 }}>{m.title}</strong>
+                  {(() => {
+                    const st = m.status === 'rendering' || m.status === 'queued'
+                      ? { t: 'Rendering…', bg: '#8a6d1f', fg: '#ffe9b0' }
+                      : m.status === 'failed'
+                        ? { t: 'Failed', bg: '#7a2230', fg: '#ffd0d6' }
+                        : m.viewed
+                          ? { t: 'Viewed', bg: 'transparent', fg: 'var(--muted)', bd: '1px solid var(--line)' }
+                          : { t: 'Ready to view', bg: '#1f6d3a', fg: '#c8f7d8' };
+                    return (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: st.bg, color: st.fg, border: st.bd || 'none', letterSpacing: '.02em' }}>{st.t}</span>
+                        {(m.status === 'rendering' || m.status === 'queued') && (
+                          <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => syncMontage(m.id)}>Check status</button>
+                        )}
+                      </span>
+                    );
+                  })()}
                 </div>
-                <div style={{ marginTop: 4 }}>
+                {/* Meta line: rez + tags + details + time-ago */}
+                <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--muted)' }}>
+                  {m.watermarked
+                    ? <span className="pill">low rez</span>
+                    : <span className="pill" style={{ background: '#2f6bff', color: '#fff', borderColor: '#2f6bff', fontWeight: 700, letterSpacing: '.03em' }}>HIGH REZ</span>}
+                  {m.starred && <span className="pill" style={{ color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
+                  {m.includeCards === false && <span className="pill">no cards</span>}
+                  {m.hidden && <span className="pill">hidden</span>}
+                  <span>{m.style} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos{m.photoSpec ? ` · #${m.photoSpec}` : ''}</span>
+                  <span style={{ marginLeft: 'auto' }}>
+                    {(() => {
+                      const s = Math.floor((Date.now() - new Date(m.createdAt).getTime()) / 1000);
+                      if (!(s >= 0)) return '';
+                      return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
+                    })()}
+                  </span>
                   <button type="button" className="linklike" style={{ fontSize: 12 }} onClick={() => hideMontage(m.id, !m.hidden)}>
                     {m.hidden ? 'Unhide' : 'Hide'}
                   </button>
-                  {m.hidden && <span className="pill" style={{ marginLeft: 8 }}>hidden</span>}
                 </div>
                 {m.status === 'failed' && m.error && (
                   <p className="msg-error" style={{ marginTop: 6, fontSize: 13 }}>{m.error}</p>
