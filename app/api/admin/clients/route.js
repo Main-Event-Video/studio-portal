@@ -36,17 +36,27 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Could not load clients', detail: error.message }, { status: 500 });
   }
 
-  // Per-client upload stats: how many files THEY uploaded, and when they last did.
-  // One pass over their own uploads (kind='client_upload'); non-fatal if it fails.
+  // Per-client upload stats. upload_count is the BILLABLE count — how many
+  // photos the client is actively USING — so it excludes anything they've
+  // removed: soft-hidden (hidden_at) or trashed (folder_path = Trash, i.e.
+  // flagged for removal). Hard-deleted rows are already gone. last_upload_at
+  // still reflects when they last uploaded anything. Non-fatal if it fails;
+  // hidden_at is selected defensively so a pre-migration DB (no such column)
+  // can't zero out every count.
+  const TRASH_FOLDER = 'Trash'; // must match the portal/timeline constant
   const stats = {};
-  const { data: media } = await db
-    .from('studio_media')
-    .select('client_id, created_at')
-    .eq('kind', 'client_upload');
+  const runStats = (cols) =>
+    db.from('studio_media').select(cols).eq('kind', 'client_upload');
+  let { data: media, error: mediaErr } = await runStats('client_id, created_at, folder_path, hidden_at');
+  if (mediaErr) ({ data: media } = await runStats('client_id, created_at, folder_path'));
   for (const m of media || []) {
     const s = stats[m.client_id] || (stats[m.client_id] = { upload_count: 0, last_upload_at: null });
-    s.upload_count += 1;
+    // last_upload_at = when they last uploaded anything (even if later removed).
     if (!s.last_upload_at || m.created_at > s.last_upload_at) s.last_upload_at = m.created_at;
+    // Billable count skips removed photos: soft-hidden or trashed.
+    if (m.hidden_at) continue;
+    if (m.folder_path === TRASH_FOLDER) continue;
+    s.upload_count += 1;
   }
 
   const clients = (data || []).map((c) => ({
