@@ -1482,7 +1482,11 @@ export default function AdminPage() {
         <p style={{ color: 'var(--muted)', fontSize: 13 }}>
           {projPhotosLoading
             ? 'Loading this client’s photos…'
-            : `This client has ${projPhotos.length} photo${projPhotos.length === 1 ? '' : 's'}. The numbers below match this order.`}
+            : (() => {
+                const removedCount = projPhotos.filter((p) => (photoEdits.photos[p.key] || {}).removed).length;
+                const activeCount = projPhotos.length - removedCount;
+                return `This client has ${activeCount} photo${activeCount === 1 ? '' : 's'}${removedCount ? ` (${removedCount} removed, not counted)` : ''}. The numbers below match this order.`;
+              })()}
           {projPhotos.length > 0 && (
             <>
               {' '}
