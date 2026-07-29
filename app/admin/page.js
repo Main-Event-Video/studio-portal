@@ -2325,7 +2325,12 @@ export default function AdminPage() {
                           {c.event_type ? ` · ${c.event_type}` : ''}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.last_upload_at)}</td>
-                        <td>{c.upload_count ?? 0}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {c.upload_count ?? 0}
+                          {c.trash_count > 0 && (
+                            <span style={{ color: 'var(--muted)', fontSize: 12 }}>{' '}({c.trash_count} in trash · {(c.upload_count ?? 0) + c.trash_count} total)</span>
+                          )}
+                        </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
                           <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>

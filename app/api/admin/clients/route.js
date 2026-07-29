@@ -50,18 +50,20 @@ export async function GET(request) {
   let { data: media, error: mediaErr } = await runStats('client_id, created_at, folder_path, hidden_at');
   if (mediaErr) ({ data: media } = await runStats('client_id, created_at, folder_path'));
   for (const m of media || []) {
-    const s = stats[m.client_id] || (stats[m.client_id] = { upload_count: 0, last_upload_at: null });
+    const s = stats[m.client_id] || (stats[m.client_id] = { upload_count: 0, trash_count: 0, last_upload_at: null });
     // last_upload_at = when they last uploaded anything (even if later removed).
     if (!s.last_upload_at || m.created_at > s.last_upload_at) s.last_upload_at = m.created_at;
-    // Billable count skips removed photos: soft-hidden or trashed.
+    // Hidden photos are excluded everywhere (client never sees them) — skip entirely.
     if (m.hidden_at) continue;
-    if (m.folder_path === TRASH_FOLDER) continue;
-    s.upload_count += 1;
+    // Trashed = set aside for removal: tracked separately, NOT in the billable count.
+    if (m.folder_path === TRASH_FOLDER) { s.trash_count += 1; continue; }
+    s.upload_count += 1; // active / billable
   }
 
   const clients = (data || []).map((c) => ({
     ...c,
     upload_count: stats[c.id]?.upload_count || 0,
+    trash_count: stats[c.id]?.trash_count || 0,
     last_upload_at: stats[c.id]?.last_upload_at || null,
   }));
   return NextResponse.json({ clients });
