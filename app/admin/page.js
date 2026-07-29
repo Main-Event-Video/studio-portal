@@ -2149,6 +2149,7 @@ export default function AdminPage() {
         <button className="btn-ghost" onClick={() => supabase.auth.signOut()}>Sign out</button>
       </div>
 
+      {!openClientId && (
       <section className="panel">
         <h2 className="neon neon-red">New client</h2>
         <form onSubmit={handleCreate}>
@@ -2208,6 +2209,7 @@ export default function AdminPage() {
           </dl>
         )}
       </section>
+      )}
 
       <section className="panel">
         {(() => {
