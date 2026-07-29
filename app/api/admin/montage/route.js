@@ -218,7 +218,7 @@ export async function POST(request) {
     // tiled/print walls, Epic, plus Photo Drop (native-aspect card) and Story
     // Builder (aspect-aware fan). Without this, aspect defaults to square and
     // Photo Drop squishes landscapes.
-    const needsDims = !!(st.collage || st.epic || st.trendy || st.wholePhoto || st.story);
+    const needsDims = !!(st.collage || st.epic || st.trendy || st.wholePhoto || st.story || st.multipage);
     // Long-lived presigned URLs — Creatomate fetches these while rendering.
     // Placeholders carry only a name (a green gap the editor keys their clip into).
     const photoItemsBuilt = await Promise.all(

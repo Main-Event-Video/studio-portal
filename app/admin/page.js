@@ -362,6 +362,8 @@ export default function AdminPage() {
     { value: 'epic_vintage', label: 'Epic Vintage — one hero print, blurred bokeh, heavy light leaks' },
     { value: 'story_builder', label: 'Story Builder — one at a time, builds a story wall (green screen)' },
     { value: 'trendy', label: 'Trendy Photo Wall — 3D angled grid of matte prints' },
+    { value: 'multi_page', label: 'Multi Page — green screen, images pop on one by one' },
+    { value: 'multi_page_record', label: 'Multi Page Record — green screen, page pivots then reveals' },
   ];
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
