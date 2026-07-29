@@ -670,8 +670,14 @@ export default function Uploader({ token }) {
   const folderBoxes = Object.keys(grouped).filter((k) => k !== '' && k !== TRASH_FOLDER && !isCharacterFolder(k));
   const allBoxes = Array.from(new Set([...serverBoxNames, ...folderBoxes])).filter((k) => !isCharacterFolder(k));
   const openCount = (grouped[''] || []).length;
-  const total = mine.length;
-  const pmsg = total === 0 ? 'Add your first photos 👇' : total < 6 ? `Great start — ${total} in!` : total < 16 ? `Nice — ${total} photos in! 🎉` : `Wow, ${total} photos! 🔥`;
+  // Headline count = photos the client is actually keeping. Trashed photos
+  // (moved to the Trash lane, set aside for removal) are NOT counted — they
+  // still live in `mine` so the Trash lane can show + restore them.
+  const total = mine.filter((m) => (m.folderPath || '') !== TRASH_FOLDER).length;
+  const uploaded = mine.length;             // everything uploaded, trash included
+  const trashCount = uploaded - total;      // photos set aside in the Trash lane
+  const trashNote = trashCount > 0 ? ` (${trashCount} in trash · ${uploaded} total)` : '';
+  const pmsg = (total === 0 ? 'Add your first photos 👇' : total < 6 ? `Great start — ${total} in!` : total < 16 ? `Nice — ${total} photos in! 🎉` : `Wow, ${total} photos active in your project! 🔥`) + trashNote;
   const SAMPLE = ['Childhood', 'Family', 'Friends'];
   const showSamples = allBoxes.length === 0;
 
