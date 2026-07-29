@@ -212,7 +212,11 @@ export async function POST(request) {
     // landscape) to lay out native-aspect cells; the one-at-a-time styles always
     // cover-fill, so we skip the probe for them (keeps those renders fast).
     const st = STYLES[style] || {};
-    const needsDims = !!(st.collage || st.epic || st.trendy);
+    // Styles that lay out by each photo's real aspect need the pixel dims probed:
+    // tiled/print walls, Epic, plus Photo Drop (native-aspect card) and Story
+    // Builder (aspect-aware fan). Without this, aspect defaults to square and
+    // Photo Drop squishes landscapes.
+    const needsDims = !!(st.collage || st.epic || st.trendy || st.wholePhoto || st.story);
     // Long-lived presigned URLs — Creatomate fetches these while rendering.
     // Placeholders carry only a name (a green gap the editor keys their clip into).
     const photoItemsBuilt = await Promise.all(
