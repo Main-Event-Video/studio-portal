@@ -92,7 +92,9 @@ export async function POST(request) {
     const e = pePhotos[k] || {};
     return {
       anchor: ['top', 'center', 'bottom'].includes(e.anchor) ? e.anchor : 'top',
-      fit: e.fit === 'fill' ? 'fill' : 'fit',
+      // null = unset (let the style default decide: Party 2 fills+drifts, others
+      // fit). An explicit 'fit'/'fill' from the editor always wins in montage.js.
+      fit: e.fit === 'fill' ? 'fill' : e.fit === 'fit' ? 'fit' : null,
       size: Math.min(140, Math.max(60, Number(e.size) || 100)),
       removed: !!e.removed,
       colorCorrect: !!e.colorCorrect,

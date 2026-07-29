@@ -710,7 +710,7 @@ export default function AdminPage() {
 
   function editPhoto(clientId, key, patch) {
     setPhotoEdits((prev) => {
-      const cur = prev.photos[key] || { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null };
+      const cur = prev.photos[key] || { anchor: 'top', fit: null, size: 100, removed: false, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null };
       const next = { ...prev, photos: { ...prev.photos, [key]: { ...cur, ...patch } } };
       persistEdits(clientId, next);
       return next;
@@ -1692,9 +1692,12 @@ export default function AdminPage() {
               else if (a) albumRanges.push({ name: a, from: pos, to: pos });
             });
             return (
-              <div key={s.key} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <strong style={{ fontSize: 13 }}>Segment {idx + 1}</strong>
+              <div key={s.key} style={{ border: '1px solid var(--line)', borderLeft: '3px solid var(--blue)', borderRadius: 10, padding: 12, boxShadow: '0 3px 14px rgba(0,0,0,0.28)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '-12px -12px 14px', padding: '9px 12px', background: 'linear-gradient(var(--blue), var(--blue)) 0 0 / 132px 3px no-repeat, var(--panel-2)', borderBottom: '1px solid var(--line)', borderRadius: '8px 8px 0 0' }}>
+                  <strong style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: '50%', alignItems: 'center', justifyContent: 'center', fontSize: 12, background: 'var(--blue)', color: '#fff', fontWeight: 800 }}>{idx + 1}</span>
+                    Segment {idx + 1}
+                  </strong>
                   {segments.length > 1 && (
                     <button type="button" className="linklike" onClick={() => removeSegment(s.key)}>Remove</button>
                   )}
