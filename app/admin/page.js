@@ -355,7 +355,7 @@ export default function AdminPage() {
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
     { value: 'duotone2', label: 'Duotone Split 2 — frantic, bg & hero transition separately' },
     { value: 'polaroid', label: 'Polaroid Drop — square print, thick white bottom' },
-    { value: 'photo_drop', label: 'Photo Drop — whole photo, even white border', preview: 'polaroid' },
+    { value: 'photo_drop', label: 'Photo Drop — whole photo, even white border' },
     { value: 'collage_classic', label: 'Collage Wall Classic — uniform photo grid, camera glides across' },
     { value: 'collage_featured', label: 'Collage Wall Featured — big hero photos + smaller tiles' },
     { value: 'gallery150', label: 'Gallery 150 — scattered tilted prints, camera flies over' },
@@ -376,7 +376,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgTint: '#102040', bgOpacity: '50' });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -828,6 +828,23 @@ export default function AdminPage() {
     }
   }
 
+  // X on a render card: cancel it if it's still rendering, then remove it from
+  // the list (hidden). Works on any clip — rendering or finished.
+  async function removeClip(m) {
+    const rendering = m.status === 'rendering' || m.status === 'queued';
+    if (!window.confirm(rendering ? 'Cancel this render and remove it?' : 'Remove this render from the list?')) return;
+    try {
+      if (rendering) {
+        await api('/api/admin/montage/cancel', { method: 'POST', body: JSON.stringify({ montageId: m.id }) }).catch(() => {});
+      }
+      await api('/api/admin/montage/visibility', { method: 'POST', body: JSON.stringify({ montageId: m.id, hidden: true }) });
+      loadMontages();
+    } catch (err) {
+      setMErr(true);
+      setMMsg(err.message);
+    }
+  }
+
   async function syncMontage(id) {
     try {
       await api('/api/admin/montage/sync', {
@@ -917,6 +934,10 @@ export default function AdminPage() {
               : (s.bgMode === 'image' && s.bgUrl?.trim())
                 ? { url: s.bgUrl.trim(), tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
                 : null,
+            // Multi Page motion options (only meaningful for the multi_page styles)
+            mpTransition: s.mpTransition || 'record-fwd',
+            mpStagger: s.mpStagger ? Number(s.mpStagger) : null,
+            mpHold: s.mpHold ? Number(s.mpHold) : null,
           }),
         });
         ok++;
@@ -1408,14 +1429,24 @@ export default function AdminPage() {
       .sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || cmp(a, b));
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          {[[1, 'Edit photos'], [2, 'Choose style'], [3, 'Finish & generate']].map((st) => (
-            <button key={st[0]} type="button" onClick={() => setMontageStep(st[0])}
-              style={{ flex: 1, textAlign: 'left', border: montageStep === st[0] ? '1px solid #2f6bff' : '1px solid var(--line)', background: montageStep === st[0] ? 'rgba(47,107,255,0.10)' : 'transparent', borderRadius: 10, padding: '10px 12px', cursor: 'pointer', color: 'var(--text)' }}>
-              <span style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: '50%', alignItems: 'center', justifyContent: 'center', fontSize: 12, marginRight: 8, background: montageStep === st[0] ? '#2f6bff' : 'var(--line)', color: montageStep === st[0] ? '#fff' : 'var(--muted)' }}>{st[0]}</span>
-              <strong style={{ fontSize: 13 }}>{st[1]}</strong>
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 18, padding: 8, borderRadius: 14, background: 'rgba(47,107,255,0.06)', border: '1px solid rgba(47,107,255,0.22)' }}>
+          {[[1, 'Edit photos'], [2, 'Choose style'], [3, 'Finish & export']].map((st) => {
+            const on = montageStep === st[0];
+            return (
+              <button key={st[0]} type="button" onClick={() => setMontageStep(st[0])}
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                  border: on ? '2px solid #2f6bff' : '1.5px solid var(--line)',
+                  background: on ? 'linear-gradient(180deg,#3f7bff,#2f6bff)' : 'var(--panel-2, #14161c)',
+                  boxShadow: on ? '0 6px 18px rgba(47,107,255,0.35)' : '0 1px 3px rgba(0,0,0,0.2)',
+                  borderRadius: 11, padding: '12px 14px', cursor: 'pointer',
+                  color: on ? '#fff' : 'var(--text)', transform: on ? 'translateY(-1px)' : 'none', transition: 'all .12s ease',
+                }}>
+                <span style={{ display: 'inline-flex', width: 26, height: 26, flex: '0 0 auto', borderRadius: '50%', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, background: on ? '#fff' : 'var(--line)', color: on ? '#2f6bff' : 'var(--muted)' }}>{st[0]}</span>
+                <strong style={{ fontSize: 14 }}>{st[1]}</strong>
+              </button>
+            );
+          })}
         </div>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
           Build one or more montage segments from this client’s photos. Each segment renders as its
@@ -1675,6 +1706,54 @@ export default function AdminPage() {
                 );
               })}
             </div>
+            {(() => {
+              const st = segments[0]?.style;
+              if (st !== 'multi_page' && st !== 'multi_page_record') return null;
+              const seg = segments[0] || {};
+              const set = (patch) => setSegments((arr) => arr.map((x) => ({ ...x, ...patch })));
+              const TRANS = [
+                ['record-fwd', 'Record forward'], ['record-back', 'Record backward'],
+                ['slide-left', 'Slide left'], ['slide-right', 'Slide right'],
+                ['slide-up', 'Slide up'], ['slide-down', 'Slide down'], ['random', 'Random'],
+              ];
+              return (
+                <div style={{ marginTop: 16, border: '1px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'rgba(61,123,255,0.06)' }}>
+                  <strong style={{ fontSize: 13 }}>Multi Page options</strong>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10, alignItems: 'flex-end' }}>
+                    <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      {st === 'multi_page_record' ? 'Page exit motion' : 'Image entrance motion'}
+                      <select value={seg.mpTransition || 'record-fwd'} onChange={(e) => set({ mpTransition: e.target.value })}
+                        style={{ display: 'block', marginTop: 4, minWidth: 170 }}>
+                        {TRANS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    </label>
+                    <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      Reveal stagger
+                      <select value={seg.mpStagger || ''} onChange={(e) => set({ mpStagger: e.target.value })}
+                        style={{ display: 'block', marginTop: 4 }}>
+                        <option value="">Default</option>
+                        <option value="0.12">Fast</option>
+                        <option value="0.24">Medium</option>
+                        <option value="0.38">Slow</option>
+                      </select>
+                    </label>
+                    <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      Hold per page
+                      <select value={seg.mpHold || ''} onChange={(e) => set({ mpHold: e.target.value })}
+                        style={{ display: 'block', marginTop: 4 }}>
+                        <option value="">Default</option>
+                        <option value="0.9">Short</option>
+                        <option value="1.3">Medium</option>
+                        <option value="2.2">Long</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
+                    Applies to every Multi Page segment. 3D X/Y-spin isn’t available in the render (Creatomate can’t do true 3D) — those live only in the browser preview.
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1876,26 +1955,35 @@ export default function AdminPage() {
                 background: m.watermarked ? 'rgba(255,255,255,0.02)' : 'rgba(47,107,255,0.06)',
                 opacity: m.hidden ? 0.5 : 1,
               }}>
-                {/* Header: title + status badge */}
+                {/* Header: title + status badge + remove (X) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                   <strong style={{ fontSize: 15 }}>{m.title}</strong>
-                  {(() => {
-                    const st = m.status === 'rendering' || m.status === 'queued'
-                      ? { t: 'Rendering…', bg: '#8a6d1f', fg: '#ffe9b0' }
-                      : m.status === 'failed'
-                        ? { t: 'Failed', bg: '#7a2230', fg: '#ffd0d6' }
-                        : m.viewed
-                          ? { t: 'Viewed', bg: 'transparent', fg: 'var(--muted)', bd: '1px solid var(--line)' }
-                          : { t: 'Ready to view', bg: '#1f6d3a', fg: '#c8f7d8' };
-                    return (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: st.bg, color: st.fg, border: st.bd || 'none', letterSpacing: '.02em' }}>{st.t}</span>
-                        {(m.status === 'rendering' || m.status === 'queued') && (
-                          <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => syncMontage(m.id)}>Check status</button>
-                        )}
-                      </span>
-                    );
-                  })()}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+                    {(() => {
+                      const st = m.status === 'rendering' || m.status === 'queued'
+                        ? { t: 'Rendering…', bg: '#8a6d1f', fg: '#ffe9b0' }
+                        : m.status === 'failed'
+                          ? { t: 'Failed', bg: '#7a2230', fg: '#ffd0d6' }
+                          : m.viewed
+                            ? { t: 'Viewed', bg: 'transparent', fg: 'var(--muted)', bd: '1px solid var(--line)' }
+                            : { t: 'Ready to view', bg: '#1f6d3a', fg: '#c8f7d8' };
+                      return (
+                        <>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, background: st.bg, color: st.fg, border: st.bd || 'none', letterSpacing: '.02em' }}>{st.t}</span>
+                          {(m.status === 'rendering' || m.status === 'queued') && (
+                            <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => syncMontage(m.id)}>Check status</button>
+                          )}
+                        </>
+                      );
+                    })()}
+                    <button type="button" title={(m.status === 'rendering' || m.status === 'queued') ? 'Cancel render & remove' : 'Remove from list'}
+                      onClick={() => removeClip(m)}
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 6, border: '1px solid var(--line)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = '#7a2230'; e.currentTarget.style.borderColor = '#7a2230'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--muted)'; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--line)'; }}>
+                      {'×'}
+                    </button>
+                  </span>
                 </div>
                 {/* Meta line: rez + tags + details + time-ago */}
                 <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--muted)' }}>

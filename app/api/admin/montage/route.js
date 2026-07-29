@@ -48,7 +48,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   const bgControl = (background && typeof background === 'object')
@@ -195,6 +195,11 @@ export async function POST(request) {
         videoGaps: gapCount,
         colorCorrect: !!pe.colorCorrect,
         background: bgControl,   // "Add background" control, so Export Final reuses it
+        // Multi Page motion options (transition + rhythm), so a re-render matches.
+        mpTransition: mpTransition || null,
+        mpStagger: Number.isFinite(Number(mpStagger)) ? Number(mpStagger) : null,
+        mpHold: Number.isFinite(Number(mpHold)) ? Number(mpHold) : null,
+        mpSpeed: Number.isFinite(Number(mpSpeed)) ? Number(mpSpeed) : null,
 
         // Fully-resolved play sequence (r2_keys + each photo's edits AT THIS
         // MOMENT, placeholder names) — the snapshot the "Export Final" re-render
@@ -253,6 +258,7 @@ export async function POST(request) {
       watermarkUrl: watermark ? `${siteUrl}/watermark.png` : null,
       assetBase: siteUrl || null,   // for collage light-leak overlays (public/overlays/*)
       background: bgControl,        // "Add background" control (green default / image+tint)
+      mpTransition, mpStagger, mpHold, mpSpeed,   // Multi Page motion options
     });
 
     const render = await createRender({

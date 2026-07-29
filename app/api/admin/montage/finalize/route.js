@@ -123,6 +123,10 @@ export async function POST(request) {
       watermarkUrl: wantFull ? null : `${siteUrl}/watermark.png`,
       assetBase: siteUrl || null,
       background: params.background || null,   // reuse the draft's "Add background" control
+      mpTransition: params.mpTransition || null,   // reuse Multi Page motion options
+      mpStagger: params.mpStagger ?? null,
+      mpHold: params.mpHold ?? null,
+      mpSpeed: params.mpSpeed ?? null,
     });
 
     const render = await createRender({
