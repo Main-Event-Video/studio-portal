@@ -450,7 +450,18 @@ export default function AdminPage() {
   const loadMontages = useCallback(async () => {
     try {
       const { montages } = await api('/api/admin/montage');
-      setMontages(montages);
+      // Preserve the previously-presigned video URL for each render we already
+      // had. The GET mints a FRESH presigned URL every call, so without this the
+      // <video> src changes on every auto-refresh poll and an open preview snaps
+      // back to 0:00 (the "previews won't play" bug). Same URL → React reuses the
+      // element and playback continues.
+      setMontages((prev) => {
+        const prevUrl = new Map(prev.map((m) => [m.id, m.url]));
+        return montages.map((m) => {
+          const old = prevUrl.get(m.id);
+          return (old && m.url) ? { ...m, url: old } : m;
+        });
+      });
     } catch {
       /* panel shows empty; refresh button retries */
     }
@@ -1379,7 +1390,10 @@ export default function AdminPage() {
   function renderMontageTool(c) {
     const allRows = montages.filter((x) => x.clientId === c.id);
     const hiddenCount = allRows.filter((m) => m.hidden).length;
-    const rows = allRows.filter((m) => showHidden || !m.hidden);
+    const rows = allRows
+      .filter((m) => showHidden || !m.hidden)
+      .slice()
+      .sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)); // starred keepers float to the top
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -1833,8 +1847,7 @@ export default function AdminPage() {
                       {m.photoSpec ? ` · #${m.photoSpec}` : ''}
                     </span>
                     <span className="pill" style={{ marginLeft: 8 }}>{m.watermarked ? 'low rez' : 'high rez'}</span>
-                    {m.rating === 'up' && <span className="pill" style={{ marginLeft: 8, color: 'var(--ok)' }}>👍</span>}
-                    {m.rating === 'down' && <span className="pill" style={{ marginLeft: 8, color: 'var(--red)' }}>👎</span>}
+                    {m.starred && <span className="pill" style={{ marginLeft: 8, color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
                     {m.includeCards === false && <span className="pill" style={{ marginLeft: 8 }}>no cards</span>}
                   </span>
                   <span
@@ -1886,9 +1899,7 @@ export default function AdminPage() {
                         <button type="button" className="linklike" onClick={() => rerenderMontage(m.id, true)}>Export Full Rez</button>
                       )}
                       {' '}·{' '}
-                      <button type="button" className="linklike" title="Thumbs up" style={{ color: m.rating === 'up' ? 'var(--ok)' : 'var(--muted)', fontSize: 15 }} onClick={() => reviewMontage(m.id, { rating: m.rating === 'up' ? null : 'up' })}>👍</button>
-                      {' '}
-                      <button type="button" className="linklike" title="Thumbs down" style={{ color: m.rating === 'down' ? 'var(--red)' : 'var(--muted)', fontSize: 15 }} onClick={() => reviewMontage(m.id, { rating: m.rating === 'down' ? null : 'down' })}>👎</button>
+                      <button type="button" className="linklike" title={m.starred ? 'Unstar' : 'Star as a keeper'} style={{ color: m.starred ? '#f5b301' : 'var(--muted)', fontWeight: 600 }} onClick={() => reviewMontage(m.id, { starred: !m.starred })}>{m.starred ? '★ Starred' : '☆ Star'}</button>
                       {!m.archived && (
                         <span style={{ color: 'var(--muted)' }}>
                           {' '}· not yet archived to our storage — this copy expires in ~30 days, download it

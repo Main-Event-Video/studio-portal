@@ -1,7 +1,7 @@
-// POST /api/admin/montage/review  { montageId, viewed?, rating? }
+// POST /api/admin/montage/review  { montageId, viewed?, starred? }
 // Records lightweight review state on a render (stored in params, like `hidden`):
-//   • viewed:true   → the admin has watched it (flips "Ready to view" → "Viewed")
-//   • rating:'up'|'down'|null → thumbs up / down (null clears it)
+//   • viewed:true    → the admin has watched it (flips "Ready to view" → "Viewed")
+//   • starred:true   → marked a keeper (gold ★, floats to the top of the list)
 // Only the provided fields are changed. Non-destructive.
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
@@ -20,7 +20,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Bad request' }, { status: 400 });
   }
-  const { montageId, viewed, rating } = body || {};
+  const { montageId, viewed, starred } = body || {};
   if (!montageId) return NextResponse.json({ error: 'Missing montageId' }, { status: 400 });
 
   const db = createServiceClient();
@@ -33,7 +33,7 @@ export async function POST(request) {
 
   const next = { ...(m.params || {}) };
   if (viewed !== undefined) next.viewed = !!viewed;
-  if (rating !== undefined) next.rating = (rating === 'up' || rating === 'down') ? rating : null;
+  if (starred !== undefined) next.starred = !!starred;
 
   const { error } = await db
     .from('studio_montages')
@@ -41,5 +41,5 @@ export async function POST(request) {
     .eq('id', montageId);
   if (error) return NextResponse.json({ error: 'Could not update', detail: error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, viewed: next.viewed === true, rating: next.rating || null });
+  return NextResponse.json({ ok: true, viewed: next.viewed === true, starred: next.starred === true });
 }

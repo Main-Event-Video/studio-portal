@@ -301,7 +301,7 @@ export async function GET(request) {
       greenScreen: m.params?.greenScreen !== false,
       hidden: m.params?.hidden === true,
       viewed: m.params?.viewed === true,
-      rating: m.params?.rating || null,
+      starred: m.params?.starred === true,
       status: m.status,
       error: m.error,
       photoCount: m.photo_count,
