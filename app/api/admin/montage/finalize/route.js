@@ -122,7 +122,9 @@ export async function POST(request) {
       subtitle: src.subtitle ? String(src.subtitle).toUpperCase() : null,
       watermarkUrl: wantFull ? null : `${siteUrl}/watermark.png`,
       assetBase: siteUrl || null,
-      background: params.background || null,   // reuse the draft's "Add background" control
+      background: (params.background && params.background.texture)
+        ? { ...params.background, textureUrl: `${siteUrl}/backgrounds/${params.background.texture}.jpg` }
+        : (params.background || null),   // reuse the draft's "Add background" control
       mpTransition: params.mpTransition || null,   // reuse Multi Page motion options
       mpStagger: params.mpStagger ?? null,
       mpHold: params.mpHold ?? null,

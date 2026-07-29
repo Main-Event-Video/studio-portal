@@ -931,9 +931,11 @@ export default function AdminPage() {
             greenScreen: s.green !== false,
             background: s.bgMode === 'green'
               ? { green: true }
-              : (s.bgMode === 'image' && s.bgUrl?.trim())
-                ? { url: s.bgUrl.trim(), tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
-                : null,
+              : ['soft_focus', 'linen', 'gradient'].includes(s.bgMode)
+                ? { texture: s.bgMode, animated: true }
+                : (s.bgMode === 'image' && s.bgUrl?.trim())
+                  ? { url: s.bgUrl.trim(), tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
+                  : null,
             // Multi Page motion options (only meaningful for the multi_page styles)
             mpTransition: s.mpTransition || 'record-fwd',
             mpStagger: s.mpStagger ? Number(s.mpStagger) : null,
@@ -1878,6 +1880,9 @@ export default function AdminPage() {
                   <select value={s.bgMode || 'default'} onChange={(e) => updateSegment(s.key, { bgMode: e.target.value })}>
                     <option value="default">Style default</option>
                     <option value="green">Green screen (keyable)</option>
+                    <option value="soft_focus">Texture — Soft-focus (animated)</option>
+                    <option value="linen">Texture — Cream linen (animated)</option>
+                    <option value="gradient">Texture — Gradient wash (animated)</option>
                     <option value="image">Image…</option>
                   </select>
                   {s.bgMode === 'image' && (
@@ -2205,6 +2210,49 @@ export default function AdminPage() {
       </section>
 
       <section className="panel">
+        {(() => {
+          const fc = openClientId ? clients.find((x) => x.id === openClientId) : null;
+          if (!fc) return null;
+          const c = fc;
+          return (
+            <div>
+              <button type="button" className="btn-ghost" style={{ marginBottom: 12 }} onClick={() => { setOpenClientId(null); setActiveTool(null); }}>{'←'} Return to client list</button>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 14px', border: '1px solid var(--blue)', borderRadius: 12, background: 'rgba(47,107,255,0.06)', marginBottom: 14 }}>
+                <h2 className="neon neon-blue" style={{ margin: 0 }}>{c.display_name}</h2>
+                {c.archived && <span className="pill archived">archived</span>}
+                <span style={{ color: 'var(--muted)', fontSize: 13 }}>{c.email}</span>
+                <span style={{ color: 'var(--muted)', fontSize: 13 }}>{c.event_date}{c.event_type ? ` · ${c.event_type}` : ''}</span>
+                <span style={{ flex: 1 }} />
+                <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
+                <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>
+                <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>{c.archived ? 'Unarchive' : 'Archive'}</button>
+              </div>
+              <div className="client-workspace">
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <button type="button" className={activeTool === 'montage' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'montage')}>Montage Maker</button>
+                  <button type="button" className={activeTool === 'cut' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'cut')}>Send a cut</button>
+                  <button type="button" className={activeTool === 'intake' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'intake')}>Intake form</button>
+                  <button type="button" className={activeTool === 'files' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'files')}>Files</button>
+                  <button type="button" className={activeTool === 'info' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'info')}>Details</button>
+                  <button type="button" className={activeTool === 'character' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'character')}>Character builds</button>
+                </div>
+                {activeTool === 'montage' && renderMontageTool(c)}
+                {activeTool === 'cut' && renderCutTool()}
+                {activeTool === 'intake' && renderIntakeTool(c)}
+                {activeTool === 'files' && renderFilesTool(c)}
+                {activeTool === 'info' && <ClientInfoForm client={c} siteUrl={siteUrl} onSaved={loadClients} />}
+                {activeTool === 'character' && (
+                  <div style={{ padding: '8px 2px' }}>
+                    <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>Pick a character for this client, then download their build sheet.</p>
+                    <CharacterSheetPicker client={c} />
+                  </div>
+                )}
+                {!activeTool && <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 10 }}>Pick a tool above to get started.</p>}
+              </div>
+            </div>
+          );
+        })()}
+        {!openClientId && (<>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <h2 className="neon neon-blue" style={{ margin: 0 }}>Clients</h2>
           {clients.length > 0 && (
@@ -2353,6 +2401,7 @@ export default function AdminPage() {
             </table>
           </div>
         )}
+        </>)}
       </section>
     </main>
   );

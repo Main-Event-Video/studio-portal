@@ -51,9 +51,14 @@ export async function POST(request) {
   const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
+  // Built-in animated textures live in public/backgrounds/<name>.jpg.
+  const TEXTURES = { soft_focus: 1, linen: 1, gradient: 1 };
   const bgControl = (background && typeof background === 'object')
     ? {
         green: !!background.green,
+        // built-in texture (name only; URL resolved at render time from siteUrl)
+        texture: (background.texture && TEXTURES[background.texture]) ? String(background.texture) : null,
+        animated: background.animated !== false,   // textures drift by default
         url: background.url ? String(background.url) : null,
         tint: background.tint ? String(background.tint) : null,
         opacity: background.opacity ? String(background.opacity) : null,
@@ -257,7 +262,9 @@ export async function POST(request) {
       subtitle: subtitle ? String(subtitle).toUpperCase() : null,
       watermarkUrl: watermark ? `${siteUrl}/watermark.png` : null,
       assetBase: siteUrl || null,   // for collage light-leak overlays (public/overlays/*)
-      background: bgControl,        // "Add background" control (green default / image+tint)
+      background: (bgControl && bgControl.texture)
+        ? { ...bgControl, textureUrl: `${siteUrl}/backgrounds/${bgControl.texture}.jpg` }
+        : bgControl,                // "Add background" control (green / texture / image+tint)
       mpTransition, mpStagger, mpHold, mpSpeed,   // Multi Page motion options
     });
 
