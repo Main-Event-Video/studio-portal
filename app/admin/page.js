@@ -382,6 +382,7 @@ export default function AdminPage() {
   const [showRef, setShowRef] = useState(false);         // numbered reference strip
   const [genBusy, setGenBusy] = useState(false);
   const [showHidden, setShowHidden] = useState(false); // reveal hidden renders
+  const [montageSort, setMontageSort] = useState('new'); // new|old|high|low|style
   const [montageStep, setMontageStep] = useState(1); // 1 edit · 2 style · 3 finish
 
   // Photo Editor (per-client): per-photo framing/fit/size/removed + global
@@ -1390,10 +1391,19 @@ export default function AdminPage() {
   function renderMontageTool(c) {
     const allRows = montages.filter((x) => x.clientId === c.id);
     const hiddenCount = allRows.filter((m) => m.hidden).length;
+    const ts = (m) => { const d = new Date(m.createdAt).getTime(); return isNaN(d) ? 0 : d; };
+    const cmp = {
+      new: (a, b) => ts(b) - ts(a),
+      old: (a, b) => ts(a) - ts(b),
+      high: (a, b) => (a.watermarked ? 1 : 0) - (b.watermarked ? 1 : 0) || ts(b) - ts(a), // full rez first
+      low: (a, b) => (b.watermarked ? 1 : 0) - (a.watermarked ? 1 : 0) || ts(b) - ts(a),  // low rez first
+      style: (a, b) => String(a.style || '').localeCompare(String(b.style || '')) || ts(b) - ts(a),
+    }[montageSort] || ((a, b) => ts(b) - ts(a));
     const rows = allRows
       .filter((m) => showHidden || !m.hidden)
       .slice()
-      .sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)); // starred keepers float to the top
+      // starred keepers always float to the top; the chosen sort orders everything within that
+      .sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || cmp(a, b));
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -1820,6 +1830,22 @@ export default function AdminPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h3 className="folder-head" style={{ margin: 0 }}>Renders</h3>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {allRows.length > 1 && (
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--muted)' }}>
+                  Sort
+                  <select
+                    value={montageSort}
+                    onChange={(e) => setMontageSort(e.target.value)}
+                    style={{ fontSize: 12.5, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}
+                  >
+                    <option value="new">Newest first</option>
+                    <option value="old">Oldest first</option>
+                    <option value="high">High rez first</option>
+                    <option value="low">Low rez first</option>
+                    <option value="style">Style (A–Z)</option>
+                  </select>
+                </label>
+              )}
               {hiddenCount > 0 && (
                 <button type="button" className="linklike" style={{ fontSize: 13 }} onClick={() => setShowHidden((v) => !v)}>
                   {showHidden ? `Hide hidden (${hiddenCount})` : `Show hidden (${hiddenCount})`}
@@ -1875,11 +1901,19 @@ export default function AdminPage() {
                   {m.includeCards === false && <span className="pill">no cards</span>}
                   {m.hidden && <span className="pill">hidden</span>}
                   <span>{m.style} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos{m.photoSpec ? ` · #${m.photoSpec}` : ''}</span>
-                  <span style={{ marginLeft: 'auto' }}>
+                  <span style={{ marginLeft: 'auto', textAlign: 'right', lineHeight: 1.35 }}>
                     {(() => {
-                      const s = Math.floor((Date.now() - new Date(m.createdAt).getTime()) / 1000);
-                      if (!(s >= 0)) return '';
-                      return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
+                      const d = new Date(m.createdAt);
+                      if (isNaN(d.getTime())) return '';
+                      const s = Math.floor((Date.now() - d.getTime()) / 1000);
+                      const rel = !(s >= 0) ? '' : s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
+                      const stamp = d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                      return (
+                        <>
+                          <span style={{ display: 'block', fontVariantNumeric: 'tabular-nums', color: 'var(--fg, #222)' }}>{stamp}</span>
+                          {rel ? <span style={{ display: 'block', fontSize: 11, opacity: 0.7 }}>{rel}</span> : null}
+                        </>
+                      );
                     })()}
                   </span>
                   <button type="button" className="linklike" style={{ fontSize: 12 }} onClick={() => hideMontage(m.id, !m.hidden)}>
