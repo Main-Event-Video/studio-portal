@@ -316,6 +316,19 @@ function fmtDate(iso) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// Client portal password is deterministic: lastname (letters only) + MMDD of
+// the event date — the exact formula used on both create and Reset password.
+// Nothing random is ever stored (DB keeps only a bcrypt hash), so we re-derive
+// it here from the last_name + event_date the admin list already has. No secret
+// is stored or exposed beyond what the admin can already reset to.
+function clientPassword(c) {
+  if (!c || !c.last_name || !c.event_date) return null;
+  const base = String(c.last_name).toLowerCase().replace(/[^a-z]/g, '');
+  const [, mm, dd] = String(c.event_date).split('-');
+  if (!base || !mm || !dd) return null;
+  return `${base}${mm}${dd}`;
+}
+
 export default function AdminPage() {
   const [session, setSession] = useState(null);
   const [checked, setChecked] = useState(false);
@@ -2230,6 +2243,12 @@ export default function AdminPage() {
                 <span style={{ color: 'var(--muted)', fontSize: 13 }}>{c.event_date}{c.event_type ? ` · ${c.event_type}` : ''}</span>
                 <span style={{ flex: 1 }} />
                 <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
+                {clientPassword(c) && (
+                  <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+                    Password: <span className="mono" style={{ color: 'var(--blue)' }}>{clientPassword(c)}</span>{' '}
+                    <CopyButton text={clientPassword(c)} label="Copy password" />
+                  </span>
+                )}
                 <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>
                 <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>{c.archived ? 'Unarchive' : 'Archive'}</button>
               </div>
@@ -2286,6 +2305,7 @@ export default function AdminPage() {
                   <th>Event</th>
                   <th>Last upload</th>
                   <th>Files</th>
+                  <th>Password</th>
                   <th></th>
                 </tr>
               </thead>
@@ -2331,6 +2351,7 @@ export default function AdminPage() {
                             <span style={{ color: 'var(--muted)', fontSize: 12 }}>{' '}({c.trash_count} in trash · {(c.upload_count ?? 0) + c.trash_count} total)</span>
                           )}
                         </td>
+                        <td className="mono" style={{ whiteSpace: 'nowrap' }}>{clientPassword(c) || '—'}</td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
                           <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>
