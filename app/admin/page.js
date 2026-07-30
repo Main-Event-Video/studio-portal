@@ -2210,6 +2210,8 @@ export default function AdminPage() {
                       )}
                       {' '}·{' '}
                       <button type="button" className="linklike" title={m.starred ? 'Unstar' : 'Star as a keeper'} style={{ color: m.starred ? '#f5b301' : 'var(--muted)', fontWeight: 600 }} onClick={() => reviewMontage(m.id, { starred: !m.starred })}>{m.starred ? '★ Starred' : '☆ Star'}</button>
+                      {' '}·{' '}
+                      <button type="button" className="linklike" style={{ color: adjFor?.id === m.id ? 'var(--blue)' : 'var(--muted)', fontWeight: 600 }} title="Adjust how each photo is cropped, then re-render" onClick={() => openAdjust(m)}>{adjFor?.id === m.id ? '✕ Close framing' : '🎯 Fix framing'}</button>
                       {!m.archived && (
                         <span style={{ color: 'var(--muted)' }}>
                           {' '}· not yet archived to our storage — this copy expires in ~30 days, download it
