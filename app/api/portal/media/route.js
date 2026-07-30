@@ -8,6 +8,7 @@ import { applyMediaAction } from '@/lib/mediaOrganize';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // big reorders (100+ photos) write many rows — give them headroom
 
 // GET /api/portal/media?token=...&scope=view|mine
 //   → { media, boxes }
@@ -166,22 +167,31 @@ export async function POST(request) {
     const albums = body.albums && typeof body.albums === 'object' ? body.albums : {};
 
     try {
+      // Build every write up front, then run them in parallel chunks. The old
+      // code did 100+ sequential DB round-trips in one request, which blew past
+      // the serverless time limit on big reorders and failed (often after a
+      // partial save). Batching keeps even a 100+ photo reorder to a few fast
+      // waves, well inside the budget.
+      const mediaWrites = []; // array of () => Promise<string|null> (error message or null)
+      const albumRows = [];   // batched studio_boxes upsert payload
+
       let rank = 1;
       for (const entry of top) {
         if (!entry || typeof entry !== 'object') continue;
         if (entry.type === 'media' && entry.id) {
-          const { error } = await db.from('studio_media')
-            .update({ folder_path: null, timeline_pos: rank })
-            .eq('client_id', client.id).eq('kind', 'client_upload').eq('id', entry.id);
-          if (error) throw new Error(error.message);
+          const pos = rank, id = entry.id;
+          mediaWrites.push(async () => {
+            const { error } = await db.from('studio_media')
+              .update({ folder_path: null, timeline_pos: pos })
+              .eq('client_id', client.id).eq('kind', 'client_upload').eq('id', id);
+            return error ? error.message : null;
+          });
         } else if (entry.type === 'album' && entry.name) {
           const name = String(entry.name).trim();
           if (!name) continue;
-          // Upsert the album row so its position persists even if it had no
-          // studio_boxes row yet (implied album, or pre-005 data).
-          const { error } = await db.from('studio_boxes')
-            .upsert({ client_id: client.id, name, position: rank }, { onConflict: 'client_id,name' });
-          if (error) throw new Error(error.message);
+          // Album row upserted below (batched) so its position persists even if
+          // it had no studio_boxes row yet (implied album, or pre-005 data).
+          albumRows.push({ client_id: client.id, name, position: rank });
         } else {
           continue;
         }
@@ -194,12 +204,30 @@ export async function POST(request) {
         if (!albumName || !Array.isArray(ids)) continue;
         let j = 1;
         for (const id of ids) {
-          const { error } = await db.from('studio_media')
-            .update({ folder_path: albumName, sort_number: j, timeline_pos: null })
-            .eq('client_id', client.id).eq('kind', 'client_upload').eq('id', id);
-          if (error) throw new Error(error.message);
+          const pos = j, mid = id;
+          mediaWrites.push(async () => {
+            const { error } = await db.from('studio_media')
+              .update({ folder_path: albumName, sort_number: pos, timeline_pos: null })
+              .eq('client_id', client.id).eq('kind', 'client_upload').eq('id', mid);
+            return error ? error.message : null;
+          });
           j++;
         }
+      }
+
+      // Album positions: one batched upsert.
+      if (albumRows.length) {
+        const { error } = await db.from('studio_boxes')
+          .upsert(albumRows, { onConflict: 'client_id,name' });
+        if (error) throw new Error(error.message);
+      }
+
+      // Media position writes: parallel, capped concurrency to respect limits.
+      const CHUNK = 20;
+      for (let i = 0; i < mediaWrites.length; i += CHUNK) {
+        const results = await Promise.all(mediaWrites.slice(i, i + CHUNK).map((fn) => fn()));
+        const firstErr = results.find((r) => r);
+        if (firstErr) throw new Error(firstErr);
       }
     } catch (e) {
       return NextResponse.json({ error: 'Could not save your order', detail: String(e.message || e) }, { status: 500 });

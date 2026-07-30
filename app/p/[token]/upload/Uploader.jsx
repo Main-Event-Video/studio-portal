@@ -211,6 +211,8 @@ export default function Uploader({ token }) {
   const [newName, setNewName] = useState('');
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgMsg, setOrgMsg] = useState('');
+  const [saveErr, setSaveErr] = useState(false);  // last save failed → honest status + retry
+  const lastOrgPayload = useRef(null);             // last organize() payload, for retry
   const [activeChar, setActiveChar] = useState(null);         // open capture: {id,name,existing} | {build:true} | null
   const [characters, setCharacters] = useState([]);           // multi-character roster
   const [isDesktop, setIsDesktop] = useState(false);          // desktop → non-phone copy
@@ -446,6 +448,7 @@ export default function Uploader({ token }) {
 
   // ---- organize (persist a change) ----
   async function organize(payload) {
+    lastOrgPayload.current = payload;
     setOrgBusy(true); setOrgMsg('');
     try {
       const res = await fetch('/api/portal/media', {
@@ -454,8 +457,14 @@ export default function Uploader({ token }) {
       });
       if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || 'Could not save your change'); }
       await loadMine();
-    } catch (e) { setOrgMsg(e.message || 'Something went wrong.'); }
+      setSaveErr(false);
+    } catch (e) { setOrgMsg(e.message || 'Something went wrong.'); setSaveErr(true); }
     setOrgBusy(false);
+  }
+
+  // Re-send the last save that failed (the always-visible status pill's Retry).
+  async function retrySave() {
+    if (lastOrgPayload.current) await organize(lastOrgPayload.current);
   }
 
   // Hide a whole album (non-destructive). The album + all its photos leave the
@@ -932,6 +941,18 @@ export default function Uploader({ token }) {
   return (
     <main id="uploadflow">
       <style>{CSS}</style>
+      {/* Always-visible save status — stays put while scrolling through photos. */}
+      <div
+        onClick={saveErr ? retrySave : undefined}
+        title={saveErr ? (orgMsg || 'Save failed — tap to retry') : ''}
+        style={{ position: 'fixed', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 60,
+          padding: '7px 14px', borderRadius: 999, fontSize: 13, fontWeight: 800, whiteSpace: 'nowrap',
+          boxShadow: '0 6px 20px rgba(0,0,0,.45)', cursor: saveErr ? 'pointer' : 'default',
+          border: '1px solid ' + (saveErr ? '#e23b3b' : orgBusy ? '#d8a83b' : '#2f9e5b'),
+          background: saveErr ? '#3a1414' : orgBusy ? '#332a12' : '#123020',
+          color: saveErr ? '#ffb3b3' : orgBusy ? '#ffd98a' : '#8ff0b5' }}>
+        {orgBusy ? 'Saving…' : saveErr ? '⚠ Not saved — tap to retry' : '✓ All changes saved'}
+      </div>
       <a href={`/p/${token}`} className="back">← Back to your portal</a>
 
       {view === 'upload' ? (
@@ -1109,7 +1130,13 @@ export default function Uploader({ token }) {
             </button>
           </div>
           <div className="savebar">
-            <button className="savebtn" onClick={() => goView('upload')}>{orgBusy ? 'Saving…' : '✓ Done — order saved'}</button>
+            {saveErr ? (
+              <button className="savebtn" style={{ borderColor: '#e23b3b', background: '#3a1414', color: '#ffb3b3' }} onClick={retrySave}>
+                {orgBusy ? 'Retrying…' : '⚠ Not saved — tap to retry'}
+              </button>
+            ) : (
+              <button className="savebtn" onClick={() => goView('upload')}>{orgBusy ? 'Saving…' : '✓ Done — order saved'}</button>
+            )}
           </div>
         </>
       )}
