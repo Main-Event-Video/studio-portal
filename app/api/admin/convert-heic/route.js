@@ -12,7 +12,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getObjectBuffer, putFile, deleteFile } from '@/lib/r2';
-import { isHeic, convertHeicToJpeg, toJpgName, toJpgKey } from '@/lib/heic';
+import { isHeic, anyImageToJpeg, toJpgName, toJpgKey } from '@/lib/heic';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,7 +71,9 @@ export async function POST(request) {
     processed++;
     try {
       const heicBuf = await getObjectBuffer(m.r2_key);
-      const jpegBuf = await convertHeicToJpeg(heicBuf);
+      // Sniffs the real bytes: rescues mislabeled .heic files (really JPEG/PNG/
+      // etc.) as well as true HEIC; throws clearly if the bytes are corrupt.
+      const jpegBuf = await anyImageToJpeg(heicBuf);
       const jpgKey = toJpgKey(m.r2_key);
       await putFile(jpgKey, jpegBuf, 'image/jpeg');
       const { error: upErr } = await db
