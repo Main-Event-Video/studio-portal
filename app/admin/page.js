@@ -1531,12 +1531,13 @@ export default function AdminPage() {
       high: (a, b) => (a.watermarked ? 1 : 0) - (b.watermarked ? 1 : 0) || ts(b) - ts(a), // full rez first
       low: (a, b) => (b.watermarked ? 1 : 0) - (a.watermarked ? 1 : 0) || ts(b) - ts(a),  // low rez first
       style: (a, b) => String(a.style || '').localeCompare(String(b.style || '')) || ts(b) - ts(a),
+      starred: (a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || ts(b) - ts(a), // opt-in: starred float up, then newest
     }[montageSort] || ((a, b) => ts(b) - ts(a));
     const rows = allRows
       .filter((m) => showHidden || !m.hidden)
       .slice()
-      // starred keepers always float to the top; the chosen sort orders everything within that
-      .sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || cmp(a, b));
+      // Default is newest-first; starred only floats to the top when "Starred first" is chosen.
+      .sort(cmp);
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 18, padding: 8, borderRadius: 14, background: 'rgba(47,107,255,0.06)', border: '1px solid rgba(47,107,255,0.22)' }}>
@@ -2094,6 +2095,7 @@ export default function AdminPage() {
                     <option value="high">High rez first</option>
                     <option value="low">Low rez first</option>
                     <option value="style">Style (A–Z)</option>
+                    <option value="starred">★ Starred first</option>
                   </select>
                 </label>
               )}
