@@ -364,18 +364,30 @@ function mpFrameLabels(n) {
   }
   return out;
 }
-// Turn a stored framing value (number 0..100 OR a preset string) into a 0..100
-// vertical crop position for the slider + the live preview's objectPosition.
-function framingToY(val) {
-  if (typeof val === 'number' && isFinite(val)) return Math.min(100, Math.max(0, val));
-  if (val === 'center') return 50;
-  if (val === 'bottom') return 100;
-  return 0; // 'top', 'left', 'right', or unset → top (head-safe default)
+// A framing value is now an OBJECT { y, x, z } (y/x = 0..100 crop position, z =
+// zoom %). Older values (a bare number = vertical, or a preset string) are read
+// too so past renders still work. framingObj() normalises any of them.
+function framingObj(val) {
+  const d = { y: 0, x: 50, z: 100 }; // top, centred, no zoom (head-safe default)
+  if (val && typeof val === 'object') {
+    return {
+      y: isFinite(val.y) ? Math.min(100, Math.max(0, val.y)) : 0,
+      x: isFinite(val.x) ? Math.min(100, Math.max(0, val.x)) : 50,
+      z: isFinite(val.z) ? Math.min(300, Math.max(100, val.z)) : 100,
+    };
+  }
+  if (typeof val === 'number' && isFinite(val)) return { ...d, y: Math.min(100, Math.max(0, val)) };
+  if (val === 'center') return { ...d, y: 50 };
+  if (val === 'bottom') return { ...d, y: 100 };
+  if (val === 'left') return { ...d, x: 0 };
+  if (val === 'right') return { ...d, x: 100 };
+  return d; // 'top' or unset
 }
-function framingObjectPos(val) {
-  if (val === 'left') return '0% 50%';
-  if (val === 'right') return '100% 50%';
-  return `50% ${framingToY(val)}%`;
+// Is this value an adjustment away from the default (so we highlight the cell)?
+function framingTouched(val) {
+  if (val == null) return false;
+  const f = framingObj(val);
+  return f.y !== 0 || f.x !== 50 || f.z !== 100;
 }
 
 export default function AdminPage() {
@@ -2234,28 +2246,34 @@ export default function AdminPage() {
                           <p style={{ color: 'var(--muted)' }}>Loading photos…</p>
                         ) : (
                           <>
-                          {isMP && (
-                            <p style={{ color: 'var(--muted)', fontSize: 12, margin: '0 0 8px' }}>
-                              This is a Multi Page montage — each photo is labelled with the <strong>page</strong> and <strong>frame</strong> it plays in. Drag a photo's slider from <em>Head</em> (top) toward <em>Feet</em> to slide the crop down when the top is cutting a head.
-                            </p>
-                          )}
+                          <p style={{ color: 'var(--muted)', fontSize: 12, margin: '0 0 8px' }}>
+                            Each photo has three controls: <strong>Head↔Feet</strong> (up/down), <strong>Left↔Right</strong>, and <strong>Out↔In</strong> (zoom). The preview shows the crop live. {isMP ? 'Photos are labelled with the page and frame they play in. ' : ''}Re-render when you're happy.
+                          </p>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                             {adjPhotos.map((p, i) => {
                               const set = (val) => setAdjMap((prev) => {
                                 const next = { ...prev };
-                                if (val === '' || val == null) delete next[p.key]; else next[p.key] = val;
+                                const isDefault = val && typeof val === 'object' && val.y === 0 && val.x === 50 && val.z === 100;
+                                if (val == null || isDefault) delete next[p.key]; else next[p.key] = val;
                                 saveAdjustments(m.id, next);
                                 return next;
                               });
                               const cur = adjMap[p.key];
+                              const f = framingObj(cur);
+                              const setF = (patch) => set({ ...f, ...patch });
+                              const touched = framingTouched(cur);
                               const lab = (p.page != null) ? { page: p.page, cell: p.cell, cells: p.cells } : null;
+                              const rowS = { display: 'flex', alignItems: 'center', gap: 5, margin: '1px 0' };
+                              const lblS = { fontSize: 9.5, color: 'var(--muted)', width: 26, flex: '0 0 auto' };
                               return (
-                              <div key={p.key} style={{ border: cur != null ? '1px solid var(--blue)' : '1px solid var(--line)', borderRadius: 10, padding: 8, background: cur != null ? 'rgba(61,123,255,0.05)' : 'transparent' }}>
-                                <img
-                                  src={p.url}
-                                  alt={p.filename}
-                                  style={{ width: '100%', aspectRatio: p.cellAspect ? String(p.cellAspect) : '16/9', objectFit: 'cover', objectPosition: framingObjectPos(cur), borderRadius: 6, display: 'block', background: '#0c0f16' }}
-                                />
+                              <div key={p.key} style={{ border: touched ? '1px solid var(--blue)' : '1px solid var(--line)', borderRadius: 10, padding: 8, background: touched ? 'rgba(61,123,255,0.05)' : 'transparent' }}>
+                                <div style={{ width: '100%', aspectRatio: p.cellAspect ? String(p.cellAspect) : '16/9', overflow: 'hidden', borderRadius: 6, background: '#0c0f16' }}>
+                                  <img
+                                    src={p.url}
+                                    alt={p.filename}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${f.x}% ${f.y}%`, transform: `scale(${(f.z / 100).toFixed(3)})`, transformOrigin: `${f.x}% ${f.y}%`, display: 'block' }}
+                                  />
+                                </div>
                                 {lab && (
                                   <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--blue)', margin: '5px 0 1px' }}>
                                     Page {lab.page} · frame {lab.cell}/{lab.cells}
@@ -2264,28 +2282,24 @@ export default function AdminPage() {
                                 <div style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {p.index}. {p.filename}
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 5px' }}>
-                                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>Head</span>
-                                  <input
-                                    type="range" min="0" max="100" step="1"
-                                    value={framingToY(cur)}
-                                    onChange={(e) => set(Number(e.target.value))}
-                                    title="Slide the crop up/down: 0 = show the top (keep heads), 100 = show the bottom"
-                                    style={{ flex: 1 }}
-                                  />
-                                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>Feet</span>
+                                <div style={rowS}>
+                                  <span style={lblS}>Head</span>
+                                  <input type="range" min="0" max="100" step="1" value={f.y} onChange={(e) => setF({ y: Number(e.target.value) })} title="Up ↕ down (0 = top / keep heads, 100 = bottom)" style={{ flex: 1 }} />
+                                  <span style={{ ...lblS, textAlign: 'right' }}>Feet</span>
                                 </div>
-                                <select
-                                  value={typeof cur === 'string' ? cur : ''}
-                                  onChange={(e) => set(e.target.value)}
-                                  style={{ fontSize: 12, padding: '5px 7px', width: '100%' }}
-                                >
-                                  <option value="">Top — keeps heads (default)</option>
-                                  <option value="center">Center</option>
-                                  <option value="bottom">Show bottom</option>
-                                  <option value="left">Show left side</option>
-                                  <option value="right">Show right side</option>
-                                </select>
+                                <div style={rowS}>
+                                  <span style={lblS}>Left</span>
+                                  <input type="range" min="0" max="100" step="1" value={f.x} onChange={(e) => setF({ x: Number(e.target.value) })} title="Left ↔ right" style={{ flex: 1 }} />
+                                  <span style={{ ...lblS, textAlign: 'right' }}>Right</span>
+                                </div>
+                                <div style={rowS}>
+                                  <span style={lblS}>Out</span>
+                                  <input type="range" min="100" max="250" step="2" value={f.z} onChange={(e) => setF({ z: Number(e.target.value) })} title="Zoom out ↔ in" style={{ flex: 1 }} />
+                                  <span style={{ ...lblS, textAlign: 'right' }}>In</span>
+                                </div>
+                                {touched && (
+                                  <button type="button" className="btn-ghost" style={{ fontSize: 11, marginTop: 3, padding: '2px 6px' }} onClick={() => set(null)}>↺ Reset</button>
+                                )}
                               </div>
                               );
                             })}
