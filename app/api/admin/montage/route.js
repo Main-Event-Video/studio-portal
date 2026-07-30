@@ -323,7 +323,7 @@ export async function GET(request) {
     .from('studio_montages')
     .select('id, client_id, style, title, subtitle, status, video_url, r2_key, error, photo_count, watermarked, params, created_at, studio_clients(display_name, last_name)')
     .order('created_at', { ascending: false })
-    .limit(25);
+    .limit(500);   // was 25 (GLOBAL across all clients) — a busy day of rendering pushed older drafts out of view and broke per-client numbering. 500 keeps everyone's renders visible.
   if (error) return NextResponse.json({ error: 'Could not load renders', detail: error.message }, { status: 500 });
 
   // Studio file-naming: a stable per-client sequence number (oldest render = 001)
