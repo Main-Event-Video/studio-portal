@@ -329,6 +329,26 @@ function clientPassword(c) {
   return `${base}${mm}${dd}`;
 }
 
+// Build the portal-style { top, albums } arrangement from an ordered admin photo
+// list (each item carries { key: r2_key, album }). Contiguous same-album runs
+// become album blocks; everything else is a loose top-level item. Fed to
+// /api/admin/montage/arrange so admin + client persist order identically.
+function buildAdminArrangement(photos) {
+  const groups = [];
+  (photos || []).forEach((p) => {
+    const a = p.album || '';
+    let g = groups.length && groups[groups.length - 1].album === a ? groups[groups.length - 1] : null;
+    if (!g) { g = { album: a, photos: [] }; groups.push(g); }
+    g.photos.push(p);
+  });
+  const top = [], albums = {};
+  for (const g of groups) {
+    if (g.album) { top.push({ type: 'album', name: g.album }); albums[g.album] = (albums[g.album] || []).concat(g.photos.map((p) => p.key)); }
+    else { for (const p of g.photos) top.push({ type: 'media', key: p.key }); }
+  }
+  return { top, albums };
+}
+
 export default function AdminPage() {
   const [session, setSession] = useState(null);
   const [checked, setChecked] = useState(false);
@@ -399,6 +419,9 @@ export default function AdminPage() {
   const [showHidden, setShowHidden] = useState(false); // reveal hidden renders
   const [montageSort, setMontageSort] = useState('new'); // new|old|high|low|style
   const [montageStep, setMontageStep] = useState(1); // 1 edit · 2 style · 3 finish
+  const [reorderMode, setReorderMode] = useState(false); // admin photo reorder (writes same order as client)
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [orderErr, setOrderErr] = useState('');
 
   // Photo Editor (per-client): per-photo framing/fit/size/removed + global
   // colorCorrect. Persisted on the client row and applied to EVERY style render.
@@ -1652,6 +1675,12 @@ export default function AdminPage() {
                   <img src={p.url} alt={p.filename} draggable={false} style={{ width: '100%', height: '100%', ...styleFor(pe) }} />
                 </div>
                 <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{p.index}</span>
+                {reorderMode && (
+                  <div style={{ position: 'absolute', bottom: 4, left: 4, display: 'flex', gap: 4 }}>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); movePhoto(p, -1); }} title="Move earlier (within this album)" style={{ border: 'none', background: 'rgba(0,0,0,.72)', color: '#fff', borderRadius: 5, width: 24, height: 24, cursor: 'pointer', fontSize: 13, lineHeight: 1 }}>◀</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); movePhoto(p, 1); }} title="Move later (within this album)" style={{ border: 'none', background: 'rgba(0,0,0,.72)', color: '#fff', borderRadius: 5, width: 24, height: 24, cursor: 'pointer', fontSize: 13, lineHeight: 1 }}>▶</button>
+                  </div>
+                )}
                 {pe.removed && <span style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 9, background: '#e23b3b', color: '#fff', padding: '1px 5px', borderRadius: 4 }}>removed</span>}
               </div>
             );
@@ -1666,6 +1695,38 @@ export default function AdminPage() {
             g.photos.push(p);
           });
           const hasAlbums = groups.some((g) => g.album);
+          // ----- Admin reorder: writes the SAME order fields the client uses -----
+          const savePhotoOrder = async (nextPhotos) => {
+            setProjPhotos(nextPhotos.map((x, i) => ({ ...x, index: i + 1 })));
+            setSavingOrder(true); setOrderErr('');
+            try {
+              const { top, albums } = buildAdminArrangement(nextPhotos);
+              await api('/api/admin/montage/arrange', { method: 'POST', body: JSON.stringify({ clientId: c.id, top, albums }) });
+              await loadProjPhotos(c.id, true);
+            } catch (e) {
+              setOrderErr(e.message || 'Could not save order');
+              await loadProjPhotos(c.id, true);
+            }
+            setSavingOrder(false);
+          };
+          const movePhoto = (p, dir) => {
+            if (savingOrder) return;
+            const arr = projPhotos.slice();
+            const i = arr.findIndex((x) => x.key === p.key);
+            const j = i + dir;
+            if (i < 0 || j < 0 || j >= arr.length) return;
+            if ((arr[j].album || '') !== (arr[i].album || '')) return; // v1: reorder within the same album / loose group
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+            savePhotoOrder(arr);
+          };
+          const moveGroup = (gi, dir) => {
+            if (savingOrder) return;
+            const gg = groups.slice();
+            const j = gi + dir;
+            if (j < 0 || j >= gg.length) return;
+            [gg[gi], gg[j]] = [gg[j], gg[gi]];
+            savePhotoOrder(gg.flatMap((g) => g.photos));
+          };
           const gridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(122px, 1fr))', gap: 10 };
           const renderCells = (photos) => photos.map((p) => (
             <Fragment key={`c:${p.key || p.index}`}>
@@ -1678,8 +1739,14 @@ export default function AdminPage() {
             <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
                 <strong style={{ fontSize: 13 }}>Photo editor{' '}
-                  <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— double-click a photo to edit it; edits apply to every style</span></strong>
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed</span>
+                  <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— double-click to edit; toggle Reorder to move photos (saves for you and the client)</span></strong>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                  {savingOrder ? <span style={{ fontSize: 12, color: '#d8a83b' }}>Saving order…</span>
+                    : orderErr ? <span style={{ fontSize: 12, color: 'var(--red)' }}>{orderErr}</span>
+                    : reorderMode ? <span style={{ fontSize: 12, color: '#2f9e5b' }}>✓ order saved</span> : null}
+                  <button type="button" className={reorderMode ? 'btn-primary' : 'btn-ghost'} style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => setReorderMode((v) => !v)}>{reorderMode ? '✓ Done' : '↕ Reorder'}</button>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed</span>
+                </span>
               </div>
               {hasAlbums ? (
                 groups.map((g, gi) => {
@@ -1691,6 +1758,12 @@ export default function AdminPage() {
                       background: isAlbum ? 'linear-gradient(160deg, rgba(124,92,255,0.07), rgba(124,92,255,0.02))' : 'rgba(127,127,127,0.03)',
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        {reorderMode && groups.length > 1 && (
+                          <span style={{ display: 'inline-flex', gap: 3, flex: '0 0 auto' }}>
+                            <button type="button" onClick={() => moveGroup(gi, -1)} title="Move this section earlier" style={{ border: '1px solid var(--line)', background: 'transparent', color: '#e6eef5', borderRadius: 5, width: 22, height: 22, cursor: 'pointer' }}>↑</button>
+                            <button type="button" onClick={() => moveGroup(gi, 1)} title="Move this section later" style={{ border: '1px solid var(--line)', background: 'transparent', color: '#e6eef5', borderRadius: 5, width: 22, height: 22, cursor: 'pointer' }}>↓</button>
+                          </span>
+                        )}
                         {isAlbum && <span style={{ width: 10, height: 10, borderRadius: 3, background: '#7c5cff', flex: '0 0 auto' }} />}
                         <strong style={{ fontSize: 13 }}>{isAlbum ? g.album : 'Loose photos'}</strong>
                         <span style={{ color: 'var(--muted)', fontSize: 12 }}>{g.photos.length} photo{g.photos.length === 1 ? '' : 's'}</span>
