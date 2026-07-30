@@ -373,7 +373,7 @@ function framingObj(val) {
     return {
       y: isFinite(val.y) ? Math.min(100, Math.max(0, val.y)) : 0,
       x: isFinite(val.x) ? Math.min(100, Math.max(0, val.x)) : 50,
-      z: isFinite(val.z) ? Math.min(300, Math.max(100, val.z)) : 100,
+      z: isFinite(val.z) ? Math.min(300, Math.max(40, val.z)) : 100,
     };
   }
   if (typeof val === 'number' && isFinite(val)) return { ...d, y: Math.min(100, Math.max(0, val)) };
@@ -843,11 +843,19 @@ export default function AdminPage() {
   const [showVid, setShowVid] = useState({}); // per-render preview toggle
 
   // Persist framing picks as they're made (refresh-proof). Fire-and-forget.
+  // Debounced: a slider drag fires onChange dozens of times — without this each
+  // one POSTs, and overlapping saves can race so a fix "doesn't stick". Save ~400ms
+  // after the last change, always with the LATEST full map.
+  const adjSaveRef = useRef({ t: null, next: null });
   function saveAdjustments(montageId, next) {
-    api('/api/admin/montage/adjust', {
-      method: 'POST',
-      body: JSON.stringify({ montageId, adjustments: next }),
-    }).catch(() => {});
+    adjSaveRef.current.next = next;
+    if (adjSaveRef.current.t) clearTimeout(adjSaveRef.current.t);
+    adjSaveRef.current.t = setTimeout(() => {
+      api('/api/admin/montage/adjust', {
+        method: 'POST',
+        body: JSON.stringify({ montageId, adjustments: adjSaveRef.current.next }),
+      }).catch(() => {});
+    }, 400);
   }
 
   async function openAdjust(m) {
@@ -2297,7 +2305,7 @@ export default function AdminPage() {
                                 </div>
                                 <div style={rowS}>
                                   <span style={lblS}>Out</span>
-                                  <input type="range" min="100" max="250" step="2" value={f.z} onChange={(e) => setF({ z: Number(e.target.value) })} title="Zoom out ↔ in" style={{ flex: 1 }} />
+                                  <input type="range" min="40" max="250" step="2" value={f.z} onChange={(e) => setF({ z: Number(e.target.value) })} title="Wide out ↔ zoom in (100 = fills the frame)" style={{ flex: 1 }} />
                                   <span style={{ ...lblS, textAlign: 'right' }}>In</span>
                                 </div>
                                 {touched && (
