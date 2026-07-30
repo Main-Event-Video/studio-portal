@@ -166,13 +166,13 @@ export async function POST(request) {
     const top = Array.isArray(body.top) ? body.top : [];
     const albums = body.albums && typeof body.albums === 'object' ? body.albums : {};
 
-    try {
-      // Build every write up front, then run them in parallel chunks. The old
-      // code did 100+ sequential DB round-trips in one request, which blew past
-      // the serverless time limit on big reorders and failed (often after a
-      // partial save). Batching keeps even a 100+ photo reorder to a few fast
-      // waves, well inside the budget.
-      const mediaWrites = []; // array of () => Promise<string|null> (error message or null)
+    // Persist the whole arrangement. writeAll(withTLP) writes every position;
+    // if this DB predates the timeline_pos column (migration 006 never applied),
+    // the first pass throws a "timeline_pos" error and we retry WITHOUT it —
+    // sort_number still records the order. Writes run in parallel chunks so a
+    // 100+ photo reorder finishes in a few fast waves, not 100 serial trips.
+    const writeAll = async (withTLP) => {
+      const mediaWrites = []; // () => Promise<string|null> (error message or null)
       const albumRows = [];   // batched studio_boxes upsert payload
 
       let rank = 1;
@@ -181,16 +181,16 @@ export async function POST(request) {
         if (entry.type === 'media' && entry.id) {
           const pos = rank, id = entry.id;
           mediaWrites.push(async () => {
-            const { error } = await db.from('studio_media')
-              .update({ folder_path: null, timeline_pos: pos })
+            const patch = withTLP
+              ? { folder_path: null, timeline_pos: pos }
+              : { folder_path: null, sort_number: pos };
+            const { error } = await db.from('studio_media').update(patch)
               .eq('client_id', client.id).eq('kind', 'client_upload').eq('id', id);
             return error ? error.message : null;
           });
         } else if (entry.type === 'album' && entry.name) {
           const name = String(entry.name).trim();
           if (!name) continue;
-          // Album row upserted below (batched) so its position persists even if
-          // it had no studio_boxes row yet (implied album, or pre-005 data).
           albumRows.push({ client_id: client.id, name, position: rank });
         } else {
           continue;
@@ -198,7 +198,6 @@ export async function POST(request) {
         rank++;
       }
 
-      // Media inside each album: folder_path + within-album order.
       for (const [name, ids] of Object.entries(albums)) {
         const albumName = String(name).trim();
         if (!albumName || !Array.isArray(ids)) continue;
@@ -206,8 +205,10 @@ export async function POST(request) {
         for (const id of ids) {
           const pos = j, mid = id;
           mediaWrites.push(async () => {
-            const { error } = await db.from('studio_media')
-              .update({ folder_path: albumName, sort_number: pos, timeline_pos: null })
+            const patch = withTLP
+              ? { folder_path: albumName, sort_number: pos, timeline_pos: null }
+              : { folder_path: albumName, sort_number: pos };
+            const { error } = await db.from('studio_media').update(patch)
               .eq('client_id', client.id).eq('kind', 'client_upload').eq('id', mid);
             return error ? error.message : null;
           });
@@ -215,19 +216,29 @@ export async function POST(request) {
         }
       }
 
-      // Album positions: one batched upsert.
       if (albumRows.length) {
         const { error } = await db.from('studio_boxes')
           .upsert(albumRows, { onConflict: 'client_id,name' });
         if (error) throw new Error(error.message);
       }
 
-      // Media position writes: parallel, capped concurrency to respect limits.
       const CHUNK = 20;
       for (let i = 0; i < mediaWrites.length; i += CHUNK) {
         const results = await Promise.all(mediaWrites.slice(i, i + CHUNK).map((fn) => fn()));
         const firstErr = results.find((r) => r);
         if (firstErr) throw new Error(firstErr);
+      }
+    };
+
+    try {
+      try {
+        await writeAll(true);
+      } catch (e) {
+        if (/timeline_pos/i.test(String(e?.message || e))) {
+          await writeAll(false); // DB has no timeline_pos column — order via sort_number only
+        } else {
+          throw e;
+        }
       }
     } catch (e) {
       return NextResponse.json({ error: 'Could not save your order', detail: String(e.message || e) }, { status: 500 });

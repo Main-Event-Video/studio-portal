@@ -455,7 +455,7 @@ export default function Uploader({ token }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, ...payload }),
       });
-      if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || 'Could not save your change'); }
+      if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error([j.error, j.detail].filter(Boolean).join(' — ') || 'Could not save your change'); }
       await loadMine();
       setSaveErr(false);
     } catch (e) { setOrgMsg(e.message || 'Something went wrong.'); setSaveErr(true); }
