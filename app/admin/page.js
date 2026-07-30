@@ -844,7 +844,10 @@ export default function AdminPage() {
     setAdjSpeed(m.photoSeconds ? String(m.photoSeconds) : '');
     setAdjPhotos([]);
     try {
-      const { photos } = await api(`/api/admin/montage/photos?clientId=${m.clientId}`);
+      // Render-specific: ONLY the photos in THIS render, in play order, each with
+      // its page/cell + real cell aspect (Multi-Page) so the adjuster mirrors the
+      // actual montage boxes — not the client's whole library.
+      const { photos } = await api(`/api/admin/montage/photos?montageId=${m.id}`);
       setAdjPhotos(photos);
     } catch (err) {
       setMErr(true);
@@ -2224,7 +2227,7 @@ export default function AdminPage() {
                           Photos in montage order. For any photo cropped badly, pick which part to show,
                           then re-render. A re-render is a full new render (uses credits).
                         </p>
-                        {(() => { const isMP = MULTIPAGE_STYLES.has(adjFor?.style); const labels = isMP ? mpFrameLabels(adjPhotos.length) : null; return (
+                        {(() => { const isMP = adjPhotos.some((p) => p.page != null); return (
                         adjPhotos.length === 0 ? (
                           <p style={{ color: 'var(--muted)' }}>Loading photos…</p>
                         ) : (
@@ -2243,13 +2246,13 @@ export default function AdminPage() {
                                 return next;
                               });
                               const cur = adjMap[p.key];
-                              const lab = labels ? labels[i] : null;
+                              const lab = (p.page != null) ? { page: p.page, cell: p.cell, cells: p.cells } : null;
                               return (
                               <div key={p.key} style={{ border: cur != null ? '1px solid var(--blue)' : '1px solid var(--line)', borderRadius: 10, padding: 8, background: cur != null ? 'rgba(61,123,255,0.05)' : 'transparent' }}>
                                 <img
                                   src={p.url}
                                   alt={p.filename}
-                                  style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', objectPosition: framingObjectPos(cur), borderRadius: 6, display: 'block' }}
+                                  style={{ width: '100%', aspectRatio: p.cellAspect ? String(p.cellAspect) : '16/9', objectFit: 'cover', objectPosition: framingObjectPos(cur), borderRadius: 6, display: 'block', background: '#0c0f16' }}
                                 />
                                 {lab && (
                                   <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--blue)', margin: '5px 0 1px' }}>
