@@ -337,6 +337,8 @@ export async function GET(request) {
       id: m.id,
       seq: String(seqMap.get(m.id) || 1).padStart(3, '0'),
       version: verMap.get(m.id) || 1,
+      name: renderName(m),               // full studio file name (###_Last_Style_Album_Range_Date_V#.mp4)
+      album: m.params?.album || null,    // album this render was built from (if any)
       clientId: m.client_id,
       client: m.studio_clients?.display_name || '—',
       style: m.style,

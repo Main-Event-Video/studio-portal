@@ -2149,11 +2149,18 @@ export default function AdminPage() {
                     </button>
                   </span>
                 </div>
+                {/* Full studio file name (the naming device) — click to select/copy */}
+                {m.name && (
+                  <div className="mono" title="Studio file name — click to select" style={{ marginTop: 5, fontSize: 11.5, color: '#9fb4ff', wordBreak: 'break-all', userSelect: 'all', cursor: 'text' }}>
+                    {m.name}
+                  </div>
+                )}
                 {/* Meta line: rez + tags + details + time-ago */}
                 <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--muted)' }}>
                   {m.watermarked
                     ? <span className="pill">low rez</span>
                     : <span className="pill" style={{ background: '#2f6bff', color: '#fff', borderColor: '#2f6bff', fontWeight: 700, letterSpacing: '.03em' }}>HIGH REZ</span>}
+                  {m.album && <span className="pill" style={{ borderColor: '#7c5cff', color: '#b9a7ff' }} title="Album this render was built from">🎞 {m.album}</span>}
                   {m.starred && <span className="pill" style={{ color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
                   {m.includeCards === false && <span className="pill">no cards</span>}
                   {m.hidden && <span className="pill">hidden</span>}
