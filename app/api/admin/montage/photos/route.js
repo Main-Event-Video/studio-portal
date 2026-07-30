@@ -87,6 +87,11 @@ export async function GET(request) {
       // lay is aligned to non-placeholder items in order; skip the leading green.
       layout = green ? lay.slice(1, 1 + photoItems.length) : lay.slice(0, photoItems.length);
     }
+    // For single-photo cover styles, the framer preview box must match the shape the
+    // photo is actually cropped into so the preview lines up with the export.
+    //   • Duotone  → the 58%×84% hero box.
+    //   • other cover-fill styles → the full 16:9 frame (preview default handles it).
+    const focalAspect = st.duotone ? (0.58 * 1920) / (0.84 * 1080) : null;
 
     const photos = await Promise.all(photoItems.map(async (it, i) => ({
       index: i + 1,
@@ -95,7 +100,9 @@ export async function GET(request) {
       album: it.album,
       url: it.url,
       downloadUrl: await getDownloadUrl(it.r2_key, it.filename || 'photo', 3600),
-      ...(layout && layout[i] ? { page: layout[i].page, cell: layout[i].cell, cells: layout[i].cells, cellAspect: layout[i].cellAspect } : {}),
+      ...(layout && layout[i]
+        ? { page: layout[i].page, cell: layout[i].cell, cells: layout[i].cells, cellAspect: layout[i].cellAspect }
+        : (focalAspect ? { cellAspect: focalAspect } : {})),
     })));
     return NextResponse.json({ photos, style: m.style, multipage: !!st.multipage });
   }
