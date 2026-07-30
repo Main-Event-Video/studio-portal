@@ -940,6 +940,7 @@ export default function AdminPage() {
               return t > 0 ? Math.round(t * 1000) / 1000 : null;
             })(),
             photoSpec: s.photos.trim() || null,
+            album: s.album || null,
             includeCards: s.cards,
             greenScreen: s.green !== false,
             background: s.bgMode === 'green'
@@ -1986,7 +1987,7 @@ export default function AdminPage() {
               }}>
                 {/* Header: title + status badge + remove (X) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                  <strong style={{ fontSize: 15 }}>{m.title}</strong>
+                  <strong style={{ fontSize: 15 }}>{m.seq && <span className="mono" style={{ color: 'var(--blue)', marginRight: 8 }}>#{m.seq}</span>}{m.title}</strong>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
                     {(() => {
                       const st = m.status === 'rendering' || m.status === 'queued'

@@ -48,7 +48,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -193,6 +193,7 @@ export async function POST(request) {
         // Photo selection for this segment: the raw expression (for display) and
         // the resolved 1-based positions (for exact re-renders). Blank = all.
         photoSpec: photoSpec ? String(photoSpec).trim() : null,
+        album: album ? String(album).trim() : null,
         photoIndexes: indexes,
         includeCards: includeCards !== false,
         videoPlaceholders: videoPlaceholders !== false,
@@ -300,14 +301,41 @@ export async function GET(request) {
   const db = createServiceClient();
   const { data, error } = await db
     .from('studio_montages')
-    .select('id, client_id, style, title, subtitle, status, video_url, r2_key, error, photo_count, watermarked, params, created_at, studio_clients(display_name)')
+    .select('id, client_id, style, title, subtitle, status, video_url, r2_key, error, photo_count, watermarked, params, created_at, studio_clients(display_name, last_name)')
     .order('created_at', { ascending: false })
     .limit(25);
   if (error) return NextResponse.json({ error: 'Could not load renders', detail: error.message }, { status: 500 });
 
+  // Studio file-naming: a stable per-client sequence number (oldest render = 001)
+  // — shown on the card AND used as the filename prefix so a draft maps back to a
+  // card — plus a version that bumps for re-renders of the same client + style +
+  // range + album.
+  const seqMap = new Map(), verMap = new Map(), perClient = {}, perVariant = {};
+  for (const r of [...(data || [])].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())) {
+    const cid = r.client_id || '';
+    perClient[cid] = (perClient[cid] || 0) + 1;
+    seqMap.set(r.id, perClient[cid]);
+    const vk = `${cid}|${r.style}|${r.params?.photoSpec || ''}|${r.params?.album || ''}`;
+    perVariant[vk] = (perVariant[vk] || 0) + 1;
+    verMap.set(r.id, perVariant[vk]);
+  }
+  const STYLE_LABELS = { hollywood: 'Hollywood', timeless: 'Timeless', party: 'Party', party2: 'Party2', duotone: 'Duotone', duotone2: 'Duotone2', polaroid: 'PolaroidDrop', photo_drop: 'PhotoDrop', collage_classic: 'CollageClassic', collage_featured: 'CollageFeatured', gallery150: 'Gallery', epic_vintage: 'EpicVintage', story_builder: 'StoryBuilder', trendy: 'Trendy', multi_page: 'MultiPage', multi_page_record: 'MultiPageRecord' };
+  const cp = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '');
+  const renderName = (m) => {
+    const seq = String(seqMap.get(m.id) || 1).padStart(3, '0');
+    const last = cp(m.studio_clients?.last_name || m.studio_clients?.display_name) || 'Client';
+    const style = STYLE_LABELS[m.style] || cp(m.style) || 'Montage';
+    const album = cp(m.params?.album);
+    const range = String(m.params?.photoSpec || '').replace(/\s+/g, '').replace(/[^0-9,\-]/g, '') || 'all';
+    const date = (m.created_at || '').slice(0, 10) || 'nodate';
+    return [seq, last, style, album, range, date].filter(Boolean).join('_') + `_V${verMap.get(m.id) || 1}.mp4`;
+  };
+
   const montages = await Promise.all(
     (data || []).map(async (m) => ({
       id: m.id,
+      seq: String(seqMap.get(m.id) || 1).padStart(3, '0'),
+      version: verMap.get(m.id) || 1,
       clientId: m.client_id,
       client: m.studio_clients?.display_name || '—',
       style: m.style,
@@ -332,7 +360,7 @@ export async function GET(request) {
       // saves to a folder instead of navigating to the video (cross-origin
       // `download` is ignored by browsers). Only available for our R2 copies.
       downloadUrl: m.r2_key
-        ? await getDownloadUrl(m.r2_key, `${(m.studio_clients?.display_name || 'montage').replace(/[^\w-]+/g, '_')}_${m.style}_${m.photo_count || 0}_${(m.created_at || '').slice(0, 10)}.mp4`, 3600)
+        ? await getDownloadUrl(m.r2_key, renderName(m), 3600)
         : null,
       archived: !!m.r2_key, // false = still only on Creatomate's 30-day hosting
     }))
