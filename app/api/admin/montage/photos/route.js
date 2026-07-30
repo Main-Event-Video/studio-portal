@@ -83,7 +83,7 @@ export async function GET(request) {
       const green = m.params?.greenScreen !== false;
       const g = { type: 'photo', url: 'green', w: 1920, h: 1080 };
       const items = green ? [g, ...photoItems, g] : photoItems;
-      const lay = multiPageLayout({ items, width: 1920, height: 1080 });
+      const lay = multiPageLayout({ items, width: 1920, height: 1080, twoPanel: !!st.twoPanel });
       // lay is aligned to non-placeholder items in order; skip the leading green.
       layout = green ? lay.slice(1, 1 + photoItems.length) : lay.slice(0, photoItems.length);
     }

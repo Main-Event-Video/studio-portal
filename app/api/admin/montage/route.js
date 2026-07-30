@@ -359,7 +359,7 @@ export async function GET(request) {
       verMap.set(r.id, perVariant[vk]);
     }
   }
-  const STYLE_LABELS = { hollywood: 'Hollywood', timeless: 'Timeless', party: 'Party', party2: 'Party2', duotone: 'Duotone', duotone2: 'Duotone2', polaroid: 'PolaroidDrop', photo_drop: 'PhotoDrop', collage_classic: 'CollageClassic', collage_featured: 'CollageFeatured', gallery150: 'Gallery', epic_vintage: 'EpicVintage', story_builder: 'StoryBuilder', trendy: 'Trendy', multi_page: 'MultiPage', multi_page_record: 'MultiPageRecord' };
+  const STYLE_LABELS = { hollywood: 'Hollywood', timeless: 'Timeless', party: 'Party', party2: 'Party2', duotone: 'Duotone', duotone2: 'Duotone2', polaroid: 'PolaroidDrop', photo_drop: 'PhotoDrop', collage_classic: 'CollageClassic', collage_featured: 'CollageFeatured', gallery150: 'Gallery', epic_vintage: 'EpicVintage', story_builder: 'StoryBuilder', trendy: 'Trendy', multi_page: 'MultiPage', multi_page_record: 'MultiPageRecord', two_panel: 'TwoPanel' };
   const cp = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '');
   // The number prefix: ### for a low-rez/draft, ###HR for a full-rez export — same
   // number, so a high-rez file sorts right next to the draft it came from.

@@ -352,7 +352,7 @@ function buildAdminArrangement(photos) {
 // Which page + cell each photo lands in, for the MULTI-PAGE models only — mirrors
 // multiPageSource's grouping (pages of 4,3,4,3…). Lets the framing adjuster tell
 // the studio exactly where each image plays so a fix targets the right frame.
-const MULTIPAGE_STYLES = new Set(['multi_page', 'multi_page_record']);
+const MULTIPAGE_STYLES = new Set(['multi_page', 'multi_page_record', 'two_panel']);
 function mpFrameLabels(n) {
   const sizes = [4, 3, 4, 3];
   const out = [];
@@ -438,6 +438,7 @@ export default function AdminPage() {
     { value: 'trendy', label: 'Trendy Photo Wall — 3D angled grid of matte prints' },
     { value: 'multi_page', label: 'Multi Page — green screen, images pop on one by one' },
     { value: 'multi_page_record', label: 'Multi Page Record — green screen, page pivots then reveals' },
+    { value: 'two_panel', label: 'Two Panel — green screen, 2 photos per card, sides alternate' },
   ];
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
@@ -1885,17 +1886,19 @@ export default function AdminPage() {
             </div>
             {(() => {
               const st = segments[0]?.style;
-              if (st !== 'multi_page' && st !== 'multi_page_record') return null;
+              if (!MULTIPAGE_STYLES.has(st)) return null;
               const seg = segments[0] || {};
               const set = (patch) => setSegments((arr) => arr.map((x) => ({ ...x, ...patch })));
-              const TRANS = [
-                ['record-fwd', 'Record forward'], ['record-back', 'Record backward'],
-                ['slide-left', 'Slide left'], ['slide-right', 'Slide right'],
-                ['slide-up', 'Slide up'], ['slide-down', 'Slide down'], ['random', 'Random'],
-              ];
+              const TRANS = st === 'two_panel'
+                ? [['record-fwd', 'Alternating sides (default)'], ['dissolve', 'Dissolve']]
+                : [
+                    ['record-fwd', 'Record forward'], ['record-back', 'Record backward'],
+                    ['slide-left', 'Slide left'], ['slide-right', 'Slide right'],
+                    ['slide-up', 'Slide up'], ['slide-down', 'Slide down'], ['dissolve', 'Dissolve'], ['random', 'Random'],
+                  ];
               return (
                 <div style={{ marginTop: 16, border: '1px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'rgba(61,123,255,0.06)' }}>
-                  <strong style={{ fontSize: 13 }}>Multi Page options</strong>
+                  <strong style={{ fontSize: 13 }}>{st === 'two_panel' ? 'Two Panel' : 'Multi Page'} options</strong>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10, alignItems: 'flex-end' }}>
                     <label style={{ fontSize: 12, color: 'var(--muted)' }}>
                       {st === 'multi_page_record' ? 'Page exit motion' : 'Image entrance motion'}
