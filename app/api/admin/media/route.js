@@ -50,7 +50,20 @@ export async function GET(request) {
       url: await getViewUrl(m.r2_key, 3600),
     }))
   );
-  return NextResponse.json({ files });
+
+  // Also return the client's albums (studio_boxes) so the admin UI can show
+  // EMPTY albums (no photos yet) — otherwise a just-created or emptied album
+  // would be invisible and impossible to rename or delete.
+  let boxes = [];
+  {
+    let { data: bx } = await db.from('studio_boxes')
+      .select('name, position, hidden_at').eq('client_id', clientId).order('position', { ascending: true });
+    if (!Array.isArray(bx)) ({ data: bx } = await db.from('studio_boxes')
+      .select('name, position').eq('client_id', clientId).order('position', { ascending: true }));
+    boxes = Array.isArray(bx) ? bx : [];
+  }
+
+  return NextResponse.json({ files, boxes });
 }
 
 export async function POST(request) {

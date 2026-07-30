@@ -447,6 +447,7 @@ export default function AdminPage() {
 
   // client file manager (reorder / rename / move / delete / download)
   const [mediaFiles, setMediaFiles] = useState([]);
+  const [mediaBoxes, setMediaBoxes] = useState([]); // client's albums incl. EMPTY ones (studio_boxes)
   const [mediaClientId, setMediaClientId] = useState(null);
   const [mediaLoading, setMediaLoading] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
@@ -456,6 +457,7 @@ export default function AdminPage() {
   const [selIds, setSelIds] = useState(() => new Set());
   const [zipBusy, setZipBusy] = useState(false);
   const [pendingHide, setPendingHide] = useState(null); // album name awaiting hide-confirm
+  const [pendingDeleteBox, setPendingDeleteBox] = useState(null); // empty-album name awaiting delete-confirm
   const lastPickRef = useRef(null);
 
   // deliver a cut (step 6)
@@ -584,8 +586,9 @@ export default function AdminPage() {
     if (!force && mediaClientId === clientId) return;
     setMediaLoading(true);
     try {
-      const { files } = await api(`/api/admin/media?clientId=${clientId}`);
+      const { files, boxes } = await api(`/api/admin/media?clientId=${clientId}`);
       setMediaFiles(files || []);
+      setMediaBoxes(boxes || []);
       if (mediaClientId !== clientId) { setSelIds(new Set()); lastPickRef.current = null; }
       setMediaClientId(clientId);
     } catch (err) {
@@ -1230,10 +1233,17 @@ export default function AdminPage() {
   function renderFilesTool(c) {
     const showing = mediaClientId === c.id;
     const files = showing ? mediaFiles : [];
+    const boxes = showing ? mediaBoxes : [];
     const groups = {};
     for (const f of files) {
       const k = f.folderPath || '';
       (groups[k] = groups[k] || []).push(f);
+    }
+    // Seed EMPTY albums (studio_boxes with no photos) so they still render — you
+    // can't rename or delete an album you can't see.
+    for (const b of boxes) {
+      const n = (b.name || '').trim();
+      if (n && n !== TRASH_FOLDER && !(n in groups)) groups[n] = [];
     }
     const keys = Object.keys(groups).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, undefined, { numeric: true })));
     const folderNames = keys.filter((k) => k !== '');
@@ -1247,7 +1257,16 @@ export default function AdminPage() {
               ? 'Loading files…'
               : `${files.length} file${files.length === 1 ? '' : 's'}. Edit a number to reorder, rename files or folders, type a folder to move a file, or delete. Tick photos (or drag a box across them) to select, then Download selected. Changes save as you make them — this view auto-refreshes.`}
           </p>
-          <button type="button" className="btn-ghost" onClick={() => loadMedia(c.id, true)}>Refresh</button>
+          <span style={{ display: 'flex', gap: 8, flex: '0 0 auto' }}>
+            <button type="button" className="btn-ghost" disabled={mediaBusy} title="Create a new (empty) album, then move photos into it"
+              onClick={() => {
+                const name = (window.prompt('New album name:') || '').trim();
+                if (!name) return;
+                if (/^trash$/i.test(name)) { setMErr(true); setMMsg('“Trash” is a reserved name — please pick a different album name.'); return; }
+                mediaAction(c.id, { action: 'createBox', name });
+              }}>＋ New album</button>
+            <button type="button" className="btn-ghost" onClick={() => loadMedia(c.id, true)}>Refresh</button>
+          </span>
         </div>
 
         {selN > 0 && (
@@ -1326,10 +1345,23 @@ export default function AdminPage() {
                   )
                 ) : (
                   <>
-                    <button type="button" className="btn-ghost" style={{ fontSize: 12 }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'renumber', ids: list.map((m) => m.id) })}>
-                      Renumber 1…{list.length}
-                    </button>
-                    {isAlbum && (hidden ? (
+                    {list.length > 0 && (
+                      <button type="button" className="btn-ghost" style={{ fontSize: 12 }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'renumber', ids: list.map((m) => m.id) })}>
+                        Renumber 1…{list.length}
+                      </button>
+                    )}
+                    {isAlbum && list.length === 0 && (
+                      pendingDeleteBox === k ? (
+                        <span style={{ whiteSpace: 'nowrap' }}>
+                          <span style={{ color: 'var(--muted)', fontSize: 12, marginRight: 6 }}>Delete empty album?</span>
+                          <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--red)' }} disabled={mediaBusy} onClick={() => { mediaAction(c.id, { action: 'deleteBox', name: k }); setPendingDeleteBox(null); }}>Confirm delete</button>{' '}
+                          <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setPendingDeleteBox(null)}>Cancel</button>
+                        </span>
+                      ) : (
+                        <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--red)' }} disabled={mediaBusy} onClick={() => setPendingDeleteBox(k)} title="Delete this empty album">🗑 Delete empty album</button>
+                      )
+                    )}
+                    {isAlbum && list.length > 0 && (hidden ? (
                       <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--ok)' }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'unhideBox', name: k })}>↩ Restore album</button>
                     ) : pendingHide === k ? (
                       <span style={{ whiteSpace: 'nowrap' }}>
