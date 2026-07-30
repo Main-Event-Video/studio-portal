@@ -551,7 +551,7 @@ export default function AdminPage() {
   function chooseTool(c, tool) {
     const next = activeTool === tool ? null : tool;
     setActiveTool(next);
-    if (next === 'montage') { loadProjPhotos(c.id); loadPhotoEdits(c.id); } // photos + saved edits
+    if (next === 'montage') { loadProjPhotos(c.id, true); loadPhotoEdits(c.id); } // force a fresh read so client reorders always show
     if (next === 'intake') loadIntake(c.id);
     if (next === 'files') loadMedia(c.id);
   }
