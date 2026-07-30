@@ -7,7 +7,7 @@ import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl } from '@/lib/r2';
 import { orderedClientMedia } from '@/lib/clientTimeline';
-import { multiPageLayout, STYLES } from '@/lib/montage';
+import { multiPageLayout, twoPanelLayout, STYLES } from '@/lib/montage';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -77,7 +77,10 @@ export async function GET(request) {
 
     const st = STYLES[m.style] || {};
     let layout = null;
-    if (st.multipage) {
+    if (st.twoPanel) {
+      // Two Panel pairs photos (no green bookends); each gets a 16:9 or 9:16 frame.
+      layout = twoPanelLayout({ items: photoItems }).slice(0, photoItems.length);
+    } else if (st.multipage) {
       // Reproduce the render's grouping EXACTLY, including the green bookends that
       // occupy cells (greenScreen defaults on) so page/cell numbers line up.
       const green = m.params?.greenScreen !== false;
