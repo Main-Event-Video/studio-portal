@@ -1010,7 +1010,14 @@ export default function AdminPage() {
     }
   }
 
-  async function toggleArchive(id) {
+  async function toggleArchive(id, isArchived, name) {
+    // Archiving FREEZES the client's portal — they can't reorder, add albums, or
+    // save anything until it's unarchived — so guard it behind a confirm to stop
+    // accidental clicks. Unarchiving is harmless and goes straight through.
+    if (!isArchived && typeof window !== 'undefined') {
+      const who = name ? `“${name}”` : 'this client';
+      if (!window.confirm(`Archive ${who}?\n\nThis FREEZES their portal — they won't be able to reorder photos, create albums, or save any changes until you unarchive. Only archive once the project is finished.`)) return;
+    }
     try {
       await api(`/api/admin/clients/${id}`, {
         method: 'PATCH',
@@ -2250,7 +2257,7 @@ export default function AdminPage() {
                   </span>
                 )}
                 <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>
-                <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>{c.archived ? 'Unarchive' : 'Archive'}</button>
+                <button className="btn-ghost" onClick={() => toggleArchive(c.id, c.archived, c.display_name)}>{c.archived ? 'Unarchive' : 'Archive'}</button>
               </div>
               <div className="client-workspace">
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -2354,7 +2361,7 @@ export default function AdminPage() {
                         <td className="mono" style={{ whiteSpace: 'nowrap' }}>{clientPassword(c) || '—'}</td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
-                          <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>
+                          <button className="btn-ghost" onClick={() => toggleArchive(c.id, c.archived, c.display_name)}>
                             {c.archived ? 'Unarchive' : 'Archive'}
                           </button>
                         </td>

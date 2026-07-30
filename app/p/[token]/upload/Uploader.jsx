@@ -692,8 +692,10 @@ export default function Uploader({ token }) {
 
   function createBox() {
     const v = newName.trim();
+    if (!v) { setNewName(''); setNaming(false); return; }
+    // "Trash" collides with the system trash folder — block it with a friendly nudge.
+    if (/^trash$/i.test(v)) { setOrgMsg('“Trash” is a reserved name — please choose another name for your album.'); return; }
     setNewName(''); setNaming(false);
-    if (!v) return;
     if (!allBoxes.includes(v)) organize({ action: 'createBox', name: v }); // saves the album (persists even empty) + reloads
     pickInto(v); // opens the picker within this tap so they can add photos now
   }
@@ -1144,7 +1146,7 @@ export default function Uploader({ token }) {
       {libOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(8,7,12,0.96)', overflowY: 'auto', padding: 20 }}>
           <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 6, background: 'rgba(8,7,12,0.98)', padding: '10px 0' }}>
               <h2 style={{ color: '#fff', margin: 0, fontSize: 20 }}>Photo Library</h2>
               <span style={{ flex: 1 }} />
               <button type="button" disabled={!libUndo.length} onClick={undoLibMove} title="Undo the last move"
@@ -1155,7 +1157,7 @@ export default function Uploader({ token }) {
             </div>
             <p style={{ color: '#9fb3c8', fontSize: 13, margin: '0 0 12px' }}>This top-to-bottom order is <b style={{ color: '#38b6ff' }}>exactly how your video plays</b> — every move updates it live. Click a photo to select (Shift-click for a range), then <b>Move ▾</b>. Drag a photo onto another to drop it right before that spot, in any album.</p>
             {librarySel.size > 0 && (
-              <div style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(8,7,12,0.96)', padding: '8px 0', marginBottom: 6 }}>
+              <div style={{ position: 'sticky', top: 64, zIndex: 5, display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(8,7,12,0.96)', padding: '8px 0', marginBottom: 6 }}>
                 <button type="button" onClick={(e) => openMoveMenu(e, [...librarySel])}
                   style={{ border: 'none', background: '#7c5cff', color: '#0d0913', borderRadius: 11, padding: '9px 14px', cursor: 'pointer', fontWeight: 800, fontSize: 13.5 }}>Move {librarySel.size} selected to ▾</button>
                 <button type="button" onClick={() => setLibrarySel(new Set())}

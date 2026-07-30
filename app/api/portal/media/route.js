@@ -125,6 +125,8 @@ export async function POST(request) {
   if (action === 'createBox') {
     const name = String(body.name || '').trim();
     if (!name) return NextResponse.json({ error: 'Album needs a name' }, { status: 400 });
+    // "Trash" (any casing) collides with the system trash folder — reserve it.
+    if (/^trash$/i.test(name)) return NextResponse.json({ error: '“Trash” is a reserved name — please pick a different album name.' }, { status: 400 });
     const { data: last } = await db
       .from('studio_boxes').select('position')
       .eq('client_id', client.id).order('position', { ascending: false }).limit(1);
@@ -140,6 +142,8 @@ export async function POST(request) {
     const from = String(body.from || '').trim();
     const to = String(body.to || '').trim();
     if (!from || !to) return NextResponse.json({ error: 'Missing album name' }, { status: 400 });
+    // Don't let an album be renamed INTO the reserved system-trash name.
+    if (/^trash$/i.test(to)) return NextResponse.json({ error: '“Trash” is a reserved name — please pick a different album name.' }, { status: 400 });
     await db.from('studio_boxes').update({ name: to }).eq('client_id', client.id).eq('name', from);
     await db.from('studio_media').update({ folder_path: to })
       .eq('client_id', client.id).eq('kind', 'client_upload').eq('folder_path', from);
