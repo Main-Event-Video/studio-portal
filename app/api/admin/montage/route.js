@@ -176,6 +176,18 @@ export async function POST(request) {
     );
   }
 
+  // Stable per-client render NUMBER, stamped at creation so it never shifts or
+  // recycles when other renders are removed. The old number was recomputed by
+  // position on every read, so deleting/re-rendering reshuffled it and exports
+  // collected duplicate ###'s. next = 1 + the highest number already in use.
+  let nextSeq = 1;
+  try {
+    const { data: prior } = await db.from('studio_montages').select('params').eq('client_id', client.id);
+    let maxStored = 0; const count = (prior || []).length;
+    for (const p of prior || []) { const s = Number(p?.params?.seq); if (Number.isFinite(s)) maxStored = Math.max(maxStored, s); }
+    nextSeq = Math.max(maxStored, count) + 1;
+  } catch { /* leave at 1; GET keeps a positional fallback for un-stamped rows */ }
+
   // Track the job first so the webhook has a row to update.
   const { data: row, error: insErr } = await db
     .from('studio_montages')
@@ -188,6 +200,7 @@ export async function POST(request) {
       photo_count: photoItems.length,
       watermarked: !!watermark,
       params: {
+        seq: nextSeq,      // permanent studio render number (never recycled)
         photoSeconds: photoSeconds ? Number(photoSeconds) : null,
         totalSeconds: totalSeconds ? Number(totalSeconds) : null,
         adjustments: adjustments && typeof adjustments === 'object' ? adjustments : {},
@@ -311,14 +324,25 @@ export async function GET(request) {
   // — shown on the card AND used as the filename prefix so a draft maps back to a
   // card — plus a version that bumps for re-renders of the same client + style +
   // range + album.
-  const seqMap = new Map(), verMap = new Map(), perClient = {}, perVariant = {};
-  for (const r of [...(data || [])].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())) {
-    const cid = r.client_id || '';
-    perClient[cid] = (perClient[cid] || 0) + 1;
-    seqMap.set(r.id, perClient[cid]);
-    const vk = `${cid}|${r.style}|${r.params?.photoSpec || ''}|${r.params?.album || ''}`;
-    perVariant[vk] = (perVariant[vk] || 0) + 1;
-    verMap.set(r.id, perVariant[vk]);
+  const seqMap = new Map(), verMap = new Map(), perVariant = {};
+  // Group by client so each client numbers independently.
+  const byClient = {};
+  for (const r of (data || [])) { const cid = r.client_id || ''; (byClient[cid] = byClient[cid] || []).push(r); }
+  for (const cid in byClient) {
+    const rows = byClient[cid].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    // Renders created after this fix carry a PERMANENT params.seq — honor it so the
+    // number never shifts. Older un-stamped rows fill the remaining numbers by
+    // creation order, skipping any already claimed by a stamped render (so no dup).
+    const claimed = new Set();
+    for (const r of rows) { const s = Number(r.params?.seq); if (Number.isFinite(s)) { seqMap.set(r.id, s); claimed.add(s); } }
+    let next = 1;
+    for (const r of rows) {
+      if (!seqMap.has(r.id)) { while (claimed.has(next)) next++; seqMap.set(r.id, next); claimed.add(next); next++; }
+      // Version bumps for re-renders of the same client+style+range+album, in creation order.
+      const vk = `${cid}|${r.style}|${r.params?.photoSpec || ''}|${r.params?.album || ''}`;
+      perVariant[vk] = (perVariant[vk] || 0) + 1;
+      verMap.set(r.id, perVariant[vk]);
+    }
   }
   const STYLE_LABELS = { hollywood: 'Hollywood', timeless: 'Timeless', party: 'Party', party2: 'Party2', duotone: 'Duotone', duotone2: 'Duotone2', polaroid: 'PolaroidDrop', photo_drop: 'PhotoDrop', collage_classic: 'CollageClassic', collage_featured: 'CollageFeatured', gallery150: 'Gallery', epic_vintage: 'EpicVintage', story_builder: 'StoryBuilder', trendy: 'Trendy', multi_page: 'MultiPage', multi_page_record: 'MultiPageRecord' };
   const cp = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '');
