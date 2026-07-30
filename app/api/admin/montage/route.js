@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl } from '@/lib/r2';
-import { buildMontageSource, STYLES, parsePhotoSpec } from '@/lib/montage';
+import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
 import { isHeic } from '@/lib/heic';
@@ -243,7 +243,7 @@ export async function POST(request) {
     // tiled/print walls, Epic, plus Photo Drop (native-aspect card) and Story
     // Builder (aspect-aware fan). Without this, aspect defaults to square and
     // Photo Drop squishes landscapes.
-    const needsDims = !!(st.collage || st.epic || st.trendy || st.wholePhoto || st.story || st.multipage || st.duotone || st.pan);
+    const needsDims = styleNeedsDims(st);
     // Long-lived presigned URLs — Creatomate fetches these while rendering.
     // Placeholders carry only a name (a green gap the editor keys their clip into).
     const photoItemsBuilt = await Promise.all(

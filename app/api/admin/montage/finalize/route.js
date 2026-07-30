@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl } from '@/lib/r2';
-import { buildMontageSource, STYLES } from '@/lib/montage';
+import { buildMontageSource, STYLES, styleNeedsDims } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 
 export const runtime = 'nodejs';
@@ -87,7 +87,9 @@ export async function POST(request) {
   try {
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
     const st = STYLES[src.style] || {};
-    const needsDims = !!(st.collage || st.epic || st.trendy);
+    // MUST match the draft route or exports won't match the draft (stretched /
+    // heads cropped). Shared helper = one source of truth.
+    const needsDims = styleNeedsDims(st);
 
     // Rebuild the photo items from the snapshot — re-presign fresh URLs from the
     // stored r2_keys; carry each photo's snapshotted edits verbatim.
