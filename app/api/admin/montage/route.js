@@ -183,9 +183,15 @@ export async function POST(request) {
   let nextSeq = 1;
   try {
     const { data: prior } = await db.from('studio_montages').select('params').eq('client_id', client.id);
-    let maxStored = 0; const count = (prior || []).length;
-    for (const p of prior || []) { const s = Number(p?.params?.seq); if (Number.isFinite(s)) maxStored = Math.max(maxStored, s); }
-    nextSeq = Math.max(maxStored, count) + 1;
+    // Only PRIMARY renders (not Export re-renders) consume numbers, so exports
+    // sharing a draft's number can't inflate the next draft's number.
+    let maxStored = 0, primaryCount = 0;
+    for (const p of prior || []) {
+      if (p?.params?.rerenderOf) continue;
+      primaryCount++;
+      const s = Number(p?.params?.seq); if (Number.isFinite(s)) maxStored = Math.max(maxStored, s);
+    }
+    nextSeq = Math.max(maxStored, primaryCount) + 1;
   } catch { /* leave at 1; GET keeps a positional fallback for un-stamped rows */ }
 
   // Track the job first so the webhook has a row to update.
@@ -330,15 +336,24 @@ export async function GET(request) {
   for (const r of (data || [])) { const cid = r.client_id || ''; (byClient[cid] = byClient[cid] || []).push(r); }
   for (const cid in byClient) {
     const rows = byClient[cid].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    // Renders created after this fix carry a PERMANENT params.seq — honor it so the
-    // number never shifts. Older un-stamped rows fill the remaining numbers by
-    // creation order, skipping any already claimed by a stamped render (so no dup).
+    // PRIMARY renders (a fresh generate) OWN the numbers: a stamped params.seq is
+    // permanent, older un-stamped primaries fill the gaps in creation order. A
+    // re-render (Export Low/Full Rez → params.rerenderOf) INHERITS its source's
+    // number so the high-rez export shares the draft's ### and only adds "HR".
     const claimed = new Set();
-    for (const r of rows) { const s = Number(r.params?.seq); if (Number.isFinite(s)) { seqMap.set(r.id, s); claimed.add(s); } }
+    const primaries = rows.filter((r) => !r.params?.rerenderOf);
+    for (const r of primaries) { const s = Number(r.params?.seq); if (Number.isFinite(s)) { seqMap.set(r.id, s); claimed.add(s); } }
     let next = 1;
-    for (const r of rows) {
+    for (const r of primaries) {
       if (!seqMap.has(r.id)) { while (claimed.has(next)) next++; seqMap.set(r.id, next); claimed.add(next); next++; }
-      // Version bumps for re-renders of the same client+style+range+album, in creation order.
+    }
+    for (const r of rows) {                 // re-renders inherit their source's number
+      if (seqMap.has(r.id)) continue;
+      const srcId = r.params?.rerenderOf;
+      if (srcId && seqMap.has(srcId)) seqMap.set(r.id, seqMap.get(srcId));
+      else { while (claimed.has(next)) next++; seqMap.set(r.id, next); claimed.add(next); next++; }
+    }
+    for (const r of rows) {                 // version, creation order, per variant
       const vk = `${cid}|${r.style}|${r.params?.photoSpec || ''}|${r.params?.album || ''}`;
       perVariant[vk] = (perVariant[vk] || 0) + 1;
       verMap.set(r.id, perVariant[vk]);
@@ -346,20 +361,23 @@ export async function GET(request) {
   }
   const STYLE_LABELS = { hollywood: 'Hollywood', timeless: 'Timeless', party: 'Party', party2: 'Party2', duotone: 'Duotone', duotone2: 'Duotone2', polaroid: 'PolaroidDrop', photo_drop: 'PhotoDrop', collage_classic: 'CollageClassic', collage_featured: 'CollageFeatured', gallery150: 'Gallery', epic_vintage: 'EpicVintage', story_builder: 'StoryBuilder', trendy: 'Trendy', multi_page: 'MultiPage', multi_page_record: 'MultiPageRecord' };
   const cp = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '');
+  // The number prefix: ### for a low-rez/draft, ###HR for a full-rez export — same
+  // number, so a high-rez file sorts right next to the draft it came from.
+  const seqLabel = (m) => String(seqMap.get(m.id) || 1).padStart(3, '0') + (m.watermarked ? '' : 'HR');
   const renderName = (m) => {
-    const seq = String(seqMap.get(m.id) || 1).padStart(3, '0');
+    const num = seqLabel(m);
     const last = cp(m.studio_clients?.last_name || m.studio_clients?.display_name) || 'Client';
     const style = STYLE_LABELS[m.style] || cp(m.style) || 'Montage';
     const album = cp(m.params?.album);
     const range = String(m.params?.photoSpec || '').replace(/\s+/g, '').replace(/[^0-9,\-]/g, '') || 'all';
     const date = (m.created_at || '').slice(0, 10) || 'nodate';
-    return [seq, last, style, album, range, date].filter(Boolean).join('_') + `_V${verMap.get(m.id) || 1}.mp4`;
+    return [num, last, style, album, range, date].filter(Boolean).join('_') + `_V${verMap.get(m.id) || 1}.mp4`;
   };
 
   const montages = await Promise.all(
     (data || []).map(async (m) => ({
       id: m.id,
-      seq: String(seqMap.get(m.id) || 1).padStart(3, '0'),
+      seq: seqLabel(m),                  // ### for a draft, ###HR for a full-rez export
       version: verMap.get(m.id) || 1,
       name: renderName(m),               // full studio file name (###_Last_Style_Album_Range_Date_V#.mp4)
       album: m.params?.album || null,    // album this render was built from (if any)
