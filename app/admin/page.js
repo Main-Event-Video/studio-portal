@@ -349,6 +349,35 @@ function buildAdminArrangement(photos) {
   return { top, albums };
 }
 
+// Which page + cell each photo lands in, for the MULTI-PAGE models only — mirrors
+// multiPageSource's grouping (pages of 4,3,4,3…). Lets the framing adjuster tell
+// the studio exactly where each image plays so a fix targets the right frame.
+const MULTIPAGE_STYLES = new Set(['multi_page', 'multi_page_record']);
+function mpFrameLabels(n) {
+  const sizes = [4, 3, 4, 3];
+  const out = [];
+  let gi = 0, si = 0, page = 1;
+  while (gi < n) {
+    const w = Math.min(sizes[si % sizes.length], n - gi);
+    for (let c = 0; c < w; c++) out.push({ page, cell: c + 1, cells: w });
+    gi += w; si++; page++;
+  }
+  return out;
+}
+// Turn a stored framing value (number 0..100 OR a preset string) into a 0..100
+// vertical crop position for the slider + the live preview's objectPosition.
+function framingToY(val) {
+  if (typeof val === 'number' && isFinite(val)) return Math.min(100, Math.max(0, val));
+  if (val === 'center') return 50;
+  if (val === 'bottom') return 100;
+  return 0; // 'top', 'left', 'right', or unset → top (head-safe default)
+}
+function framingObjectPos(val) {
+  if (val === 'left') return '0% 50%';
+  if (val === 'right') return '100% 50%';
+  return `50% ${framingToY(val)}%`;
+}
+
 export default function AdminPage() {
   const [session, setSession] = useState(null);
   const [checked, setChecked] = useState(false);
@@ -2186,43 +2215,70 @@ export default function AdminPage() {
                           Photos in montage order. For any photo cropped badly, pick which part to show,
                           then re-render. A re-render is a full new render (uses credits).
                         </p>
-                        {adjPhotos.length === 0 ? (
+                        {(() => { const isMP = MULTIPAGE_STYLES.has(adjFor?.style); const labels = isMP ? mpFrameLabels(adjPhotos.length) : null; return (
+                        adjPhotos.length === 0 ? (
                           <p style={{ color: 'var(--muted)' }}>Loading photos…</p>
                         ) : (
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
-                            {adjPhotos.map((p) => (
-                              <div key={p.key}>
+                          <>
+                          {isMP && (
+                            <p style={{ color: 'var(--muted)', fontSize: 12, margin: '0 0 8px' }}>
+                              This is a Multi Page montage — each photo is labelled with the <strong>page</strong> and <strong>frame</strong> it plays in. Drag a photo's slider from <em>Head</em> (top) toward <em>Feet</em> to slide the crop down when the top is cutting a head.
+                            </p>
+                          )}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                            {adjPhotos.map((p, i) => {
+                              const set = (val) => setAdjMap((prev) => {
+                                const next = { ...prev };
+                                if (val === '' || val == null) delete next[p.key]; else next[p.key] = val;
+                                saveAdjustments(m.id, next);
+                                return next;
+                              });
+                              const cur = adjMap[p.key];
+                              const lab = labels ? labels[i] : null;
+                              return (
+                              <div key={p.key} style={{ border: cur != null ? '1px solid var(--blue)' : '1px solid var(--line)', borderRadius: 10, padding: 8, background: cur != null ? 'rgba(61,123,255,0.05)' : 'transparent' }}>
                                 <img
                                   src={p.url}
                                   alt={p.filename}
-                                  style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 8, border: adjMap[p.key] ? '2px solid var(--blue)' : '1px solid var(--line)' }}
+                                  style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', objectPosition: framingObjectPos(cur), borderRadius: 6, display: 'block' }}
                                 />
-                                <div style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {lab && (
+                                  <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--blue)', margin: '5px 0 1px' }}>
+                                    Page {lab.page} · frame {lab.cell}/{lab.cells}
+                                  </div>
+                                )}
+                                <div style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {p.index}. {p.filename}
                                 </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 5px' }}>
+                                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>Head</span>
+                                  <input
+                                    type="range" min="0" max="100" step="1"
+                                    value={framingToY(cur)}
+                                    onChange={(e) => set(Number(e.target.value))}
+                                    title="Slide the crop up/down: 0 = show the top (keep heads), 100 = show the bottom"
+                                    style={{ flex: 1 }}
+                                  />
+                                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>Feet</span>
+                                </div>
                                 <select
-                                  value={adjMap[p.key] || ''}
-                                  onChange={(e) =>
-                                    setAdjMap((prev) => {
-                                      const next = { ...prev };
-                                      if (e.target.value) next[p.key] = e.target.value;
-                                      else delete next[p.key];
-                                      saveAdjustments(m.id, next);
-                                      return next;
-                                    })
-                                  }
-                                  style={{ fontSize: 12, padding: '6px 8px' }}
+                                  value={typeof cur === 'string' ? cur : ''}
+                                  onChange={(e) => set(e.target.value)}
+                                  style={{ fontSize: 12, padding: '5px 7px', width: '100%' }}
                                 >
-                                  <option value="">Center (default)</option>
-                                  <option value="top">Show top (keep heads)</option>
+                                  <option value="">Top — keeps heads (default)</option>
+                                  <option value="center">Center</option>
                                   <option value="bottom">Show bottom</option>
                                   <option value="left">Show left side</option>
                                   <option value="right">Show right side</option>
                                 </select>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
-                        )}
+                          </>
+                          )
+                        ); })()}
                         <div className="field-group" style={{ maxWidth: 260 }}>
                           <label htmlFor="adj_speed">Seconds per photo (for this re-render)</label>
                           <select id="adj_speed" value={adjSpeed} onChange={(e) => setAdjSpeed(e.target.value)}>

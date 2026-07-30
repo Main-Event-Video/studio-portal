@@ -112,7 +112,8 @@ export async function POST(request) {
   };
   const photoObj = (k) => {
     const e = editFor(k);
-    return { type: 'photo', r2_key: k, framing: (adjustments && adjustments[k]) || e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect, mode: e.mode, contrast: e.contrast, saturation: e.saturation, posX: e.posX, posY: e.posY };
+    const adj = adjustments && adjustments[k] != null ? adjustments[k] : undefined; // number 0 (slider top) must survive
+    return { type: 'photo', r2_key: k, framing: adj != null ? adj : e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect, mode: e.mode, contrast: e.contrast, saturation: e.saturation, posX: e.posX, posY: e.posY };
   };
 
   // Full timeline (photos + videos) in play order. Photos define the 1..N
