@@ -137,7 +137,11 @@ export default function Viewer({ token }) {
     <main className="wrap hub">
       <a href={`/p/${token}`} className="backlink">← Back to your portal</a>
 
-      <p className="eyebrow">From Main Event Studio</p>
+      <div style={{ textAlign: 'center', margin: '6px 0 10px' }}>
+        <img src="/logo.png" alt="Main Event Studio" style={{ width: 200, maxWidth: '70%', height: 'auto' }} />
+      </div>
+
+      <p className="eyebrow" style={{ textAlign: 'center' }}>From Main Event Studio</p>
       <h1 className="neon neon-blue" style={{ fontSize: 26, margin: '4px 0 14px' }}>
         Take a look at what we sent you
       </h1>

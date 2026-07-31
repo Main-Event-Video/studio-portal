@@ -39,7 +39,8 @@ export async function POST(request) {
   }
 
   const origin = new URL(request.url).origin;
-  const shareUrl = `${origin}/api/portal/share/${makeShareToken(m.id)}?mode=download`;
+  // The branded landing page (logo + player + Download), not the raw file.
+  const shareUrl = `${origin}/s/${makeShareToken(m.id)}`;
   try {
     await sendVendorForward({
       client,

@@ -60,12 +60,10 @@ export async function GET(request) {
 
   const media = await Promise.all(
     (data || []).map(async (m) => {
-      // Durable links for delivered cuts. Rough cuts get a VIEW-only share link
-      // (playable, not downloadable). Finals also get a DOWNLOAD link, which
-      // drives the Download button + Forward-to-vendor.
-      const base = ['rough_cut', 'final'].includes(m.kind)
-        ? `${url.origin}/api/portal/share/${makeShareToken(m.id)}`
-        : null;
+      // Durable links for delivered cuts. shareUrl → the BRANDED share page
+      // (/s/<token>) that friends/vendors land on. downloadUrl → the direct
+      // forced-download API, for the client's own one-tap Download (finals only).
+      const token = ['rough_cut', 'final'].includes(m.kind) ? makeShareToken(m.id) : null;
       return {
         id: m.id,
         filename: m.filename,
@@ -77,8 +75,8 @@ export async function GET(request) {
         timelinePos: m.timeline_pos ?? null,
         createdAt: m.created_at,
         url: await getViewUrl(m.r2_key, 3600),
-        ...(base ? { shareUrl: `${base}?mode=view` } : {}),
-        ...(base && m.kind === 'final' ? { downloadUrl: `${base}?mode=download` } : {}),
+        ...(token ? { shareUrl: `${url.origin}/s/${token}` } : {}),
+        ...(token && m.kind === 'final' ? { downloadUrl: `${url.origin}/api/portal/share/${token}?mode=download` } : {}),
       };
     })
   );
