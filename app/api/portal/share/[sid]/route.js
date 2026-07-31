@@ -34,9 +34,11 @@ export async function GET(request, { params }) {
   }
 
   // Fresh presigned URL every open, so the durable link keeps working long after
-  // any single presigned URL expires.
+  // any single presigned URL expires. 12h window so a slow multi-GB download (or a
+  // long shared-link playback) doesn't get cut off mid-transfer.
+  const TTL = 43200;
   const url = mode === 'download'
-    ? await getDownloadUrl(m.r2_key, m.filename || 'main-event-studio', 3600)
-    : await getViewUrl(m.r2_key, 3600);
+    ? await getDownloadUrl(m.r2_key, m.filename || 'main-event-studio', TTL)
+    : await getViewUrl(m.r2_key, TTL);
   return NextResponse.redirect(url, 302);
 }
