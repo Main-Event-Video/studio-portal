@@ -34,7 +34,7 @@ export async function POST(request) {
     .select('id, filename, kind, client_id')
     .eq('id', mediaId)
     .single();
-  if (!m || m.client_id !== client.id || !['rough_cut', 'final'].includes(m.kind)) {
+  if (!m || m.client_id !== client.id || m.kind !== 'final') {
     return NextResponse.json({ error: 'File not found.' }, { status: 404 });
   }
 

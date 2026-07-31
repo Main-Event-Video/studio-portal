@@ -70,9 +70,9 @@ export async function GET(request) {
       timelinePos: m.timeline_pos ?? null,
       createdAt: m.created_at,
       url: await getViewUrl(m.r2_key, 3600),
-      // Durable share/download link for DELIVERED cuts only (never uploads), so
-      // the viewer can download + copy-link + forward to a vendor.
-      ...(['rough_cut', 'final'].includes(m.kind)
+      // Durable share/download link for FINAL deliveries only — rough cuts are
+      // view-only; only the final carries Download + Forward-to-vendor.
+      ...(m.kind === 'final'
         ? { shareUrl: `${url.origin}/api/portal/share/${makeShareToken(m.id)}` }
         : {}),
     }))

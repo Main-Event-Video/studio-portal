@@ -88,6 +88,48 @@ export default function Viewer({ token }) {
 
   const canShareNative = typeof navigator !== 'undefined' && !!navigator.share;
 
+  // Two boxes: rough cuts (view only) and the final (carries Download + Forward,
+  // which are driven by shareUrl — present on finals only).
+  const roughs = media.filter((m) => m.kind === 'rough_cut');
+  const finals = media.filter((m) => m.kind === 'final');
+
+  const tile = (m) => (
+    <div key={m.id} style={{ position: 'relative' }}>
+      <button
+        className="media-cell"
+        onClick={() => openItem(m)}
+        title={m.filename}
+        style={{ padding: 0, border: '1px solid var(--line)', cursor: 'pointer', width: '100%' }}
+      >
+        {isVideo(m) ? (
+          <video src={m.url} muted playsInline preload="metadata" />
+        ) : (
+          <img src={m.url} alt={m.filename} loading="lazy" />
+        )}
+      </button>
+      {m.shareUrl && (
+        <a
+          href={m.shareUrl}
+          onClick={(e) => e.stopPropagation()}
+          title="Download"
+          style={{ position: 'absolute', top: 6, right: 6, zIndex: 4, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,.62)', color: '#fff', fontSize: 15, lineHeight: '30px', textAlign: 'center', textDecoration: 'none' }}
+        >⤓</a>
+      )}
+    </div>
+  );
+
+  const box = (heading, sub, items) => (
+    <section style={{ border: '1px solid var(--line)', borderRadius: 14, padding: 16, marginBottom: 18 }}>
+      <h2 style={{ fontSize: 18, margin: '0 0 2px' }}>{heading}</h2>
+      <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 12px' }}>{sub}</p>
+      {items.length === 0 ? (
+        <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>Nothing here yet.</p>
+      ) : (
+        <div className="media-grid">{items.map(tile)}</div>
+      )}
+    </section>
+  );
+
   return (
     <main className="wrap hub">
       <a href={`/p/${token}`} className="backlink">← Back to your portal</a>
@@ -104,32 +146,10 @@ export default function Viewer({ token }) {
           Nothing here yet. When Main Event Studio sends you a cut or photos, they’ll show up here.
         </p>
       ) : (
-        <div className="media-grid">
-          {media.map((m) => (
-            <div key={m.id} style={{ position: 'relative' }}>
-              <button
-                className="media-cell"
-                onClick={() => openItem(m)}
-                title={m.filename}
-                style={{ padding: 0, border: '1px solid var(--line)', cursor: 'pointer', width: '100%' }}
-              >
-                {isVideo(m) ? (
-                  <video src={m.url} muted playsInline preload="metadata" />
-                ) : (
-                  <img src={m.url} alt={m.filename} loading="lazy" />
-                )}
-              </button>
-              {m.shareUrl && (
-                <a
-                  href={m.shareUrl}
-                  onClick={(e) => e.stopPropagation()}
-                  title="Download"
-                  style={{ position: 'absolute', top: 6, right: 6, zIndex: 4, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,.62)', color: '#fff', fontSize: 15, lineHeight: '30px', textAlign: 'center', textDecoration: 'none' }}
-                >⤓</a>
-              )}
-            </div>
-          ))}
-        </div>
+        <>
+          {box('Rough cuts', 'Preview cuts for your review.', roughs)}
+          {box('Final', 'Your finished video — download it or forward it to a vendor.', finals)}
+        </>
       )}
 
       {active && (

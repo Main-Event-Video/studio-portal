@@ -22,7 +22,8 @@ export async function GET(request, { params }) {
     .eq('id', mediaId)
     .single();
 
-  if (!m || !m.r2_key || !['rough_cut', 'final'].includes(m.kind)) {
+  // Only FINAL deliveries are shareable/downloadable — never a rough cut or upload.
+  if (!m || !m.r2_key || m.kind !== 'final') {
     return NextResponse.json({ error: 'This file is no longer available.' }, { status: 404 });
   }
 
