@@ -281,7 +281,7 @@ export default function Uploader({ token }) {
   const loadMine = useCallback(async () => {
     setLoadingMine(true);
     try {
-      const res = await fetch(`/api/portal/media?token=${token}&scope=mine`);
+      const res = await fetch(`/api/portal/media?token=${token}&scope=mine`, { cache: 'no-store' });
       const j = await res.json();
       setMine(j.media || []);
       setServerBoxes(j.boxes || []);
@@ -659,9 +659,15 @@ export default function Uploader({ token }) {
     setLastTrashed({ id: m.id, filename: m.filename, prev });
     if (undoTimer.current) clearTimeout(undoTimer.current);
     undoTimer.current = setTimeout(() => setLastTrashed(null), 9000);
+    // Optimistic: retag locally so the photo leaves its album (or loose lane)
+    // instantly — buildTimeline excludes Trash — instead of waiting on the server
+    // round-trip (the ✕ used to look like it did nothing inside an album).
+    setMine((cur) => cur.map((x) => (x.id === m.id ? { ...x, folderPath: TRASH_FOLDER } : x)));
     await organize({ action: 'update', id: m.id, folderPath: TRASH_FOLDER });
   }
   async function restorePhoto(id, toFolder) {
+    // Optimistic restore too, so Undo pops the photo back immediately.
+    setMine((cur) => cur.map((x) => (x.id === id ? { ...x, folderPath: toFolder || '' } : x)));
     await organize({ action: 'update', id, folderPath: toFolder || '' });
   }
   async function undoTrash() {
