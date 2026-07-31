@@ -39,7 +39,7 @@ export async function POST(request) {
   }
 
   const origin = new URL(request.url).origin;
-  const shareUrl = `${origin}/api/portal/share/${makeShareToken(m.id)}`;
+  const shareUrl = `${origin}/api/portal/share/${makeShareToken(m.id)}?mode=download`;
   try {
     await sendVendorForward({
       client,

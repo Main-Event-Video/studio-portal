@@ -107,9 +107,9 @@ export default function Viewer({ token }) {
           <img src={m.url} alt={m.filename} loading="lazy" />
         )}
       </button>
-      {m.shareUrl && (
+      {m.downloadUrl && (
         <a
-          href={m.shareUrl}
+          href={m.downloadUrl}
           onClick={(e) => e.stopPropagation()}
           title="Download"
           style={{ position: 'absolute', top: 6, right: 6, zIndex: 4, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,.62)', color: '#fff', fontSize: 15, lineHeight: '30px', textAlign: 'center', textDecoration: 'none' }}
@@ -179,14 +179,14 @@ export default function Viewer({ token }) {
 
             {/* Actions: download + forward */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 14 }}>
-              {active.shareUrl && (
+              {active.downloadUrl && (
                 <a
-                  href={active.shareUrl}
+                  href={active.downloadUrl}
                   className="btn-primary"
                   style={{ textDecoration: 'none', padding: '10px 20px', borderRadius: 10, fontWeight: 700 }}
                 >⤓ Download</a>
               )}
-              {active.shareUrl && (
+              {active.downloadUrl && (
                 <button type="button" className="btn-ghost" style={{ padding: '10px 18px', borderRadius: 10 }}
                   onClick={() => setShowForward((v) => !v)}>
                   ✉ Forward to a vendor
@@ -200,7 +200,7 @@ export default function Viewer({ token }) {
               )}
             </div>
 
-            {showForward && active.shareUrl && (
+            {showForward && active.downloadUrl && (
               <div style={{ background: '#14101c', border: '1px solid var(--line)', borderRadius: 12, padding: 16, marginTop: 12 }}>
                 <p style={{ color: '#cfc6e0', fontSize: 13, margin: '0 0 10px' }}>
                   Email this file to a vendor. They’ll get a download link — no sign-in needed. Replies come back to you.

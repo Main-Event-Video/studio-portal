@@ -59,23 +59,28 @@ export async function GET(request) {
   }
 
   const media = await Promise.all(
-    (data || []).map(async (m) => ({
-      id: m.id,
-      filename: m.filename,
-      contentType: m.content_type,
-      kind: m.kind,
-      note: m.note,
-      sortNumber: m.sort_number,
-      folderPath: m.folder_path,
-      timelinePos: m.timeline_pos ?? null,
-      createdAt: m.created_at,
-      url: await getViewUrl(m.r2_key, 3600),
-      // Durable share/download link for FINAL deliveries only — rough cuts are
-      // view-only; only the final carries Download + Forward-to-vendor.
-      ...(m.kind === 'final'
-        ? { shareUrl: `${url.origin}/api/portal/share/${makeShareToken(m.id)}` }
-        : {}),
-    }))
+    (data || []).map(async (m) => {
+      // Durable links for delivered cuts. Rough cuts get a VIEW-only share link
+      // (playable, not downloadable). Finals also get a DOWNLOAD link, which
+      // drives the Download button + Forward-to-vendor.
+      const base = ['rough_cut', 'final'].includes(m.kind)
+        ? `${url.origin}/api/portal/share/${makeShareToken(m.id)}`
+        : null;
+      return {
+        id: m.id,
+        filename: m.filename,
+        contentType: m.content_type,
+        kind: m.kind,
+        note: m.note,
+        sortNumber: m.sort_number,
+        folderPath: m.folder_path,
+        timelinePos: m.timeline_pos ?? null,
+        createdAt: m.created_at,
+        url: await getViewUrl(m.r2_key, 3600),
+        ...(base ? { shareUrl: `${base}?mode=view` } : {}),
+        ...(base && m.kind === 'final' ? { downloadUrl: `${base}?mode=download` } : {}),
+      };
+    })
   );
 
   // Pre-made albums (persist even when empty). Hidden albums are excluded (the

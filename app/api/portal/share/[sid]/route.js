@@ -5,7 +5,7 @@
 // client upload. The token is HMAC-signed so ids can't be forged or enumerated.
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
-import { getDownloadUrl } from '@/lib/r2';
+import { getDownloadUrl, getViewUrl } from '@/lib/r2';
 import { verifyShareToken } from '@/lib/shareLink';
 
 export const runtime = 'nodejs';
@@ -22,13 +22,21 @@ export async function GET(request, { params }) {
     .eq('id', mediaId)
     .single();
 
-  // Only FINAL deliveries are shareable/downloadable — never a rough cut or upload.
-  if (!m || !m.r2_key || m.kind !== 'final') {
+  if (!m || !m.r2_key || !['rough_cut', 'final'].includes(m.kind)) {
     return NextResponse.json({ error: 'This file is no longer available.' }, { status: 404 });
   }
 
-  // Fresh presigned download (Content-Disposition: attachment) every open, so the
-  // durable link keeps working long after any single presigned URL expires.
-  const url = await getDownloadUrl(m.r2_key, m.filename || 'main-event-studio', 3600);
+  // mode=view → inline playback (shareable link for a rough cut). mode=download →
+  // forced save, FINALS ONLY (rough cuts are view-only — no download).
+  const mode = new URL(request.url).searchParams.get('mode') === 'download' ? 'download' : 'view';
+  if (mode === 'download' && m.kind !== 'final') {
+    return NextResponse.json({ error: 'This file is not available for download.' }, { status: 403 });
+  }
+
+  // Fresh presigned URL every open, so the durable link keeps working long after
+  // any single presigned URL expires.
+  const url = mode === 'download'
+    ? await getDownloadUrl(m.r2_key, m.filename || 'main-event-studio', 3600)
+    : await getViewUrl(m.r2_key, 3600);
   return NextResponse.redirect(url, 302);
 }
