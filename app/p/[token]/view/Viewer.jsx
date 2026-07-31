@@ -148,7 +148,7 @@ export default function Viewer({ token }) {
       ) : (
         <>
           {box('Rough cuts', 'Preview cuts for your review.', roughs)}
-          {box('Final', 'Your finished video — download it or forward it to a vendor.', finals)}
+          {box('Final', 'Your finished video — download it or forward it to a friend or vendor.', finals)}
         </>
       )}
 
@@ -189,7 +189,7 @@ export default function Viewer({ token }) {
               {active.downloadUrl && (
                 <button type="button" className="btn-ghost" style={{ padding: '10px 18px', borderRadius: 10 }}
                   onClick={() => setShowForward((v) => !v)}>
-                  ✉ Forward to a vendor
+                  ✉ Forward to a friend or vendor
                 </button>
               )}
               {active.shareUrl && (
@@ -203,13 +203,13 @@ export default function Viewer({ token }) {
             {showForward && active.downloadUrl && (
               <div style={{ background: '#14101c', border: '1px solid var(--line)', borderRadius: 12, padding: 16, marginTop: 12 }}>
                 <p style={{ color: '#cfc6e0', fontSize: 13, margin: '0 0 10px' }}>
-                  Email this file to a vendor. They’ll get a download link — no sign-in needed. Replies come back to you.
+                  Email this file to a friend or vendor. They’ll get a download link — no sign-in needed. Replies come back to you.
                 </p>
                 <input
                   type="email"
                   value={vEmail}
                   onChange={(e) => setVEmail(e.target.value)}
-                  placeholder="vendor@example.com"
+                  placeholder="their email address"
                   style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line)', background: '#0d0a14', color: '#fff', marginBottom: 8 }}
                 />
                 <textarea
@@ -222,7 +222,7 @@ export default function Viewer({ token }) {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button type="button" className="btn-primary" disabled={sending} style={{ padding: '9px 18px', borderRadius: 9, fontWeight: 700 }}
                     onClick={() => sendForward(active)}>
-                    {sending ? 'Sending…' : 'Send to vendor'}
+                    {sending ? 'Sending…' : 'Send'}
                   </button>
                   {fwMsg && (
                     <span style={{ fontSize: 13, color: fwMsg.ok ? '#4fce7c' : '#ff6b6b' }}>{fwMsg.text}</span>
