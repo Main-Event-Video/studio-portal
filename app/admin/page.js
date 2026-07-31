@@ -427,6 +427,7 @@ export default function AdminPage() {
     { value: 'party', label: 'Party — fast, punchy, high energy' },
     { value: 'party2', label: 'Party 2 — energetic, drift + varied transitions' },
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
+    { value: 'duotone_pastel', label: 'Duotone Split — Pastel (soft rainbow bg + true-colour hero)' },
     { value: 'duotone2', label: 'Duotone Split 2 — frantic, bg & hero transition separately' },
     { value: 'polaroid', label: 'Polaroid Drop — square print, thick white bottom' },
     { value: 'photo_drop', label: 'Photo Drop — whole photo, even white border' },
