@@ -5,6 +5,7 @@ import { getClientByToken } from '@/lib/portal';
 import { getViewUrl } from '@/lib/r2';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
 import { applyMediaAction } from '@/lib/mediaOrganize';
+import { makeShareToken } from '@/lib/shareLink';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,6 +70,11 @@ export async function GET(request) {
       timelinePos: m.timeline_pos ?? null,
       createdAt: m.created_at,
       url: await getViewUrl(m.r2_key, 3600),
+      // Durable share/download link for DELIVERED cuts only (never uploads), so
+      // the viewer can download + copy-link + forward to a vendor.
+      ...(['rough_cut', 'final'].includes(m.kind)
+        ? { shareUrl: `${url.origin}/api/portal/share/${makeShareToken(m.id)}` }
+        : {}),
     }))
   );
 
