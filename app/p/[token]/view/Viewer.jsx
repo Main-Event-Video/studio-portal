@@ -93,7 +93,7 @@ export default function Viewer({ token }) {
   const roughs = media.filter((m) => m.kind === 'rough_cut');
   const finals = media.filter((m) => m.kind === 'final');
 
-  const tile = (m) => (
+  const tile = (m, ver) => (
     <div key={m.id} style={{ position: 'relative' }}>
       <button
         className="media-cell"
@@ -107,6 +107,9 @@ export default function Viewer({ token }) {
           <img src={m.url} alt={m.filename} loading="lazy" />
         )}
       </button>
+      {ver && (
+        <span style={{ position: 'absolute', top: 6, left: 6, zIndex: 4, background: 'rgba(0,0,0,.72)', color: '#fff', fontSize: 12, fontWeight: 700, letterSpacing: 0.5, padding: '2px 8px', borderRadius: 6 }}>{ver}</span>
+      )}
       {m.downloadUrl && (
         <a
           href={m.downloadUrl}
@@ -118,14 +121,14 @@ export default function Viewer({ token }) {
     </div>
   );
 
-  const box = (heading, sub, items) => (
+  const box = (heading, sub, items, versioned) => (
     <section style={{ border: '1px solid var(--line)', borderRadius: 14, padding: 16, marginBottom: 18 }}>
       <h2 style={{ fontSize: 18, margin: '0 0 2px' }}>{heading}</h2>
       <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 12px' }}>{sub}</p>
       {items.length === 0 ? (
         <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>Nothing here yet.</p>
       ) : (
-        <div className="media-grid">{items.map(tile)}</div>
+        <div className="media-grid">{items.map((m, i) => tile(m, versioned ? `V${i + 1}` : null))}</div>
       )}
     </section>
   );
@@ -147,8 +150,8 @@ export default function Viewer({ token }) {
         </p>
       ) : (
         <>
-          {box('Rough cuts', 'Preview cuts for your review.', roughs)}
-          {box('Final', 'Your finished video — download it or forward it to a friend or vendor.', finals)}
+          {box('Rough cuts', 'Preview cuts for your review.', roughs, true)}
+          {box('Final', 'Your finished video — download it or forward it to a friend or vendor.', finals, false)}
         </>
       )}
 
@@ -172,6 +175,11 @@ export default function Viewer({ token }) {
               <video src={active.url} controls autoPlay style={{ maxWidth: '92vw', maxHeight: '70vh', display: 'block', margin: '0 auto' }} />
             ) : (
               <img src={active.url} alt={active.filename} style={{ maxWidth: '92vw', maxHeight: '70vh', display: 'block', margin: '0 auto' }} />
+            )}
+            {active.kind === 'rough_cut' && (
+              <p style={{ textAlign: 'center', color: '#cfc6e0', fontWeight: 700, margin: '10px 0 0' }}>
+                Rough cut V{roughs.findIndex((r) => r.id === active.id) + 1}
+              </p>
             )}
             {active.note && (
               <p style={{ color: '#edebf2', textAlign: 'center', marginTop: 10 }}>{active.note}</p>
