@@ -38,9 +38,10 @@ export async function POST(request) {
     return NextResponse.json({ error: 'File not found.' }, { status: 404 });
   }
 
-  const origin = new URL(request.url).origin;
-  // The branded landing page (logo + player + Download), not the raw file.
-  const shareUrl = `${origin}/s/${makeShareToken(m.id)}`;
+  // The branded landing page (logo + player + Download), not the raw file — on the
+  // short share domain (SHARE_BASE_URL) when set, else this host.
+  const shareBase = process.env.SHARE_BASE_URL || new URL(request.url).origin;
+  const shareUrl = `${shareBase}/s/${makeShareToken(m.id)}`;
   try {
     await sendVendorForward({
       client,

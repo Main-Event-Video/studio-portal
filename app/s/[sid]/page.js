@@ -9,6 +9,34 @@ import { getViewUrl } from '@/lib/r2';
 
 export const dynamic = 'force-dynamic';
 
+// Link-preview card (email / iMessage / social). Personalized with the event name
+// when we have it, otherwise a clean "A Main Event Studio Presentation", with the
+// branded OG image — so a pasted link no longer unfurls as a generic "Client Portal".
+export async function generateMetadata({ params }) {
+  const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://clients.maineventstudio.com';
+  let title = 'A Main Event Studio Presentation';
+  try {
+    const mediaId = verifyShareToken(params?.sid);
+    if (mediaId) {
+      const db = createServiceClient();
+      const { data: m } = await db.from('studio_media').select('client_id, kind').eq('id', mediaId).single();
+      if (m && ['rough_cut', 'final'].includes(m.kind)) {
+        const { data: c } = await db.from('studio_clients').select('display_name, event_type').eq('id', m.client_id).single();
+        const nice = (c?.event_type && c.event_type.trim()) || (c?.display_name && c.display_name.trim());
+        if (nice) title = nice;
+      }
+    }
+  } catch { /* fall back to the generic branded title */ }
+  const description = 'A Main Event Studio Presentation';
+  const image = `${base}/og-share.png`;
+  return {
+    title,
+    description,
+    openGraph: { title, description, siteName: 'Main Event Studio', type: 'website', images: [{ url: image, width: 1200, height: 630 }] },
+    twitter: { card: 'summary_large_image', title, description, images: [image] },
+  };
+}
+
 export default async function SharePage({ params }) {
   const sid = params?.sid;
   const mediaId = verifyShareToken(sid);

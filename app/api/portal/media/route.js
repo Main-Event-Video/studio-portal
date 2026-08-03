@@ -64,6 +64,11 @@ export async function GET(request) {
       // (/s/<token>) that friends/vendors land on. downloadUrl → the direct
       // forced-download API, for the client's own one-tap Download (finals only).
       const token = ['rough_cut', 'final'].includes(m.kind) ? makeShareToken(m.id) : null;
+      // Public share links use the short share domain (SHARE_BASE_URL, e.g.
+      // https://watch.maineventstudio.com) once it's set up; until then they fall
+      // back to the current host so nothing breaks. The client's own one-tap
+      // Download stays on this host.
+      const shareBase = process.env.SHARE_BASE_URL || url.origin;
       return {
         id: m.id,
         filename: m.filename,
@@ -75,7 +80,7 @@ export async function GET(request) {
         timelinePos: m.timeline_pos ?? null,
         createdAt: m.created_at,
         url: await getViewUrl(m.r2_key, 3600),
-        ...(token ? { shareUrl: `${url.origin}/s/${token}` } : {}),
+        ...(token ? { shareUrl: `${shareBase}/s/${token}` } : {}),
         ...(token && m.kind === 'final' ? { downloadUrl: `${url.origin}/api/portal/share/${token}?mode=download` } : {}),
       };
     })
