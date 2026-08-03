@@ -3,7 +3,7 @@
 // the video (playable), and a Download button for finals. No login needed; the
 // HMAC-signed token resolves to exactly ONE file and nothing else.
 import Image from 'next/image';
-import { verifyShareToken } from '@/lib/shareLink';
+import { resolveShareId } from '@/lib/shareLink';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { getViewUrl } from '@/lib/r2';
 
@@ -16,9 +16,9 @@ export async function generateMetadata({ params }) {
   const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://clients.maineventstudio.com';
   let title = 'A Main Event Studio Presentation';
   try {
-    const mediaId = verifyShareToken(params?.sid);
+    const db = createServiceClient();
+    const mediaId = await resolveShareId(db, params?.sid);
     if (mediaId) {
-      const db = createServiceClient();
       const { data: m } = await db.from('studio_media').select('client_id, kind').eq('id', mediaId).single();
       if (m && ['rough_cut', 'final'].includes(m.kind)) {
         const { data: c } = await db.from('studio_clients').select('display_name, event_type').eq('id', m.client_id).single();
@@ -39,11 +39,11 @@ export async function generateMetadata({ params }) {
 
 export default async function SharePage({ params }) {
   const sid = params?.sid;
-  const mediaId = verifyShareToken(sid);
+  const db = createServiceClient();
+  const mediaId = await resolveShareId(db, sid);
 
   let m = null;
   if (mediaId) {
-    const db = createServiceClient();
     const { data } = await db
       .from('studio_media')
       .select('id, filename, r2_key, kind, content_type')

@@ -6,16 +6,16 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { getDownloadUrl, getViewUrl } from '@/lib/r2';
-import { verifyShareToken } from '@/lib/shareLink';
+import { resolveShareId } from '@/lib/shareLink';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request, { params }) {
-  const mediaId = verifyShareToken(params?.sid);
+  const db = createServiceClient();
+  const mediaId = await resolveShareId(db, params?.sid);
   if (!mediaId) return NextResponse.json({ error: 'This link is invalid.' }, { status: 404 });
 
-  const db = createServiceClient();
   const { data: m } = await db
     .from('studio_media')
     .select('id, filename, r2_key, kind')

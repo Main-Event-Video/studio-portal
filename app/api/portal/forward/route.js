@@ -7,7 +7,7 @@ import { cookies } from 'next/headers';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { getClientByToken } from '@/lib/portal';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
-import { makeShareToken } from '@/lib/shareLink';
+import { makeShareToken, ensureSlug } from '@/lib/shareLink';
 import { sendVendorForward } from '@/lib/email';
 
 export const runtime = 'nodejs';
@@ -41,7 +41,8 @@ export async function POST(request) {
   // The branded landing page (logo + player + Download), not the raw file — on the
   // short share domain (SHARE_BASE_URL) when set, else this host.
   const shareBase = process.env.SHARE_BASE_URL || new URL(request.url).origin;
-  const shareUrl = `${shareBase}/s/${makeShareToken(m.id)}`;
+  const shareToken = (await ensureSlug(db, m.id)) || makeShareToken(m.id);   // short slug, else signed token
+  const shareUrl = `${shareBase}/s/${shareToken}`;
   try {
     await sendVendorForward({
       client,

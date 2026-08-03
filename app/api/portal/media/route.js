@@ -5,7 +5,7 @@ import { getClientByToken } from '@/lib/portal';
 import { getViewUrl } from '@/lib/r2';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
 import { applyMediaAction } from '@/lib/mediaOrganize';
-import { makeShareToken } from '@/lib/shareLink';
+import { makeShareToken, ensureSlug } from '@/lib/shareLink';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,7 +63,9 @@ export async function GET(request) {
       // Durable links for delivered cuts. shareUrl → the BRANDED share page
       // (/s/<token>) that friends/vendors land on. downloadUrl → the direct
       // forced-download API, for the client's own one-tap Download (finals only).
-      const token = ['rough_cut', 'final'].includes(m.kind) ? makeShareToken(m.id) : null;
+      const token = ['rough_cut', 'final'].includes(m.kind)
+        ? ((await ensureSlug(db, m.id)) || makeShareToken(m.id))   // short slug, else signed token
+        : null;
       // Public share links use the short share domain (SHARE_BASE_URL, e.g.
       // https://watch.maineventstudio.com) once it's set up; until then they fall
       // back to the current host so nothing breaks. The client's own one-tap
