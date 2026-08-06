@@ -627,50 +627,38 @@ export default function AdminPage() {
   // blocks the picker. On other browsers (Safari) it falls back to Downloads.
   async function downloadZip(clientId, ids, filename) {
     const list = [...ids];
-    if (!list.length) return;
+    const log = (...a) => { try { console.log('[album-download]', ...a); } catch {} };
+    log('click', { clientId, count: list.length, filename });
+    if (!list.length) { setZipMsg('No files to download.'); return; }
     setZipMsg('Zipping…'); setZipBusy(true);
     try {
-      // FETCH FIRST, then save — so a failure never leaves a 0-byte file behind
-      // (the folder picker creates the file up front, so we only invoke it once we
-      // have real bytes to write).
       const res = await fetch('/api/admin/media/download-zip', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId, ids: list }),
       });
+      log('response', res.status, res.headers.get('content-type'), res.headers.get('content-length'));
       if (!res.ok) {
         let d = '';
         try { d = (await res.json()).error; } catch { try { d = await res.text(); } catch {} }
+        log('error body', d);
         throw new Error(`${(d || 'server error').slice(0, 200)} (HTTP ${res.status})`);
       }
       const blob = await res.blob();
+      log('blob', blob && blob.size, blob && blob.type);
       if (!blob || blob.size === 0) throw new Error('the server sent an empty file (0 bytes)');
 
-      // Try the native "Save As" folder chooser (Chrome/Edge). If its user-gesture
-      // window has expired after the fetch, fall back to a normal download.
-      let saved = false;
-      if (typeof window !== 'undefined' && window.showSaveFilePicker) {
-        try {
-          const h = await window.showSaveFilePicker({
-            suggestedName: filename,
-            types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }],
-          });
-          const w = await h.createWritable(); await w.write(blob); await w.close();
-          saved = true;
-        } catch (e) {
-          if (e && e.name === 'AbortError') { setZipMsg('Download cancelled.'); setZipBusy(false); return; }
-          // otherwise (gesture expired / not allowed) → fall through to a normal download
-        }
-      }
-      if (!saved) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = filename;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 4000);
-      }
-      setZipMsg(`Saved ${filename} (${(blob.size / (1024 * 1024)).toFixed(1)} MB)${saved ? '' : ' to your Downloads folder'}.`);
+      // Save straight to Downloads via a blob link — the most reliable path in
+      // every browser. (The folder picker was unreliable, so it's removed.)
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 8000);
+      log('saved via blob link', filename);
+      setZipMsg(`✓ Downloaded ${filename} (${(blob.size / (1024 * 1024)).toFixed(1)} MB) — check your Downloads folder.`);
     } catch (err) {
-      setZipMsg(`Download failed: ${err.message}`);
+      log('FAILED', err && err.message);
+      setZipMsg(`Download failed: ${err && err.message}`);
     }
     setZipBusy(false);
   }
@@ -1250,7 +1238,12 @@ export default function AdminPage() {
           <button type="button" className="btn-ghost" onClick={() => loadMedia(c.id, true)}>Refresh</button>
         </div>
         {zipMsg && (
-          <p style={{ margin: '8px 0 0', fontSize: 13, color: zipMsg.startsWith('Download failed') ? 'var(--red)' : 'var(--ok)' }}>{zipMsg}</p>
+          <div style={{ margin: '10px 0 0', fontSize: 13.5, fontWeight: 600, padding: '8px 12px', borderRadius: 8,
+            border: `1px solid ${zipMsg.startsWith('Download failed') ? 'var(--red)' : 'var(--ok, #1f6d3a)'}`,
+            background: zipMsg.startsWith('Download failed') ? 'rgba(122,34,48,0.12)' : 'rgba(31,109,58,0.12)',
+            color: zipMsg.startsWith('Download failed') ? 'var(--red)' : 'var(--ok, #1f6d3a)' }}>
+            {zipMsg}
+          </div>
         )}
 
         {selN > 0 && (
