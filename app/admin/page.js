@@ -628,18 +628,11 @@ export default function AdminPage() {
   async function downloadZip(clientId, ids, filename) {
     const list = [...ids];
     if (!list.length) return;
-    setZipMsg('');
-    let handle = null;
-    if (typeof window !== 'undefined' && window.showSaveFilePicker) {
-      try {
-        handle = await window.showSaveFilePicker({
-          suggestedName: filename,
-          types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }],
-        });
-      } catch (e) { if (e && e.name === 'AbortError') return; handle = null; } // cancelled → stop
-    }
-    setZipBusy(true);
+    setZipMsg('Zipping…'); setZipBusy(true);
     try {
+      // FETCH FIRST, then save — so a failure never leaves a 0-byte file behind
+      // (the folder picker creates the file up front, so we only invoke it once we
+      // have real bytes to write).
       const res = await fetch('/api/admin/media/download-zip', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId, ids: list }),
@@ -647,21 +640,35 @@ export default function AdminPage() {
       if (!res.ok) {
         let d = '';
         try { d = (await res.json()).error; } catch { try { d = await res.text(); } catch {} }
-        throw new Error(`${d || 'Download failed'} (HTTP ${res.status})`);
+        throw new Error(`${(d || 'server error').slice(0, 200)} (HTTP ${res.status})`);
       }
       const blob = await res.blob();
-      // Guard: a 0-byte response means the server sent nothing — don't save an empty file.
-      if (!blob || blob.size === 0) throw new Error('The server returned an empty file (0 bytes). Nothing was downloaded.');
-      if (handle) {
-        const w = await handle.createWritable(); await w.write(blob); await w.close();
-      } else {
+      if (!blob || blob.size === 0) throw new Error('the server sent an empty file (0 bytes)');
+
+      // Try the native "Save As" folder chooser (Chrome/Edge). If its user-gesture
+      // window has expired after the fetch, fall back to a normal download.
+      let saved = false;
+      if (typeof window !== 'undefined' && window.showSaveFilePicker) {
+        try {
+          const h = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }],
+          });
+          const w = await h.createWritable(); await w.write(blob); await w.close();
+          saved = true;
+        } catch (e) {
+          if (e && e.name === 'AbortError') { setZipMsg('Download cancelled.'); setZipBusy(false); return; }
+          // otherwise (gesture expired / not allowed) → fall through to a normal download
+        }
+      }
+      if (!saved) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = filename;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 4000);
       }
-      setZipMsg(`Saved ${filename} (${(blob.size / (1024 * 1024)).toFixed(1)} MB).`);
+      setZipMsg(`Saved ${filename} (${(blob.size / (1024 * 1024)).toFixed(1)} MB)${saved ? '' : ' to your Downloads folder'}.`);
     } catch (err) {
       setZipMsg(`Download failed: ${err.message}`);
     }
@@ -1404,7 +1411,7 @@ export default function AdminPage() {
                     <button type="button" className="btn-ghost" disabled={mediaBusy || idx === 0} onClick={() => mediaMove(c.id, k, f.id, -1)} title="Move up">↑</button>{' '}
                     <button type="button" className="btn-ghost" disabled={mediaBusy || idx === list.length - 1} onClick={() => mediaMove(c.id, k, f.id, 1)} title="Move down">↓</button>
                   </span>
-                  <a href={f.url} download={f.filename} className="linklike">Download</a>
+                  <a href={f.downloadUrl || f.url} download={f.filename} className="linklike">Download</a>
                   {pendingDelete === f.id ? (
                     <span style={{ whiteSpace: 'nowrap' }}>
                       <button type="button" className="btn-ghost" style={{ color: 'var(--red)' }} disabled={mediaBusy} onClick={() => { mediaAction(c.id, { action: 'delete', id: f.id }); setPendingDelete(null); }}>Confirm delete</button>{' '}
