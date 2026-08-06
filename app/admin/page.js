@@ -419,6 +419,7 @@ export default function AdminPage() {
   // Multi-select (checkbox / shift-range / lasso) for bulk download in the files tool.
   const [selIds, setSelIds] = useState(() => new Set());
   const [zipBusy, setZipBusy] = useState(false);
+  const [zipMsg, setZipMsg] = useState(''); // download status/error, shown in the Files tool
   const [pendingHide, setPendingHide] = useState(null); // album name awaiting hide-confirm
   const lastPickRef = useRef(null);
 
@@ -627,6 +628,7 @@ export default function AdminPage() {
   async function downloadZip(clientId, ids, filename) {
     const list = [...ids];
     if (!list.length) return;
+    setZipMsg('');
     let handle = null;
     if (typeof window !== 'undefined' && window.showSaveFilePicker) {
       try {
@@ -642,8 +644,14 @@ export default function AdminPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId, ids: list }),
       });
-      if (!res.ok) { let d = ''; try { d = (await res.json()).error; } catch {} throw new Error(d || `Download failed (${res.status})`); }
+      if (!res.ok) {
+        let d = '';
+        try { d = (await res.json()).error; } catch { try { d = await res.text(); } catch {} }
+        throw new Error(`${d || 'Download failed'} (HTTP ${res.status})`);
+      }
       const blob = await res.blob();
+      // Guard: a 0-byte response means the server sent nothing — don't save an empty file.
+      if (!blob || blob.size === 0) throw new Error('The server returned an empty file (0 bytes). Nothing was downloaded.');
       if (handle) {
         const w = await handle.createWritable(); await w.write(blob); await w.close();
       } else {
@@ -653,7 +661,10 @@ export default function AdminPage() {
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 4000);
       }
-    } catch (err) { setMErr(true); setMMsg(err.message); }
+      setZipMsg(`Saved ${filename} (${(blob.size / (1024 * 1024)).toFixed(1)} MB).`);
+    } catch (err) {
+      setZipMsg(`Download failed: ${err.message}`);
+    }
     setZipBusy(false);
   }
   function downloadSelectedZip(clientId) {
@@ -1231,6 +1242,9 @@ export default function AdminPage() {
           </p>
           <button type="button" className="btn-ghost" onClick={() => loadMedia(c.id, true)}>Refresh</button>
         </div>
+        {zipMsg && (
+          <p style={{ margin: '8px 0 0', fontSize: 13, color: zipMsg.startsWith('Download failed') ? 'var(--red)' : 'var(--ok)' }}>{zipMsg}</p>
+        )}
 
         {selN > 0 && (
           <div style={{ position: 'sticky', top: 8, zIndex: 20, display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0 4px', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--blue)', background: 'linear-gradient(180deg, rgba(61,123,255,0.16), rgba(61,123,255,0.06))', boxShadow: '0 6px 22px rgba(61,123,255,0.20)' }}>
