@@ -632,8 +632,12 @@ export default function AdminPage() {
     if (!list.length) { setZipMsg('No files to download.'); return; }
     setZipMsg('Zipping…'); setZipBusy(true);
     try {
+      // Admin endpoints need the Supabase bearer token (same as the api() helper).
+      const { data: sess } = await supabase.auth.getSession();
+      const token = sess?.session?.access_token;
       const res = await fetch('/api/admin/media/download-zip', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ clientId, ids: list }),
       });
       log('response', res.status, res.headers.get('content-type'), res.headers.get('content-length'));
