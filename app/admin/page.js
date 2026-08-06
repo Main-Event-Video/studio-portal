@@ -316,80 +316,6 @@ function fmtDate(iso) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-// Client portal password is deterministic: lastname (letters only) + MMDD of
-// the event date — the exact formula used on both create and Reset password.
-// Nothing random is ever stored (DB keeps only a bcrypt hash), so we re-derive
-// it here from the last_name + event_date the admin list already has. No secret
-// is stored or exposed beyond what the admin can already reset to.
-function clientPassword(c) {
-  if (!c || !c.last_name || !c.event_date) return null;
-  const base = String(c.last_name).toLowerCase().replace(/[^a-z]/g, '');
-  const [, mm, dd] = String(c.event_date).split('-');
-  if (!base || !mm || !dd) return null;
-  return `${base}${mm}${dd}`;
-}
-
-// Build the portal-style { top, albums } arrangement from an ordered admin photo
-// list (each item carries { key: r2_key, album }). Contiguous same-album runs
-// become album blocks; everything else is a loose top-level item. Fed to
-// /api/admin/montage/arrange so admin + client persist order identically.
-function buildAdminArrangement(photos) {
-  const groups = [];
-  (photos || []).forEach((p) => {
-    const a = p.album || '';
-    let g = groups.length && groups[groups.length - 1].album === a ? groups[groups.length - 1] : null;
-    if (!g) { g = { album: a, photos: [] }; groups.push(g); }
-    g.photos.push(p);
-  });
-  const top = [], albums = {};
-  for (const g of groups) {
-    if (g.album) { top.push({ type: 'album', name: g.album }); albums[g.album] = (albums[g.album] || []).concat(g.photos.map((p) => p.key)); }
-    else { for (const p of g.photos) top.push({ type: 'media', key: p.key }); }
-  }
-  return { top, albums };
-}
-
-// Which page + cell each photo lands in, for the MULTI-PAGE models only — mirrors
-// multiPageSource's grouping (pages of 4,3,4,3…). Lets the framing adjuster tell
-// the studio exactly where each image plays so a fix targets the right frame.
-const MULTIPAGE_STYLES = new Set(['multi_page', 'multi_page_record', 'two_panel']);
-function mpFrameLabels(n) {
-  const sizes = [4, 3, 4, 3];
-  const out = [];
-  let gi = 0, si = 0, page = 1;
-  while (gi < n) {
-    const w = Math.min(sizes[si % sizes.length], n - gi);
-    for (let c = 0; c < w; c++) out.push({ page, cell: c + 1, cells: w });
-    gi += w; si++; page++;
-  }
-  return out;
-}
-// A framing value is now an OBJECT { y, x, z } (y/x = 0..100 crop position, z =
-// zoom %). Older values (a bare number = vertical, or a preset string) are read
-// too so past renders still work. framingObj() normalises any of them.
-function framingObj(val) {
-  const d = { y: 0, x: 50, z: 100 }; // top, centred, no zoom (head-safe default)
-  if (val && typeof val === 'object') {
-    return {
-      y: isFinite(val.y) ? Math.min(100, Math.max(0, val.y)) : 0,
-      x: isFinite(val.x) ? Math.min(100, Math.max(0, val.x)) : 50,
-      z: isFinite(val.z) ? Math.min(300, Math.max(40, val.z)) : 100,
-    };
-  }
-  if (typeof val === 'number' && isFinite(val)) return { ...d, y: Math.min(100, Math.max(0, val)) };
-  if (val === 'center') return { ...d, y: 50 };
-  if (val === 'bottom') return { ...d, y: 100 };
-  if (val === 'left') return { ...d, x: 0 };
-  if (val === 'right') return { ...d, x: 100 };
-  return d; // 'top' or unset
-}
-// Is this value an adjustment away from the default (so we highlight the cell)?
-function framingTouched(val) {
-  if (val == null) return false;
-  const f = framingObj(val);
-  return f.y !== 0 || f.x !== 50 || f.z !== 100;
-}
-
 export default function AdminPage() {
   const [session, setSession] = useState(null);
   const [checked, setChecked] = useState(false);
@@ -427,7 +353,6 @@ export default function AdminPage() {
     { value: 'party', label: 'Party — fast, punchy, high energy' },
     { value: 'party2', label: 'Party 2 — energetic, drift + varied transitions' },
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
-    { value: 'duotone_pastel', label: 'Duotone Split — Pastel (soft rainbow bg + true-colour hero)' },
     { value: 'duotone2', label: 'Duotone Split 2 — frantic, bg & hero transition separately' },
     { value: 'polaroid', label: 'Polaroid Drop — square print, thick white bottom' },
     { value: 'photo_drop', label: 'Photo Drop — whole photo, even white border' },
@@ -439,7 +364,6 @@ export default function AdminPage() {
     { value: 'trendy', label: 'Trendy Photo Wall — 3D angled grid of matte prints' },
     { value: 'multi_page', label: 'Multi Page — green screen, images pop on one by one' },
     { value: 'multi_page_record', label: 'Multi Page Record — green screen, page pivots then reveals' },
-    { value: 'two_panel', label: 'Two Panel — green screen, 2 photos per card, sides alternate' },
   ];
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
@@ -462,9 +386,6 @@ export default function AdminPage() {
   const [showHidden, setShowHidden] = useState(false); // reveal hidden renders
   const [montageSort, setMontageSort] = useState('new'); // new|old|high|low|style
   const [montageStep, setMontageStep] = useState(1); // 1 edit · 2 style · 3 finish
-  const [reorderMode, setReorderMode] = useState(false); // admin photo reorder (writes same order as client)
-  const [savingOrder, setSavingOrder] = useState(false);
-  const [orderErr, setOrderErr] = useState('');
 
   // Photo Editor (per-client): per-photo framing/fit/size/removed + global
   // colorCorrect. Persisted on the client row and applied to EVERY style render.
@@ -490,7 +411,6 @@ export default function AdminPage() {
 
   // client file manager (reorder / rename / move / delete / download)
   const [mediaFiles, setMediaFiles] = useState([]);
-  const [mediaBoxes, setMediaBoxes] = useState([]); // client's albums incl. EMPTY ones (studio_boxes)
   const [mediaClientId, setMediaClientId] = useState(null);
   const [mediaLoading, setMediaLoading] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
@@ -500,7 +420,6 @@ export default function AdminPage() {
   const [selIds, setSelIds] = useState(() => new Set());
   const [zipBusy, setZipBusy] = useState(false);
   const [pendingHide, setPendingHide] = useState(null); // album name awaiting hide-confirm
-  const [pendingDeleteBox, setPendingDeleteBox] = useState(null); // empty-album name awaiting delete-confirm
   const lastPickRef = useRef(null);
 
   // deliver a cut (step 6)
@@ -619,7 +538,7 @@ export default function AdminPage() {
   function chooseTool(c, tool) {
     const next = activeTool === tool ? null : tool;
     setActiveTool(next);
-    if (next === 'montage') { loadProjPhotos(c.id, true); loadPhotoEdits(c.id); } // force a fresh read so client reorders always show
+    if (next === 'montage') { loadProjPhotos(c.id); loadPhotoEdits(c.id); } // photos + saved edits
     if (next === 'intake') loadIntake(c.id);
     if (next === 'files') loadMedia(c.id);
   }
@@ -629,9 +548,8 @@ export default function AdminPage() {
     if (!force && mediaClientId === clientId) return;
     setMediaLoading(true);
     try {
-      const { files, boxes } = await api(`/api/admin/media?clientId=${clientId}`);
+      const { files } = await api(`/api/admin/media?clientId=${clientId}`);
       setMediaFiles(files || []);
-      setMediaBoxes(boxes || []);
       if (mediaClientId !== clientId) { setSelIds(new Set()); lastPickRef.current = null; }
       setMediaClientId(clientId);
     } catch (err) {
@@ -702,24 +620,50 @@ export default function AdminPage() {
   function selectIds(ids, on = true) {
     setSelIds((prev) => { const next = new Set(prev); ids.forEach((id) => (on ? next.add(id) : next.delete(id))); return next; });
   }
-  async function downloadSelectedZip(clientId) {
-    const ids = [...selIds];
-    if (!ids.length) return;
+  // Zip a set of files server-side and save them. On Chrome/Edge we open a native
+  // "Save As" dialog so you CHOOSE the folder (e.g. a folder on your Desktop) — and
+  // it must open on the click, BEFORE the (possibly slow) zip fetch, or the browser
+  // blocks the picker. On other browsers (Safari) it falls back to Downloads.
+  async function downloadZip(clientId, ids, filename) {
+    const list = [...ids];
+    if (!list.length) return;
+    let handle = null;
+    if (typeof window !== 'undefined' && window.showSaveFilePicker) {
+      try {
+        handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }],
+        });
+      } catch (e) { if (e && e.name === 'AbortError') return; handle = null; } // cancelled → stop
+    }
     setZipBusy(true);
     try {
       const res = await fetch('/api/admin/media/download-zip', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, ids }),
+        body: JSON.stringify({ clientId, ids: list }),
       });
       if (!res.ok) { let d = ''; try { d = (await res.json()).error; } catch {} throw new Error(d || `Download failed (${res.status})`); }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `photos_${ids.length}.zip`;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      if (handle) {
+        const w = await handle.createWritable(); await w.write(blob); await w.close();
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+      }
     } catch (err) { setMErr(true); setMMsg(err.message); }
     setZipBusy(false);
+  }
+  function downloadSelectedZip(clientId) {
+    const ids = [...selIds];
+    return downloadZip(clientId, ids, `photos_${ids.length}.zip`);
+  }
+  // Whole album/folder in one click.
+  function downloadAlbumZip(clientId, name, list) {
+    const safe = String(name || 'files').replace(/[^a-z0-9._-]+/gi, '_').replace(/^_+|_+$/g, '') || 'files';
+    return downloadZip(clientId, list.map((m) => m.id), `${safe}.zip`);
   }
 
   // Reorder within a folder: swap two neighbours, then renumber the folder 1..n.
@@ -844,19 +788,11 @@ export default function AdminPage() {
   const [showVid, setShowVid] = useState({}); // per-render preview toggle
 
   // Persist framing picks as they're made (refresh-proof). Fire-and-forget.
-  // Debounced: a slider drag fires onChange dozens of times — without this each
-  // one POSTs, and overlapping saves can race so a fix "doesn't stick". Save ~400ms
-  // after the last change, always with the LATEST full map.
-  const adjSaveRef = useRef({ t: null, next: null });
   function saveAdjustments(montageId, next) {
-    adjSaveRef.current.next = next;
-    if (adjSaveRef.current.t) clearTimeout(adjSaveRef.current.t);
-    adjSaveRef.current.t = setTimeout(() => {
-      api('/api/admin/montage/adjust', {
-        method: 'POST',
-        body: JSON.stringify({ montageId, adjustments: adjSaveRef.current.next }),
-      }).catch(() => {});
-    }, 400);
+    api('/api/admin/montage/adjust', {
+      method: 'POST',
+      body: JSON.stringify({ montageId, adjustments: next }),
+    }).catch(() => {});
   }
 
   async function openAdjust(m) {
@@ -866,10 +802,7 @@ export default function AdminPage() {
     setAdjSpeed(m.photoSeconds ? String(m.photoSeconds) : '');
     setAdjPhotos([]);
     try {
-      // Render-specific: ONLY the photos in THIS render, in play order, each with
-      // its page/cell + real cell aspect (Multi-Page) so the adjuster mirrors the
-      // actual montage boxes — not the client's whole library.
-      const { photos } = await api(`/api/admin/montage/photos?montageId=${m.id}`);
+      const { photos } = await api(`/api/admin/montage/photos?clientId=${m.clientId}`);
       setAdjPhotos(photos);
     } catch (err) {
       setMErr(true);
@@ -1020,7 +953,6 @@ export default function AdminPage() {
               return t > 0 ? Math.round(t * 1000) / 1000 : null;
             })(),
             photoSpec: s.photos.trim() || null,
-            album: s.album || null,
             includeCards: s.cards,
             greenScreen: s.green !== false,
             background: s.bgMode === 'green'
@@ -1091,14 +1023,7 @@ export default function AdminPage() {
     }
   }
 
-  async function toggleArchive(id, isArchived, name) {
-    // Archiving FREEZES the client's portal — they can't reorder, add albums, or
-    // save anything until it's unarchived — so guard it behind a confirm to stop
-    // accidental clicks. Unarchiving is harmless and goes straight through.
-    if (!isArchived && typeof window !== 'undefined') {
-      const who = name ? `“${name}”` : 'this client';
-      if (!window.confirm(`Archive ${who}?\n\nThis FREEZES their portal — they won't be able to reorder photos, create albums, or save any changes until you unarchive. Only archive once the project is finished.`)) return;
-    }
+  async function toggleArchive(id) {
     try {
       await api(`/api/admin/clients/${id}`, {
         method: 'PATCH',
@@ -1287,17 +1212,10 @@ export default function AdminPage() {
   function renderFilesTool(c) {
     const showing = mediaClientId === c.id;
     const files = showing ? mediaFiles : [];
-    const boxes = showing ? mediaBoxes : [];
     const groups = {};
     for (const f of files) {
       const k = f.folderPath || '';
       (groups[k] = groups[k] || []).push(f);
-    }
-    // Seed EMPTY albums (studio_boxes with no photos) so they still render — you
-    // can't rename or delete an album you can't see.
-    for (const b of boxes) {
-      const n = (b.name || '').trim();
-      if (n && n !== TRASH_FOLDER && !(n in groups)) groups[n] = [];
     }
     const keys = Object.keys(groups).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, undefined, { numeric: true })));
     const folderNames = keys.filter((k) => k !== '');
@@ -1311,16 +1229,7 @@ export default function AdminPage() {
               ? 'Loading files…'
               : `${files.length} file${files.length === 1 ? '' : 's'}. Edit a number to reorder, rename files or folders, type a folder to move a file, or delete. Tick photos (or drag a box across them) to select, then Download selected. Changes save as you make them — this view auto-refreshes.`}
           </p>
-          <span style={{ display: 'flex', gap: 8, flex: '0 0 auto' }}>
-            <button type="button" className="btn-ghost" disabled={mediaBusy} title="Create a new (empty) album, then move photos into it"
-              onClick={() => {
-                const name = (window.prompt('New album name:') || '').trim();
-                if (!name) return;
-                if (/^trash$/i.test(name)) { setMErr(true); setMMsg('“Trash” is a reserved name — please pick a different album name.'); return; }
-                mediaAction(c.id, { action: 'createBox', name });
-              }}>＋ New album</button>
-            <button type="button" className="btn-ghost" onClick={() => loadMedia(c.id, true)}>Refresh</button>
-          </span>
+          <button type="button" className="btn-ghost" onClick={() => loadMedia(c.id, true)}>Refresh</button>
         </div>
 
         {selN > 0 && (
@@ -1384,6 +1293,13 @@ export default function AdminPage() {
                 {list.length > 0 && (
                   <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => selectIds(list.map((m) => m.id), !allSel)}>{allSel ? 'Deselect' : 'Select all'}</button>
                 )}
+                {!isTrash && list.length > 0 && (
+                  <button type="button" className="btn-primary" style={{ fontSize: 12, padding: '5px 12px' }} disabled={zipBusy}
+                    title={`Download all ${list.length} ${isAlbum ? 'photos in this album' : 'files'} as a ZIP (choose the folder on Chrome/Edge)`}
+                    onClick={() => downloadAlbumZip(c.id, isLoose ? 'loose_files' : k, list)}>
+                    {zipBusy ? 'Zipping…' : `⬇ Download ${isAlbum ? 'album' : 'all'} (${list.length})`}
+                  </button>
+                )}
                 {isTrash ? (
                   pendingEmpty ? (
                     <span style={{ whiteSpace: 'nowrap' }}>
@@ -1399,23 +1315,10 @@ export default function AdminPage() {
                   )
                 ) : (
                   <>
-                    {list.length > 0 && (
-                      <button type="button" className="btn-ghost" style={{ fontSize: 12 }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'renumber', ids: list.map((m) => m.id) })}>
-                        Renumber 1…{list.length}
-                      </button>
-                    )}
-                    {isAlbum && list.length === 0 && (
-                      pendingDeleteBox === k ? (
-                        <span style={{ whiteSpace: 'nowrap' }}>
-                          <span style={{ color: 'var(--muted)', fontSize: 12, marginRight: 6 }}>Delete empty album?</span>
-                          <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--red)' }} disabled={mediaBusy} onClick={() => { mediaAction(c.id, { action: 'deleteBox', name: k }); setPendingDeleteBox(null); }}>Confirm delete</button>{' '}
-                          <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setPendingDeleteBox(null)}>Cancel</button>
-                        </span>
-                      ) : (
-                        <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--red)' }} disabled={mediaBusy} onClick={() => setPendingDeleteBox(k)} title="Delete this empty album">🗑 Delete empty album</button>
-                      )
-                    )}
-                    {isAlbum && list.length > 0 && (hidden ? (
+                    <button type="button" className="btn-ghost" style={{ fontSize: 12 }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'renumber', ids: list.map((m) => m.id) })}>
+                      Renumber 1…{list.length}
+                    </button>
+                    {isAlbum && (hidden ? (
                       <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--ok)' }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'unhideBox', name: k })}>↩ Restore album</button>
                     ) : pendingHide === k ? (
                       <span style={{ whiteSpace: 'nowrap' }}>
@@ -1553,13 +1456,12 @@ export default function AdminPage() {
       high: (a, b) => (a.watermarked ? 1 : 0) - (b.watermarked ? 1 : 0) || ts(b) - ts(a), // full rez first
       low: (a, b) => (b.watermarked ? 1 : 0) - (a.watermarked ? 1 : 0) || ts(b) - ts(a),  // low rez first
       style: (a, b) => String(a.style || '').localeCompare(String(b.style || '')) || ts(b) - ts(a),
-      starred: (a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || ts(b) - ts(a), // opt-in: starred float up, then newest
     }[montageSort] || ((a, b) => ts(b) - ts(a));
     const rows = allRows
       .filter((m) => showHidden || !m.hidden)
       .slice()
-      // Default is newest-first; starred only floats to the top when "Starred first" is chosen.
-      .sort(cmp);
+      // starred keepers always float to the top; the chosen sort orders everything within that
+      .sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || cmp(a, b));
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 18, padding: 8, borderRadius: 14, background: 'rgba(47,107,255,0.06)', border: '1px solid rgba(47,107,255,0.22)' }}>
@@ -1613,11 +1515,7 @@ export default function AdminPage() {
         <p style={{ color: 'var(--muted)', fontSize: 13 }}>
           {projPhotosLoading
             ? 'Loading this client’s photos…'
-            : (() => {
-                const removedCount = projPhotos.filter((p) => (photoEdits.photos[p.key] || {}).removed).length;
-                const activeCount = projPhotos.length - removedCount;
-                return `This client has ${activeCount} photo${activeCount === 1 ? '' : 's'}${removedCount ? ` (${removedCount} removed, not counted)` : ''}. The numbers below match this order.`;
-              })()}
+            : `This client has ${projPhotos.length} photo${projPhotos.length === 1 ? '' : 's'}. The numbers below match this order.`}
           {projPhotos.length > 0 && (
             <>
               {' '}
@@ -1762,12 +1660,6 @@ export default function AdminPage() {
                   <img src={p.url} alt={p.filename} draggable={false} style={{ width: '100%', height: '100%', ...styleFor(pe) }} />
                 </div>
                 <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{p.index}</span>
-                {reorderMode && (
-                  <div style={{ position: 'absolute', bottom: 4, left: 4, display: 'flex', gap: 4 }}>
-                    <button type="button" onClick={(e) => { e.stopPropagation(); movePhoto(p, -1); }} title="Move earlier (within this album)" style={{ border: 'none', background: 'rgba(0,0,0,.72)', color: '#fff', borderRadius: 5, width: 24, height: 24, cursor: 'pointer', fontSize: 13, lineHeight: 1 }}>◀</button>
-                    <button type="button" onClick={(e) => { e.stopPropagation(); movePhoto(p, 1); }} title="Move later (within this album)" style={{ border: 'none', background: 'rgba(0,0,0,.72)', color: '#fff', borderRadius: 5, width: 24, height: 24, cursor: 'pointer', fontSize: 13, lineHeight: 1 }}>▶</button>
-                  </div>
-                )}
                 {pe.removed && <span style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 9, background: '#e23b3b', color: '#fff', padding: '1px 5px', borderRadius: 4 }}>removed</span>}
               </div>
             );
@@ -1782,38 +1674,6 @@ export default function AdminPage() {
             g.photos.push(p);
           });
           const hasAlbums = groups.some((g) => g.album);
-          // ----- Admin reorder: writes the SAME order fields the client uses -----
-          const savePhotoOrder = async (nextPhotos) => {
-            setProjPhotos(nextPhotos.map((x, i) => ({ ...x, index: i + 1 })));
-            setSavingOrder(true); setOrderErr('');
-            try {
-              const { top, albums } = buildAdminArrangement(nextPhotos);
-              await api('/api/admin/montage/arrange', { method: 'POST', body: JSON.stringify({ clientId: c.id, top, albums }) });
-              await loadProjPhotos(c.id, true);
-            } catch (e) {
-              setOrderErr(e.message || 'Could not save order');
-              await loadProjPhotos(c.id, true);
-            }
-            setSavingOrder(false);
-          };
-          const movePhoto = (p, dir) => {
-            if (savingOrder) return;
-            const arr = projPhotos.slice();
-            const i = arr.findIndex((x) => x.key === p.key);
-            const j = i + dir;
-            if (i < 0 || j < 0 || j >= arr.length) return;
-            if ((arr[j].album || '') !== (arr[i].album || '')) return; // v1: reorder within the same album / loose group
-            [arr[i], arr[j]] = [arr[j], arr[i]];
-            savePhotoOrder(arr);
-          };
-          const moveGroup = (gi, dir) => {
-            if (savingOrder) return;
-            const gg = groups.slice();
-            const j = gi + dir;
-            if (j < 0 || j >= gg.length) return;
-            [gg[gi], gg[j]] = [gg[j], gg[gi]];
-            savePhotoOrder(gg.flatMap((g) => g.photos));
-          };
           const gridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(122px, 1fr))', gap: 10 };
           const renderCells = (photos) => photos.map((p) => (
             <Fragment key={`c:${p.key || p.index}`}>
@@ -1826,14 +1686,8 @@ export default function AdminPage() {
             <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
                 <strong style={{ fontSize: 13 }}>Photo editor{' '}
-                  <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— double-click to edit; toggle Reorder to move photos (saves for you and the client)</span></strong>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-                  {savingOrder ? <span style={{ fontSize: 12, color: '#d8a83b' }}>Saving order…</span>
-                    : orderErr ? <span style={{ fontSize: 12, color: 'var(--red)' }}>{orderErr}</span>
-                    : reorderMode ? <span style={{ fontSize: 12, color: '#2f9e5b' }}>✓ order saved</span> : null}
-                  <button type="button" className={reorderMode ? 'btn-primary' : 'btn-ghost'} style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => setReorderMode((v) => !v)}>{reorderMode ? '✓ Done' : '↕ Reorder'}</button>
-                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed</span>
-                </span>
+                  <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— double-click a photo to edit it; edits apply to every style</span></strong>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed</span>
               </div>
               {hasAlbums ? (
                 groups.map((g, gi) => {
@@ -1845,12 +1699,6 @@ export default function AdminPage() {
                       background: isAlbum ? 'linear-gradient(160deg, rgba(124,92,255,0.07), rgba(124,92,255,0.02))' : 'rgba(127,127,127,0.03)',
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        {reorderMode && groups.length > 1 && (
-                          <span style={{ display: 'inline-flex', gap: 3, flex: '0 0 auto' }}>
-                            <button type="button" onClick={() => moveGroup(gi, -1)} title="Move this section earlier" style={{ border: '1px solid var(--line)', background: 'transparent', color: '#e6eef5', borderRadius: 5, width: 22, height: 22, cursor: 'pointer' }}>↑</button>
-                            <button type="button" onClick={() => moveGroup(gi, 1)} title="Move this section later" style={{ border: '1px solid var(--line)', background: 'transparent', color: '#e6eef5', borderRadius: 5, width: 22, height: 22, cursor: 'pointer' }}>↓</button>
-                          </span>
-                        )}
                         {isAlbum && <span style={{ width: 10, height: 10, borderRadius: 3, background: '#7c5cff', flex: '0 0 auto' }} />}
                         <strong style={{ fontSize: 13 }}>{isAlbum ? g.album : 'Loose photos'}</strong>
                         <span style={{ color: 'var(--muted)', fontSize: 12 }}>{g.photos.length} photo{g.photos.length === 1 ? '' : 's'}</span>
@@ -1895,19 +1743,17 @@ export default function AdminPage() {
             </div>
             {(() => {
               const st = segments[0]?.style;
-              if (!MULTIPAGE_STYLES.has(st)) return null;
+              if (st !== 'multi_page' && st !== 'multi_page_record') return null;
               const seg = segments[0] || {};
               const set = (patch) => setSegments((arr) => arr.map((x) => ({ ...x, ...patch })));
-              const TRANS = st === 'two_panel'
-                ? [['record-fwd', 'Alternating sides (default)'], ['dissolve', 'Dissolve']]
-                : [
-                    ['record-fwd', 'Record forward'], ['record-back', 'Record backward'],
-                    ['slide-left', 'Slide left'], ['slide-right', 'Slide right'],
-                    ['slide-up', 'Slide up'], ['slide-down', 'Slide down'], ['dissolve', 'Dissolve'], ['random', 'Random'],
-                  ];
+              const TRANS = [
+                ['record-fwd', 'Record forward'], ['record-back', 'Record backward'],
+                ['slide-left', 'Slide left'], ['slide-right', 'Slide right'],
+                ['slide-up', 'Slide up'], ['slide-down', 'Slide down'], ['random', 'Random'],
+              ];
               return (
                 <div style={{ marginTop: 16, border: '1px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'rgba(61,123,255,0.06)' }}>
-                  <strong style={{ fontSize: 13 }}>{st === 'two_panel' ? 'Two Panel' : 'Multi Page'} options</strong>
+                  <strong style={{ fontSize: 13 }}>Multi Page options</strong>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10, alignItems: 'flex-end' }}>
                     <label style={{ fontSize: 12, color: 'var(--muted)' }}>
                       {st === 'multi_page_record' ? 'Page exit motion' : 'Image entrance motion'}
@@ -2119,7 +1965,6 @@ export default function AdminPage() {
                     <option value="high">High rez first</option>
                     <option value="low">Low rez first</option>
                     <option value="style">Style (A–Z)</option>
-                    <option value="starred">★ Starred first</option>
                   </select>
                 </label>
               )}
@@ -2150,7 +1995,7 @@ export default function AdminPage() {
               }}>
                 {/* Header: title + status badge + remove (X) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                  <strong style={{ fontSize: 15 }}>{m.seq && <span className="mono" style={{ color: 'var(--blue)', marginRight: 8 }}>#{m.seq}</span>}{m.title}</strong>
+                  <strong style={{ fontSize: 15 }}>{m.title}</strong>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
                     {(() => {
                       const st = m.status === 'rendering' || m.status === 'queued'
@@ -2178,18 +2023,11 @@ export default function AdminPage() {
                     </button>
                   </span>
                 </div>
-                {/* Full studio file name (the naming device) — click to select/copy */}
-                {m.name && (
-                  <div className="mono" title="Studio file name — click to select" style={{ marginTop: 5, fontSize: 11.5, color: '#9fb4ff', wordBreak: 'break-all', userSelect: 'all', cursor: 'text' }}>
-                    {m.name}
-                  </div>
-                )}
                 {/* Meta line: rez + tags + details + time-ago */}
                 <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--muted)' }}>
                   {m.watermarked
                     ? <span className="pill">low rez</span>
                     : <span className="pill" style={{ background: '#2f6bff', color: '#fff', borderColor: '#2f6bff', fontWeight: 700, letterSpacing: '.03em' }}>HIGH REZ</span>}
-                  {m.album && <span className="pill" style={{ borderColor: '#7c5cff', color: '#b9a7ff' }} title="Album this render was built from">🎞 {m.album}</span>}
                   {m.starred && <span className="pill" style={{ color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
                   {m.includeCards === false && <span className="pill">no cards</span>}
                   {m.hidden && <span className="pill">hidden</span>}
@@ -2239,8 +2077,6 @@ export default function AdminPage() {
                       )}
                       {' '}·{' '}
                       <button type="button" className="linklike" title={m.starred ? 'Unstar' : 'Star as a keeper'} style={{ color: m.starred ? '#f5b301' : 'var(--muted)', fontWeight: 600 }} onClick={() => reviewMontage(m.id, { starred: !m.starred })}>{m.starred ? '★ Starred' : '☆ Star'}</button>
-                      {' '}·{' '}
-                      <button type="button" className="linklike" style={{ color: adjFor?.id === m.id ? 'var(--blue)' : 'var(--muted)', fontWeight: 600 }} title="Adjust how each photo is cropped, then re-render" onClick={() => openAdjust(m)}>{adjFor?.id === m.id ? '✕ Close framing' : '🎯 Fix framing'}</button>
                       {!m.archived && (
                         <span style={{ color: 'var(--muted)' }}>
                           {' '}· not yet archived to our storage — this copy expires in ~30 days, download it
@@ -2253,72 +2089,43 @@ export default function AdminPage() {
                           Photos in montage order. For any photo cropped badly, pick which part to show,
                           then re-render. A re-render is a full new render (uses credits).
                         </p>
-                        {(() => { const isMP = adjPhotos.some((p) => p.page != null); return (
-                        adjPhotos.length === 0 ? (
+                        {adjPhotos.length === 0 ? (
                           <p style={{ color: 'var(--muted)' }}>Loading photos…</p>
                         ) : (
-                          <>
-                          <p style={{ color: 'var(--muted)', fontSize: 12, margin: '0 0 8px' }}>
-                            Each photo has three controls: <strong>Head↔Feet</strong> (up/down), <strong>Left↔Right</strong>, and <strong>Out↔In</strong> (zoom). The preview shows the crop live. {isMP ? 'Photos are labelled with the page and frame they play in. ' : ''}Re-render when you're happy.
-                          </p>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                            {adjPhotos.map((p, i) => {
-                              const set = (val) => setAdjMap((prev) => {
-                                const next = { ...prev };
-                                const isDefault = val && typeof val === 'object' && val.y === 0 && val.x === 50 && val.z === 100;
-                                if (val == null || isDefault) delete next[p.key]; else next[p.key] = val;
-                                saveAdjustments(m.id, next);
-                                return next;
-                              });
-                              const cur = adjMap[p.key];
-                              const f = framingObj(cur);
-                              const setF = (patch) => set({ ...f, ...patch });
-                              const touched = framingTouched(cur);
-                              const lab = (p.page != null) ? { page: p.page, cell: p.cell, cells: p.cells } : null;
-                              const rowS = { display: 'flex', alignItems: 'center', gap: 5, margin: '1px 0' };
-                              const lblS = { fontSize: 9.5, color: 'var(--muted)', width: 26, flex: '0 0 auto' };
-                              return (
-                              <div key={p.key} style={{ border: touched ? '1px solid var(--blue)' : '1px solid var(--line)', borderRadius: 10, padding: 8, background: touched ? 'rgba(61,123,255,0.05)' : 'transparent' }}>
-                                <div style={{ width: '100%', aspectRatio: p.cellAspect ? String(p.cellAspect) : '16/9', overflow: 'hidden', borderRadius: 6, background: '#0c0f16' }}>
-                                  <img
-                                    src={p.url}
-                                    alt={p.filename}
-                                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${f.x}% ${f.y}%`, transform: `scale(${(f.z / 100).toFixed(3)})`, transformOrigin: `${f.x}% ${f.y}%`, display: 'block' }}
-                                  />
-                                </div>
-                                {lab && (
-                                  <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--blue)', margin: '5px 0 1px' }}>
-                                    Page {lab.page} · frame {lab.cell}/{lab.cells}
-                                  </div>
-                                )}
-                                <div style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+                            {adjPhotos.map((p) => (
+                              <div key={p.key}>
+                                <img
+                                  src={p.url}
+                                  alt={p.filename}
+                                  style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 8, border: adjMap[p.key] ? '2px solid var(--blue)' : '1px solid var(--line)' }}
+                                />
+                                <div style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {p.index}. {p.filename}
                                 </div>
-                                <div style={rowS}>
-                                  <span style={lblS}>Head</span>
-                                  <input type="range" min="0" max="100" step="1" value={f.y} onChange={(e) => setF({ y: Number(e.target.value) })} title="Up ↕ down (0 = top / keep heads, 100 = bottom)" style={{ flex: 1 }} />
-                                  <span style={{ ...lblS, textAlign: 'right' }}>Feet</span>
-                                </div>
-                                <div style={rowS}>
-                                  <span style={lblS}>Left</span>
-                                  <input type="range" min="0" max="100" step="1" value={f.x} onChange={(e) => setF({ x: Number(e.target.value) })} title="Left ↔ right" style={{ flex: 1 }} />
-                                  <span style={{ ...lblS, textAlign: 'right' }}>Right</span>
-                                </div>
-                                <div style={rowS}>
-                                  <span style={lblS}>Out</span>
-                                  <input type="range" min="40" max="250" step="2" value={f.z} onChange={(e) => setF({ z: Number(e.target.value) })} title="Wide out ↔ zoom in (100 = fills the frame)" style={{ flex: 1 }} />
-                                  <span style={{ ...lblS, textAlign: 'right' }}>In</span>
-                                </div>
-                                {touched && (
-                                  <button type="button" className="btn-ghost" style={{ fontSize: 11, marginTop: 3, padding: '2px 6px' }} onClick={() => set(null)}>↺ Reset</button>
-                                )}
+                                <select
+                                  value={adjMap[p.key] || ''}
+                                  onChange={(e) =>
+                                    setAdjMap((prev) => {
+                                      const next = { ...prev };
+                                      if (e.target.value) next[p.key] = e.target.value;
+                                      else delete next[p.key];
+                                      saveAdjustments(m.id, next);
+                                      return next;
+                                    })
+                                  }
+                                  style={{ fontSize: 12, padding: '6px 8px' }}
+                                >
+                                  <option value="">Center (default)</option>
+                                  <option value="top">Show top (keep heads)</option>
+                                  <option value="bottom">Show bottom</option>
+                                  <option value="left">Show left side</option>
+                                  <option value="right">Show right side</option>
+                                </select>
                               </div>
-                              );
-                            })}
+                            ))}
                           </div>
-                          </>
-                          )
-                        ); })()}
+                        )}
                         <div className="field-group" style={{ maxWidth: 260 }}>
                           <label htmlFor="adj_speed">Seconds per photo (for this re-render)</label>
                           <select id="adj_speed" value={adjSpeed} onChange={(e) => setAdjSpeed(e.target.value)}>
@@ -2452,14 +2259,8 @@ export default function AdminPage() {
                 <span style={{ color: 'var(--muted)', fontSize: 13 }}>{c.event_date}{c.event_type ? ` · ${c.event_type}` : ''}</span>
                 <span style={{ flex: 1 }} />
                 <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
-                {clientPassword(c) && (
-                  <span style={{ color: 'var(--muted)', fontSize: 13 }}>
-                    Password: <span className="mono" style={{ color: 'var(--blue)' }}>{clientPassword(c)}</span>{' '}
-                    <CopyButton text={clientPassword(c)} label="Copy password" />
-                  </span>
-                )}
                 <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>
-                <button className="btn-ghost" onClick={() => toggleArchive(c.id, c.archived, c.display_name)}>{c.archived ? 'Unarchive' : 'Archive'}</button>
+                <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>{c.archived ? 'Unarchive' : 'Archive'}</button>
               </div>
               <div className="client-workspace">
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -2514,7 +2315,6 @@ export default function AdminPage() {
                   <th>Event</th>
                   <th>Last upload</th>
                   <th>Files</th>
-                  <th>Password</th>
                   <th></th>
                 </tr>
               </thead>
@@ -2554,16 +2354,10 @@ export default function AdminPage() {
                           {c.event_type ? ` · ${c.event_type}` : ''}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.last_upload_at)}</td>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          {c.upload_count ?? 0}
-                          {c.trash_count > 0 && (
-                            <span style={{ color: 'var(--muted)', fontSize: 12 }}>{' '}({c.trash_count} in trash · {(c.upload_count ?? 0) + c.trash_count} total)</span>
-                          )}
-                        </td>
-                        <td className="mono" style={{ whiteSpace: 'nowrap' }}>{clientPassword(c) || '—'}</td>
+                        <td>{c.upload_count ?? 0}</td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
-                          <button className="btn-ghost" onClick={() => toggleArchive(c.id, c.archived, c.display_name)}>
+                          <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>
                             {c.archived ? 'Unarchive' : 'Archive'}
                           </button>
                         </td>
