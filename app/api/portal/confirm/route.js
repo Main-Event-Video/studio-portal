@@ -60,6 +60,13 @@ export async function POST(request) {
     }
   }
 
+  // .jfif is JPEG with a Windows/Chrome extension macOS can't open. The bytes are
+  // already JPEG, so no re-encode — just store it as .jpg so it opens everywhere.
+  if (/\.jfif$/i.test(finalName)) {
+    finalName = finalName.replace(/\.jfif$/i, '.jpg');
+    if (!finalType || /jfif/i.test(finalType)) finalType = 'image/jpeg';
+  }
+
   const db = createServiceClient();
   const { error } = await db.from('studio_media').insert({
     client_id: client.id,

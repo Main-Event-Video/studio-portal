@@ -420,6 +420,13 @@ export default function AdminPage() {
   const [selIds, setSelIds] = useState(() => new Set());
   const [zipBusy, setZipBusy] = useState(false);
   const [zipMsg, setZipMsg] = useState(''); // download status/error, shown in the Files tool
+  const [lightbox, setLightbox] = useState(null); // { type:'image'|'video', url, filename } — click a thumbnail to enlarge
+  useEffect(() => {
+    if (!lightbox) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setLightbox(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightbox]);
   const [pendingHide, setPendingHide] = useState(null); // album name awaiting hide-confirm
   const lastPickRef = useRef(null);
 
@@ -627,9 +634,19 @@ export default function AdminPage() {
   // blocks the picker. On other browsers (Safari) it falls back to Downloads.
   async function downloadZip(clientId, ids, filename) {
     const list = [...ids];
-    const log = (...a) => { try { console.log('[album-download]', ...a); } catch {} };
-    log('click', { clientId, count: list.length, filename });
     if (!list.length) { setZipMsg('No files to download.'); return; }
+    // Open the folder chooser FIRST — it must fire within the click gesture. On
+    // Chrome/Edge this is a native "Save As" so you pick any folder (Desktop, etc.);
+    // Safari has no picker, so there it falls back to the Downloads folder.
+    let handle = null;
+    if (typeof window !== 'undefined' && window.showSaveFilePicker) {
+      try {
+        handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: 'ZIP archive', accept: { 'application/zip': ['.zip'] } }],
+        });
+      } catch (e) { if (e && e.name === 'AbortError') return; handle = null; } // cancelled → stop
+    }
     setZipMsg('Zipping…'); setZipBusy(true);
     try {
       // Admin endpoints need the Supabase bearer token (same as the api() helper).
@@ -640,28 +657,24 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ clientId, ids: list }),
       });
-      log('response', res.status, res.headers.get('content-type'), res.headers.get('content-length'));
       if (!res.ok) {
         let d = '';
         try { d = (await res.json()).error; } catch { try { d = await res.text(); } catch {} }
-        log('error body', d);
         throw new Error(`${(d || 'server error').slice(0, 200)} (HTTP ${res.status})`);
       }
       const blob = await res.blob();
-      log('blob', blob && blob.size, blob && blob.type);
       if (!blob || blob.size === 0) throw new Error('the server sent an empty file (0 bytes)');
-
-      // Save straight to Downloads via a blob link — the most reliable path in
-      // every browser. (The folder picker was unreliable, so it's removed.)
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = filename; a.rel = 'noopener';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 8000);
-      log('saved via blob link', filename);
-      setZipMsg(`✓ Downloaded ${filename} (${(blob.size / (1024 * 1024)).toFixed(1)} MB) — check your Downloads folder.`);
+      if (handle) {
+        const w = await handle.createWritable(); await w.write(blob); await w.close();
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 8000);
+      }
+      setZipMsg(`✓ Downloaded ${filename} (${(blob.size / (1024 * 1024)).toFixed(1)} MB)${handle ? '' : ' to your Downloads folder'}.`);
     } catch (err) {
-      log('FAILED', err && err.message);
       setZipMsg(`Download failed: ${err && err.message}`);
     }
     setZipBusy(false);
@@ -1379,9 +1392,12 @@ export default function AdminPage() {
                     style={{ width: 56 }}
                   />
                   {f.isVideo ? (
-                    <span className="pill" style={{ fontSize: 11 }}>video</span>
+                    <button type="button" className="pill" style={{ fontSize: 11, cursor: 'pointer' }} title="Click to play larger"
+                      onClick={() => setLightbox({ type: 'video', url: f.url, filename: f.filename })}>▶ video</button>
                   ) : (
-                    <img src={f.url} alt={f.filename} style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }} />
+                    <img src={f.url} alt={f.filename} title="Click to enlarge"
+                      onClick={() => setLightbox({ type: 'image', url: f.url, filename: f.filename })}
+                      style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)', cursor: 'zoom-in' }} />
                   )}
                   <input
                     defaultValue={f.filename}
@@ -2456,6 +2472,27 @@ export default function AdminPage() {
         )}
         </>)}
       </section>
+
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.88)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out' }}>
+          <button type="button" onClick={() => setLightbox(null)}
+            style={{ position: 'absolute', top: 16, right: 20, width: 40, height: 40, borderRadius: 20, border: '1px solid rgba(255,255,255,0.4)',
+              background: 'rgba(0,0,0,0.5)', color: '#fff', fontSize: 22, lineHeight: 1, cursor: 'pointer' }} title="Close (Esc)">×</button>
+          {lightbox.type === 'video' ? (
+            <video src={lightbox.url} controls autoPlay onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: '92vw', maxHeight: '88vh', borderRadius: 8, background: '#000' }} />
+          ) : (
+            <img src={lightbox.url} alt={lightbox.filename} onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: '92vw', maxHeight: '88vh', objectFit: 'contain', borderRadius: 8, cursor: 'default' }} />
+          )}
+          <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', color: '#fff',
+            fontSize: 13, background: 'rgba(0,0,0,0.5)', padding: '5px 12px', borderRadius: 20, maxWidth: '80vw',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lightbox.filename}</div>
+        </div>
+      )}
     </main>
   );
 }
