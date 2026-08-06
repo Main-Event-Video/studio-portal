@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
-import { getViewUrl } from '@/lib/r2';
+import { getViewUrl, getDownloadUrl } from '@/lib/r2';
 import { applyMediaAction } from '@/lib/mediaOrganize';
 
 export const runtime = 'nodejs';
@@ -48,6 +48,10 @@ export async function GET(request) {
       sizeBytes: m.size_bytes,
       hidden: !!m.hidden_at,
       url: await getViewUrl(m.r2_key, 3600),
+      // forces a real download (Content-Disposition: attachment) instead of
+      // opening the image in a browser tab — the `download` attr is ignored on
+      // cross-origin R2 links, so we let R2 set the disposition.
+      downloadUrl: await getDownloadUrl(m.r2_key, m.filename, 3600),
     }))
   );
 
