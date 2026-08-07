@@ -80,6 +80,26 @@ async function api(path, options = {}) {
   return json;
 }
 
+// Read a video file's duration in the browser (it's already loaded for upload),
+// so the server knows whether to watermark the first 90s only or the whole cut.
+async function readVideoDuration(file) {
+  return new Promise((resolve) => {
+    try {
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.onloadedmetadata = () => {
+        const d = v.duration;
+        try { URL.revokeObjectURL(v.src); } catch { /* noop */ }
+        resolve(Number.isFinite(d) && d > 0 ? d : null);
+      };
+      v.onerror = () => resolve(null);
+      v.src = URL.createObjectURL(file);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 // Roster of a client's characters (multi-character, #9).
 async function fetchCharacterList(clientId) {
   const { data } = await supabase.auth.getSession();
@@ -437,6 +457,10 @@ export default function AdminPage() {
   const [dPct, setDPct] = useState(0);
   const [dPhase, setDPhase] = useState('idle'); // idle | uploading | saving | done | error
   const [dMsg, setDMsg] = useState('');
+  const [dVersion, setDVersion] = useState('V1');   // version for the next cut (auto-advances)
+  const [dSendTo, setDSendTo] = useState('');        // '' = the client; else an override recipient
+  const [dCustomOpen, setDCustomOpen] = useState(false);
+  const [sentCuts, setSentCuts] = useState([]);      // this client's already-sent cuts (red/green + resend)
   const dFileRef = useRef(null);
 
   useEffect(() => {
@@ -549,6 +573,48 @@ export default function AdminPage() {
     if (next === 'montage') { loadProjPhotos(c.id); loadPhotoEdits(c.id); } // photos + saved edits
     if (next === 'intake') loadIntake(c.id);
     if (next === 'files') loadMedia(c.id);
+    if (next === 'cut') loadSentCuts(c.id);
+  }
+
+  // Load this client's already-sent cuts and auto-pick the next version
+  // (highest sent V# + 1; V1 if none). Custom labels don't affect the count.
+  async function loadSentCuts(clientId) {
+    try {
+      const { cuts } = await api(`/api/admin/deliver?clientId=${clientId}`);
+      const list = Array.isArray(cuts) ? cuts : [];
+      setSentCuts(list);
+      const nums = list
+        .map((cut) => /^V(\d+)$/i.exec(String(cut.version || '').trim()))
+        .filter(Boolean)
+        .map((m) => parseInt(m[1], 10));
+      setDVersion(`V${nums.length ? Math.max(...nums) + 1 : 1}`);
+      setDCustomOpen(false);
+      setDSendTo('');
+    } catch {
+      setSentCuts([]);
+    }
+  }
+
+  // Resend an already-delivered cut (no re-upload) — to the client or the
+  // address typed in "Send to".
+  async function resendCut(cut) {
+    setDMsg('');
+    const to = dSendTo.trim();
+    try {
+      const r = await api('/api/admin/deliver', {
+        method: 'POST',
+        body: JSON.stringify({ clientId: mClientId, resendId: cut.id, sendTo: to, note: dNote }),
+      });
+      setDPhase(r.emailed ? 'done' : 'error');
+      setDMsg(
+        r.emailed
+          ? `Resent ${cut.version || 'cut'}${to ? ` to ${to}` : ' to the client'}.`
+          : `Could not email the resend${r.emailError ? ` (${r.emailError})` : ''}.`
+      );
+    } catch (e) {
+      setDPhase('error');
+      setDMsg(e.message || 'Resend failed.');
+    }
   }
 
   // Client file manager. Reload after each change so the view can't drift.
@@ -1092,6 +1158,7 @@ export default function AdminPage() {
       await putWithProgress(url, dFile, setDPct);
 
       setDPhase('saving');
+      const durationSec = dKind === 'rough_cut' ? await readVideoDuration(dFile) : null;
       const result = await api('/api/admin/deliver', {
         method: 'POST',
         body: JSON.stringify({
@@ -1102,17 +1169,27 @@ export default function AdminPage() {
           size: dFile.size,
           kind: dKind,
           note: dNote,
+          version: dVersion,
+          sendTo: dSendTo,
+          durationSec,
         }),
       });
 
       setDPhase('done');
-      setDMsg(
-        result.emailed
-          ? 'Sent — the client has the file and an email is on its way.'
-          : `Saved to the client's portal, but the email did not send${
-              result.emailError ? ` (${result.emailError})` : ''
-            }. Check Postmark env vars.`
-      );
+      if (result.watermarking) {
+        setDMsg('Uploaded — watermarking now. The client is emailed automatically when it’s ready (usually a minute or two). Nothing un-watermarked goes out; if it fails, you’ll get an alert.');
+        const m = /^V(\d+)$/.exec(dVersion);
+        if (m) setDVersion(`V${parseInt(m[1], 10) + 1}`); // optimistically advance to the next version
+      } else {
+        setDMsg(
+          result.emailed
+            ? 'Sent — the client has the file and an email is on its way.'
+            : `Saved to the client's portal, but the email did not send${
+                result.emailError ? ` (${result.emailError})` : ''
+              }. Check Postmark env vars.`
+        );
+        loadSentCuts(mClientId); // refresh the sent list + auto-advance to the next version
+      }
       setDFile(null);
       setDNote('');
       if (dFileRef.current) dFileRef.current.value = '';
@@ -1128,11 +1205,24 @@ export default function AdminPage() {
   // ---- Inline tool windows (rendered inside an open client's workspace) ----
 
   function renderCutTool() {
+    const sentVers = new Set(sentCuts.map((cut) => String(cut.version || '').trim()).filter(Boolean));
+    const VBTNS = ['V1', 'V2', 'V3', 'V4'];
+    const isCustom = dVersion !== '' && !/^V\d+$/.test(dVersion);
+    const versionBtnStyle = (label) => {
+      const isNext = dVersion === label;
+      const sent = sentVers.has(label);
+      return {
+        border: '1px solid ' + (isNext ? 'transparent' : sent ? '#6e2f34' : 'var(--line)'),
+        background: isNext ? 'linear-gradient(135deg,#2f9e6a,#43c088)' : sent ? '#2a1618' : 'var(--panel2, #1e242c)',
+        color: isNext ? '#08130d' : sent ? '#ff9a9a' : 'var(--text)',
+        borderRadius: 8, padding: '6px 13px', fontSize: 13, fontWeight: 650, cursor: 'pointer',
+      };
+    };
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
-          Uploads straight to this client’s portal and emails them a link. Watermark rough cuts on
-          export before uploading; send finals clean and full-res.
+          Uploads to this client’s portal and emails a link. Rough cuts are watermarked automatically
+          (logo + version, exported at 720p) before the client can see them; finals go out clean and full-res.
         </p>
         <form onSubmit={sendCut}>
           <div className="field-group">
@@ -1145,7 +1235,7 @@ export default function AdminPage() {
                   checked={dKind === 'rough_cut'}
                   onChange={() => setDKind('rough_cut')}
                 />
-                Rough cut (watermarked)
+                Rough cut (auto-watermarked)
               </label>
               <label className="choice">
                 <input
@@ -1156,6 +1246,39 @@ export default function AdminPage() {
                 />
                 Final (clean, full-res)
               </label>
+            </div>
+          </div>
+
+          <div className="field-group">
+            <span className="field-label">Version</span>
+            <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
+              {VBTNS.map((label) => (
+                <button type="button" key={label} style={versionBtnStyle(label)}
+                  onClick={() => { setDVersion(label); setDCustomOpen(false); }}>
+                  {label}
+                </button>
+              ))}
+              {(dCustomOpen || isCustom) ? (
+                <input
+                  autoFocus
+                  value={isCustom ? dVersion : ''}
+                  placeholder="Name it…"
+                  onChange={(e) => setDVersion(e.target.value)}
+                  onBlur={() => { if (!dVersion.trim()) setDCustomOpen(false); }}
+                  style={{ width: 130, padding: '6px 10px', borderRadius: 8, border: '1px solid #43c088',
+                    background: 'var(--panel2, #1e242c)', color: 'var(--text)', fontSize: 13 }}
+                />
+              ) : (
+                <button type="button" onClick={() => { setDCustomOpen(true); setDVersion(''); }}
+                  style={{ border: '1px solid var(--line)', background: 'var(--panel2, #1e242c)', color: 'var(--muted)',
+                    borderRadius: 8, padding: '6px 13px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  ＋ Custom
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 11.5, color: 'var(--muted)' }}>
+              <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 9, background: '#e5484d', marginRight: 5 }} />already sent</span>
+              <span><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 9, background: '#43c088', marginRight: 5 }} />next to send</span>
             </div>
           </div>
 
@@ -1202,6 +1325,18 @@ export default function AdminPage() {
             onChange={(e) => setDFile(e.target.files?.[0] || null)}
           />
 
+          <label htmlFor="d_sendto">Send to</label>
+          <input
+            id="d_sendto"
+            type="email"
+            value={dSendTo}
+            onChange={(e) => setDSendTo(e.target.value)}
+            placeholder="Leave blank to send to the client"
+          />
+          <p style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 4 }}>
+            Blank = the client. Type any address to send this cut (or a resend) somewhere else.
+          </p>
+
           <label htmlFor="d_note">Personal note (optional — shown in the email)</label>
           <textarea
             id="d_note"
@@ -1209,6 +1344,23 @@ export default function AdminPage() {
             onChange={(e) => setDNote(e.target.value)}
             placeholder="Hi! Here's the first look — can't wait to hear what you think."
           />
+
+          {sentCuts.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <span className="field-label">Previously sent — resend any version</span>
+              <div style={{ border: '1px solid var(--line)', borderRadius: 9, overflow: 'hidden', marginTop: 6 }}>
+                {sentCuts.map((cut) => (
+                  <div key={cut.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', borderTop: '1px solid var(--line)', fontSize: 13 }}>
+                    <span style={{ fontWeight: 700, fontSize: 11, background: '#20303f', color: '#7fb0ff', border: '1px solid #2a4258', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                      {cut.version || (cut.kind === 'final' ? 'FINAL' : '—')}
+                    </span>
+                    <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{cut.filename}</span>
+                    <button type="button" className="btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => resendCut(cut)}>Resend</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {(dPhase === 'uploading' || dPhase === 'saving') && (
             <div className="progress" style={{ marginTop: 14 }}>
@@ -1225,7 +1377,7 @@ export default function AdminPage() {
               ? `Uploading… ${dPct}%`
               : dPhase === 'saving'
               ? 'Sending…'
-              : 'Upload & send'}
+              : `Upload & send${dVersion ? ` · ${dVersion}` : ''}`}
           </button>
         </form>
       </div>

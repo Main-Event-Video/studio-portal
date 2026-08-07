@@ -51,7 +51,7 @@ export async function GET(request) {
       // forces a real download (Content-Disposition: attachment) instead of
       // opening the image in a browser tab — the `download` attr is ignored on
       // cross-origin R2 links, so we let R2 set the disposition.
-      downloadUrl: await getDownloadUrl(m.r2_key, m.filename, 3600),
+      downloadUrl: await getDownloadUrl(m.r2_key, String(m.filename || 'photo').replace(/\.jfif$/i, '.jpg'), 3600),
     }))
   );
 
