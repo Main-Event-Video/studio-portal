@@ -100,6 +100,13 @@ async function readVideoDuration(file) {
   });
 }
 
+// Branded default note that pre-fills the "note to the client" field for every cut.
+// Version-aware and editable — Josh can overwrite it per send.
+function brandNote(v) {
+  const tag = v && String(v).trim() ? ` — presenting ${String(v).trim()}` : '';
+  return `Main Event Studio${tag}. Here's your latest cut — take a look and let us know what you think!  ·  www.maineventstudio.com`;
+}
+
 // Roster of a client's characters (multi-character, #9).
 async function fetchCharacterList(clientId) {
   const { data } = await supabase.auth.getSession();
@@ -461,6 +468,7 @@ export default function AdminPage() {
   const [dSendTo, setDSendTo] = useState('');        // '' = the client; else an override recipient
   const [dCustomOpen, setDCustomOpen] = useState(false);
   const [sentCuts, setSentCuts] = useState([]);      // this client's already-sent cuts (red/green + resend)
+  const [dNoteAuto, setDNoteAuto] = useState(true);  // true = note is the auto brand default (safe to refresh)
   const dFileRef = useRef(null);
 
   useEffect(() => {
@@ -587,11 +595,18 @@ export default function AdminPage() {
         .map((cut) => /^V(\d+)$/i.exec(String(cut.version || '').trim()))
         .filter(Boolean)
         .map((m) => parseInt(m[1], 10));
-      setDVersion(`V${nums.length ? Math.max(...nums) + 1 : 1}`);
+      const nextV = `V${nums.length ? Math.max(...nums) + 1 : 1}`;
+      setDVersion(nextV);
+      setDNote(brandNote(nextV));
+      setDNoteAuto(true);
       setDCustomOpen(false);
       setDSendTo('');
     } catch {
       setSentCuts([]);
+      setDVersion('V1');
+      setDNote(brandNote('V1'));
+      setDNoteAuto(true);
+      setDCustomOpen(false);
     }
   }
 
@@ -1179,7 +1194,10 @@ export default function AdminPage() {
       if (result.watermarking) {
         setDMsg('Uploaded — watermarking now. The client is emailed automatically when it’s ready (usually a minute or two). Nothing un-watermarked goes out; if it fails, you’ll get an alert.');
         const m = /^V(\d+)$/.exec(dVersion);
-        if (m) setDVersion(`V${parseInt(m[1], 10) + 1}`); // optimistically advance to the next version
+        const nv = m ? `V${parseInt(m[1], 10) + 1}` : dVersion; // optimistically advance
+        setDVersion(nv);
+        setDNote(brandNote(nv));
+        setDNoteAuto(true);
       } else {
         setDMsg(
           result.emailed
@@ -1188,10 +1206,9 @@ export default function AdminPage() {
                 result.emailError ? ` (${result.emailError})` : ''
               }. Check Postmark env vars.`
         );
-        loadSentCuts(mClientId); // refresh the sent list + auto-advance to the next version
+        loadSentCuts(mClientId); // refresh the sent list + reset version & auto note
       }
       setDFile(null);
-      setDNote('');
       if (dFileRef.current) dFileRef.current.value = '';
     } catch (err) {
       setDPhase('error');
@@ -1254,7 +1271,7 @@ export default function AdminPage() {
             <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
               {VBTNS.map((label) => (
                 <button type="button" key={label} style={versionBtnStyle(label)}
-                  onClick={() => { setDVersion(label); setDCustomOpen(false); }}>
+                  onClick={() => { setDVersion(label); setDCustomOpen(false); if (dNoteAuto) setDNote(brandNote(label)); }}>
                   {label}
                 </button>
               ))}
@@ -1263,13 +1280,13 @@ export default function AdminPage() {
                   autoFocus
                   value={isCustom ? dVersion : ''}
                   placeholder="Name it…"
-                  onChange={(e) => setDVersion(e.target.value)}
+                  onChange={(e) => { setDVersion(e.target.value); if (dNoteAuto) setDNote(brandNote(e.target.value)); }}
                   onBlur={() => { if (!dVersion.trim()) setDCustomOpen(false); }}
                   style={{ width: 130, padding: '6px 10px', borderRadius: 8, border: '1px solid #43c088',
                     background: 'var(--panel2, #1e242c)', color: 'var(--text)', fontSize: 13 }}
                 />
               ) : (
-                <button type="button" onClick={() => { setDCustomOpen(true); setDVersion(''); }}
+                <button type="button" onClick={() => { setDCustomOpen(true); setDVersion(''); if (dNoteAuto) setDNote(brandNote('')); }}
                   style={{ border: '1px solid var(--line)', background: 'var(--panel2, #1e242c)', color: 'var(--muted)',
                     borderRadius: 8, padding: '6px 13px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                   ＋ Custom
@@ -1337,12 +1354,12 @@ export default function AdminPage() {
             Blank = the client. Type any address to send this cut (or a resend) somewhere else.
           </p>
 
-          <label htmlFor="d_note">Personal note (optional — shown in the email)</label>
+          <label htmlFor="d_note">Note to the client (auto-filled — edit freely, shown in the email)</label>
           <textarea
             id="d_note"
             value={dNote}
-            onChange={(e) => setDNote(e.target.value)}
-            placeholder="Hi! Here's the first look — can't wait to hear what you think."
+            onChange={(e) => { setDNote(e.target.value); setDNoteAuto(false); }}
+            placeholder="Main Event Studio — here's your latest cut…"
           />
 
           {sentCuts.length > 0 && (
