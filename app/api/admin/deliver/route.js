@@ -17,6 +17,17 @@ import { sendCutReady } from '@/lib/email';
 import { getViewUrl } from '@/lib/r2';
 import { createRender } from '@/lib/creatomate';
 import { buildCutWatermarkSource } from '@/lib/watermarkCut';
+import { makeShareToken, ensureSlug } from '@/lib/shareLink';
+
+async function watchLinkFor(db, mediaId) {
+  const shareBase = process.env.SHARE_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || '';
+  try {
+    const tok = (await ensureSlug(db, mediaId)) || makeShareToken(mediaId);
+    return shareBase && tok ? `${shareBase}/s/${tok}` : '';
+  } catch {
+    return '';
+  }
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -114,6 +125,7 @@ export async function POST(request) {
       .single();
     if (rErr || !row) return NextResponse.json({ error: 'That cut was not found' }, { status: 404 });
 
+    const watchUrl = await watchLinkFor(db, row.id);
     let emailed = false;
     let emailError = null;
     try {
@@ -123,6 +135,7 @@ export async function POST(request) {
         note: noteClean || '',
         version: row.version || '',
         to: sendTo || '',
+        watchUrl,
       });
       emailed = true;
     } catch (e) {
@@ -210,15 +223,15 @@ export async function POST(request) {
     version,
   };
 
-  let { error: mediaErr } = await db.from('studio_media').insert(record);
+  let ins = await db.from('studio_media').insert(record).select('id').single();
   // If the `version` column doesn't exist yet, still deliver — just drop it.
-  if (mediaErr && /version/i.test(mediaErr.message || '')) {
+  if (ins.error && /version/i.test(ins.error.message || '')) {
     delete record.version;
-    ({ error: mediaErr } = await db.from('studio_media').insert(record));
+    ins = await db.from('studio_media').insert(record).select('id').single();
   }
-  if (mediaErr) {
+  if (ins.error || !ins.data) {
     return NextResponse.json(
-      { error: 'Could not save the media record', detail: mediaErr.message },
+      { error: 'Could not save the media record', detail: ins.error?.message },
       { status: 500 }
     );
   }
@@ -229,10 +242,11 @@ export async function POST(request) {
     note: noteClean,
   });
 
+  const watchUrl = await watchLinkFor(db, ins.data.id);
   let emailed = false;
   let emailError = null;
   try {
-    await sendCutReady({ client, kind, note: noteClean || '', version: version || '', to: sendTo || '' });
+    await sendCutReady({ client, kind, note: noteClean || '', version: version || '', to: sendTo || '', watchUrl });
     emailed = true;
   } catch (e) {
     emailError = e?.message || 'Email failed';
