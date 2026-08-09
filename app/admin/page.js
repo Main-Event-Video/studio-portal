@@ -465,7 +465,8 @@ export default function AdminPage() {
   const [dPhase, setDPhase] = useState('idle'); // idle | uploading | saving | done | error
   const [dMsg, setDMsg] = useState('');
   const [dVersion, setDVersion] = useState('V1');   // version for the next cut (auto-advances)
-  const [dSendTo, setDSendTo] = useState('');        // '' = the client; else an override recipient
+  const [dSendTo, setDSendTo] = useState('');        // '' = the client; else override recipient(s), comma-separated
+  const [dCcClient, setDCcClient] = useState(false); // when Send-to is used, also include the client
   const [dCustomOpen, setDCustomOpen] = useState(false);
   const [sentCuts, setSentCuts] = useState([]);      // this client's already-sent cuts (red/green + resend)
   const [dNoteAuto, setDNoteAuto] = useState(true);  // true = note is the auto brand default (safe to refresh)
@@ -601,12 +602,15 @@ export default function AdminPage() {
       setDNoteAuto(true);
       setDCustomOpen(false);
       setDSendTo('');
+      setDCcClient(false);
     } catch {
       setSentCuts([]);
       setDVersion('V1');
       setDNote(brandNote('V1'));
       setDNoteAuto(true);
       setDCustomOpen(false);
+      setDSendTo('');
+      setDCcClient(false);
     }
   }
 
@@ -618,12 +622,12 @@ export default function AdminPage() {
     try {
       const r = await api('/api/admin/deliver', {
         method: 'POST',
-        body: JSON.stringify({ clientId: mClientId, resendId: cut.id, sendTo: to, note: dNote }),
+        body: JSON.stringify({ clientId: mClientId, resendId: cut.id, sendTo: dSendTo, ccClient: dCcClient, note: dNote }),
       });
       setDPhase(r.emailed ? 'done' : 'error');
       setDMsg(
         r.emailed
-          ? `Resent ${cut.version || 'cut'}${to ? ` to ${to}` : ' to the client'}.`
+          ? `Resent ${cut.version || 'cut'}${to ? ` to ${to}${dCcClient ? ' + the client' : ''}` : ' to the client'}.`
           : `Could not email the resend${r.emailError ? ` (${r.emailError})` : ''}.`
       );
     } catch (e) {
@@ -1186,6 +1190,7 @@ export default function AdminPage() {
           note: dNote,
           version: dVersion,
           sendTo: dSendTo,
+          ccClient: dCcClient,
           durationSec,
         }),
       });
@@ -1198,6 +1203,8 @@ export default function AdminPage() {
         setDVersion(nv);
         setDNote(brandNote(nv));
         setDNoteAuto(true);
+        setDSendTo('');
+        setDCcClient(false);
       } else {
         setDMsg(
           result.emailed
@@ -1345,14 +1352,20 @@ export default function AdminPage() {
           <label htmlFor="d_sendto">Send to</label>
           <input
             id="d_sendto"
-            type="email"
+            type="text"
             value={dSendTo}
             onChange={(e) => setDSendTo(e.target.value)}
-            placeholder="Leave blank to send to the client"
+            placeholder="Blank = the client · or name@email.com, another@email.com"
           />
           <p style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 4 }}>
-            Blank = the client. Type any address to send this cut (or a resend) somewhere else.
+            Blank sends to the client. Add one or more addresses (comma-separated) to send elsewhere.
           </p>
+          {dSendTo.trim() && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text)', margin: '2px 0 8px' }}>
+              <input type="checkbox" checked={dCcClient} onChange={(e) => setDCcClient(e.target.checked)} />
+              Also send to the client
+            </label>
+          )}
 
           <label htmlFor="d_note">Note to the client (auto-filled — edit freely, shown in the email)</label>
           <textarea

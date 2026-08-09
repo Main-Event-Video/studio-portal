@@ -28,9 +28,23 @@ function cleanVersion(v) {
   const s = typeof v === 'string' ? v.trim() : '';
   return s ? s.slice(0, 24) : null;
 }
-function cleanEmail(e) {
-  const s = typeof e === 'string' ? e.trim() : '';
-  return s && /\S+@\S+\.\S+/.test(s) ? s : null;
+// Resolve the final recipient string: the address(es) typed in "Send to"
+// (comma/semicolon separated, validated), plus the client when ccClient is set.
+// Empty result → the caller falls back to the client.
+function resolveRecipients(sendToRaw, ccClient, client) {
+  const typed = String(sendToRaw || '')
+    .split(/[,;]+/)
+    .map((s) => s.trim())
+    .filter((s) => /\S+@\S+\.\S+/.test(s));
+  if (!typed.length) return '';
+  const list = ccClient ? [...typed, client.email] : typed;
+  const seen = new Set();
+  const out = [];
+  for (const e of list) {
+    const k = e.toLowerCase();
+    if (e && !seen.has(k)) { seen.add(k); out.push(e); }
+  }
+  return out.join(', ');
 }
 
 // -------- GET: list this client's sent cuts (for auto-advance + resend) --------
@@ -87,7 +101,7 @@ export async function POST(request) {
     return NextResponse.json({ error: 'That client is archived' }, { status: 400 });
   }
 
-  const sendTo = cleanEmail(body.sendTo);
+  const sendTo = resolveRecipients(body.sendTo, body.ccClient, client);
   const noteClean = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null;
 
   // ---- RESEND: re-email an existing cut, no new upload/record ----
