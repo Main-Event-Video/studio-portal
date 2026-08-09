@@ -1410,7 +1410,11 @@ export default function AdminPage() {
                     <span style={{ fontWeight: 700, fontSize: 11, background: '#20303f', color: '#7fb0ff', border: '1px solid #2a4258', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
                       {cut.version || (cut.kind === 'final' ? 'FINAL' : '—')}
                     </span>
-                    <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{cut.filename}</span>
+                    {cut.viewUrl ? (
+                      <a href={cut.viewUrl} target="_blank" rel="noopener noreferrer" title="View the cut that was sent to the client" style={{ color: 'var(--text)', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{cut.filename}</a>
+                    ) : (
+                      <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{cut.filename}</span>
+                    )}
                     <button type="button" className="btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => resendCut(cut)}>Resend</button>
                   </div>
                 ))}

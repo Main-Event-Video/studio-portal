@@ -76,11 +76,20 @@ export async function GET(request) {
       .order('created_at', { ascending: false });
 
   // Prefer the version column; fall back gracefully if the migration hasn't run.
-  let { data, error } = await run('id, kind, version, filename, created_at');
-  if (error) ({ data, error } = await run('id, kind, filename, created_at'));
+  let { data, error } = await run('id, kind, version, filename, created_at, r2_key');
+  if (error) ({ data, error } = await run('id, kind, filename, created_at, r2_key'));
   if (error) return NextResponse.json({ error: 'Could not load cuts', detail: error.message }, { status: 500 });
 
-  return NextResponse.json({ cuts: data || [] });
+  // Attach a short-lived direct view URL so the admin can watch what was sent.
+  // Direct presigned URL, NOT the tracked /s/ share page — previewing your own cut
+  // must never trip the "client opened it" notification.
+  const cuts = await Promise.all((data || []).map(async (row) => {
+    let viewUrl = null;
+    try { if (row.r2_key) viewUrl = await getViewUrl(row.r2_key, 3600); } catch { /* skip */ }
+    const { r2_key, ...rest } = row;
+    return { ...rest, viewUrl };
+  }));
+  return NextResponse.json({ cuts });
 }
 
 // -------- POST: new send OR resend --------

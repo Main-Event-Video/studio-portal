@@ -3,9 +3,16 @@
 // the video (playable), and a Download button for finals. No login needed; the
 // HMAC-signed token resolves to exactly ONE file and nothing else.
 import Image from 'next/image';
+import { headers } from 'next/headers';
 import { resolveShareId } from '@/lib/shareLink';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { getViewUrl } from '@/lib/r2';
+import { sendCutOpenedNotice } from '@/lib/email';
+
+// User agents we treat as bots/prefetchers/link-scanners (email security, social
+// unfurlers) so their fetches don't count as a real "open". Intentionally does NOT
+// match normal browsers (Chrome/Safari/Firefox/Edge/mobile).
+const BOT_RE = /(bot|crawl|spider|slurp|facebookexternalhit|slackbot|twitterbot|whatsapp|telegrambot|discordbot|linkedinbot|embedly|redditbot|applebot|bingbot|googlebot|duckduckbot|yandexbot|mediapartners|proofpoint|mimecast|barracuda|skypeuripreview|preview|curl|wget|python|axios|node-fetch|go-http|headless|phantom|puppeteer|pingdom|uptimerobot|monitor|scanner)/i;
 
 export const dynamic = 'force-dynamic';
 
@@ -46,10 +53,30 @@ export default async function SharePage({ params }) {
   if (mediaId) {
     const { data } = await db
       .from('studio_media')
-      .select('id, filename, r2_key, kind, content_type')
+      .select('id, filename, r2_key, kind, content_type, client_id')
       .eq('id', mediaId)
       .single();
     if (data && data.r2_key && ['rough_cut', 'final'].includes(data.kind)) m = data;
+  }
+
+  // Best-effort: notify the studio the FIRST time a real person opens this link.
+  // Skipped for bots/prefetchers, and only fires once (guarded on opened_at).
+  if (m) {
+    try {
+      const ua = headers().get('user-agent') || '';
+      if (ua && !BOT_RE.test(ua)) {
+        const { data: claimed } = await db
+          .from('studio_media')
+          .update({ opened_at: new Date().toISOString() })
+          .eq('id', m.id)
+          .is('opened_at', null)
+          .select('id');
+        if (Array.isArray(claimed) && claimed.length) {
+          const { data: c } = await db.from('studio_clients').select('display_name').eq('id', m.client_id).single();
+          await sendCutOpenedNotice({ filename: m.filename, kind: m.kind, clientName: c?.display_name || '' });
+        }
+      }
+    } catch { /* tracking is best-effort — never block playback */ }
   }
 
   const viewUrl = m ? await getViewUrl(m.r2_key, 43200) : null;
