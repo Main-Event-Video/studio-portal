@@ -148,13 +148,32 @@ export async function POST(request) {
   }
   const version = cleanVersion(body.version);
 
-  // ROUGH CUT → watermark through Creatomate first. The cut webhook records it and
-  // emails the client ONLY once the stamp is on, so a clean cut can never slip out.
-  // This is the "never forget the watermark" safety net.
+  // ROUGH CUT → watermark through Creatomate first. We track the render in
+  // studio_cut_renders so the admin status-poll (not just the webhook) can complete
+  // it: archive the stamped file, record it, and email the client. A clean cut can
+  // never slip out — delivery only happens after the watermark is confirmed on.
   if (kind === 'rough_cut') {
     const durationSec = Number(body.durationSec) > 0 ? Number(body.durationSec) : null;
     try {
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+      // Tracking row FIRST so the webhook/poll have something to complete.
+      const { data: cr, error: crErr } = await db
+        .from('studio_cut_renders')
+        .insert({
+          client_id: client.id,
+          status: 'rendering',
+          version,
+          filename,
+          deliver_to: sendTo || null,
+          note: noteClean,
+          raw_key: key,
+        })
+        .select('id')
+        .single();
+      if (crErr || !cr) {
+        return NextResponse.json({ error: 'Could not start watermarking', detail: crErr?.message || 'no tracking row' }, { status: 500 });
+      }
+
       const videoUrl = await getViewUrl(key, 21600); // presigned source for Creatomate to fetch
       const source = buildCutWatermarkSource({
         videoUrl,
@@ -162,21 +181,17 @@ export async function POST(request) {
         version: version || '',
         durationSec,
       });
-      const meta = JSON.stringify({
-        t: 'cut',
-        clientId: client.id,
-        version: version || '',
-        filename,
-        deliverTo: sendTo || '',
-        note: noteClean || '',
-        rawKey: key,
-      });
       const render = await createRender({
         source,
         webhookUrl: `${siteUrl}/api/webhooks/creatomate-cut`,
-        metadata: meta,
+        metadata: cr.id, // the tracking-row id; webhook + poll resolve delivery from it
       });
-      return NextResponse.json({ ok: true, watermarking: true, renderId: render.id });
+      await db
+        .from('studio_cut_renders')
+        .update({ render_id: render.id, updated_at: new Date().toISOString() })
+        .eq('id', cr.id);
+
+      return NextResponse.json({ ok: true, watermarking: true, cutRenderId: cr.id });
     } catch (e) {
       return NextResponse.json({ error: 'Could not start watermarking', detail: e?.message || String(e) }, { status: 500 });
     }

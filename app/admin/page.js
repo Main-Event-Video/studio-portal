@@ -588,6 +588,9 @@ export default function AdminPage() {
   // Load this client's already-sent cuts and auto-pick the next version
   // (highest sent V# + 1; V1 if none). Custom labels don't affect the count.
   async function loadSentCuts(clientId) {
+    // Nudge any in-flight watermark renders to complete before reading the list, so
+    // reopening the tool recovers a cut whose Creatomate webhook never fired.
+    try { await api(`/api/admin/cut-status?clientId=${clientId}`); } catch { /* best-effort */ }
     try {
       const { cuts } = await api(`/api/admin/deliver?clientId=${clientId}`);
       const list = Array.isArray(cuts) ? cuts : [];
@@ -634,6 +637,33 @@ export default function AdminPage() {
       setDPhase('error');
       setDMsg(e.message || 'Resend failed.');
     }
+  }
+
+  // After a rough-cut send, poll the status endpoint until it's delivered or failed.
+  // This DRIVES completion (not just watches), so delivery works even if Creatomate's
+  // webhook never fires. Idempotent server-side, so it's safe to run alongside it.
+  async function pollCutStatus(cutRenderId, clientId, attempt = 0) {
+    try {
+      const { cuts } = await api(`/api/admin/cut-status?clientId=${clientId}`);
+      const c = (cuts || []).find((x) => x.id === cutRenderId);
+      if (c && c.status === 'ready') {
+        setDPhase('done');
+        setDMsg('✓ Delivered — the client has the watermarked cut and the email is on its way.');
+        loadSentCuts(clientId);
+        return;
+      }
+      if (c && c.status === 'failed') {
+        setDPhase('error');
+        setDMsg(`⚠ Not sent — watermarking failed${c.error ? `: ${c.error}` : ''}. Nothing un-watermarked went out; check your alert email.`);
+        return;
+      }
+    } catch { /* keep trying */ }
+    if (attempt >= 45) { // ~3 minutes
+      setDMsg('Still watermarking — taking longer than usual. It will deliver on its own when the render finishes; reopen this tool later to confirm.');
+      return;
+    }
+    setDMsg('Watermarking… this can take a minute or two. Leave this open and it delivers automatically when done.');
+    setTimeout(() => pollCutStatus(cutRenderId, clientId, attempt + 1), 4000);
   }
 
   // Client file manager. Reload after each change so the view can't drift.
@@ -1197,14 +1227,10 @@ export default function AdminPage() {
 
       setDPhase('done');
       if (result.watermarking) {
-        setDMsg('Uploaded — watermarking now. The client is emailed automatically when it’s ready (usually a minute or two). Nothing un-watermarked goes out; if it fails, you’ll get an alert.');
-        const m = /^V(\d+)$/.exec(dVersion);
-        const nv = m ? `V${parseInt(m[1], 10) + 1}` : dVersion; // optimistically advance
-        setDVersion(nv);
-        setDNote(brandNote(nv));
-        setDNoteAuto(true);
+        setDMsg('Uploaded — watermarking now… (usually a minute or two)');
         setDSendTo('');
         setDCcClient(false);
+        if (result.cutRenderId) pollCutStatus(result.cutRenderId, mClientId);
       } else {
         setDMsg(
           result.emailed
