@@ -83,11 +83,14 @@ export async function GET(request) {
   // Attach a short-lived direct view URL so the admin can watch what was sent.
   // Direct presigned URL, NOT the tracked /s/ share page — previewing your own cut
   // must never trip the "client opened it" notification.
+  const shareBase = process.env.SHARE_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || '';
   const cuts = await Promise.all((data || []).map(async (row) => {
-    let viewUrl = null;
+    let viewUrl = null;   // direct, untracked — for the admin's own preview
     try { if (row.r2_key) viewUrl = await getViewUrl(row.r2_key, 3600); } catch { /* skip */ }
+    let shareUrl = null;  // durable no-login /s/ link — for forwarding
+    try { const tok = (await ensureSlug(db, row.id)) || makeShareToken(row.id); if (shareBase && tok) shareUrl = `${shareBase}/s/${tok}`; } catch { /* skip */ }
     const { r2_key, ...rest } = row;
-    return { ...rest, viewUrl };
+    return { ...rest, viewUrl, shareUrl };
   }));
   return NextResponse.json({ cuts });
 }

@@ -467,6 +467,9 @@ export default function AdminPage() {
   const [dVersion, setDVersion] = useState('V1');   // version for the next cut (auto-advances)
   const [dSendTo, setDSendTo] = useState('');        // '' = the client; else override recipient(s), comma-separated
   const [dCcClient, setDCcClient] = useState(false); // when Send-to is used, also include the client
+  const [rowSendId, setRowSendId] = useState(null);  // which sent-cut row has its "Send to…" field open
+  const [rowSendEmail, setRowSendEmail] = useState('');
+  const [copiedId, setCopiedId] = useState(null);    // sent-cut row whose share link was just copied
   const [dCustomOpen, setDCustomOpen] = useState(false);
   const [sentCuts, setSentCuts] = useState([]);      // this client's already-sent cuts (red/green + resend)
   const [dNoteAuto, setDNoteAuto] = useState(true);  // true = note is the auto brand default (safe to refresh)
@@ -636,6 +639,38 @@ export default function AdminPage() {
     } catch (e) {
       setDPhase('error');
       setDMsg(e.message || 'Resend failed.');
+    }
+  }
+
+  // Send an already-delivered version to a specific address (anyone, not the client).
+  async function resendCutTo(cut, toEmail) {
+    const to = String(toEmail || '').trim();
+    if (!to) return;
+    setDMsg('');
+    try {
+      const r = await api('/api/admin/deliver', {
+        method: 'POST',
+        body: JSON.stringify({ clientId: mClientId, resendId: cut.id, sendTo: to, note: dNote }),
+      });
+      setDPhase(r.emailed ? 'done' : 'error');
+      setDMsg(r.emailed ? `Sent ${cut.version || 'cut'} to ${to}.` : `Could not send${r.emailError ? ` (${r.emailError})` : ''}.`);
+      setRowSendId(null);
+      setRowSendEmail('');
+    } catch (e) {
+      setDPhase('error');
+      setDMsg(e.message || 'Send failed.');
+    }
+  }
+
+  // Copy the durable, no-login share link for a sent version so it can be forwarded.
+  async function copyShareLink(cut) {
+    if (!cut.shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(cut.shareUrl);
+      setCopiedId(cut.id);
+      setTimeout(() => setCopiedId((id) => (id === cut.id ? null : id)), 1600);
+    } catch {
+      setDMsg(`Copy failed — here's the link: ${cut.shareUrl}`);
     }
   }
 
@@ -1406,16 +1441,38 @@ export default function AdminPage() {
               <span className="field-label">Previously sent — resend any version</span>
               <div style={{ border: '1px solid var(--line)', borderRadius: 9, overflow: 'hidden', marginTop: 6 }}>
                 {sentCuts.map((cut) => (
-                  <div key={cut.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px', borderTop: '1px solid var(--line)', fontSize: 13 }}>
-                    <span style={{ fontWeight: 700, fontSize: 11, background: '#20303f', color: '#7fb0ff', border: '1px solid #2a4258', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
-                      {cut.version || (cut.kind === 'final' ? 'FINAL' : '—')}
-                    </span>
-                    {cut.viewUrl ? (
-                      <a href={cut.viewUrl} target="_blank" rel="noopener noreferrer" title="View the cut that was sent to the client" style={{ color: 'var(--text)', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{cut.filename}</a>
-                    ) : (
-                      <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{cut.filename}</span>
+                  <div key={cut.id} style={{ borderTop: '1px solid var(--line)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', fontSize: 13, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 11, background: '#20303f', color: '#7fb0ff', border: '1px solid #2a4258', borderRadius: 20, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                        {cut.version || (cut.kind === 'final' ? 'FINAL' : '—')}
+                      </span>
+                      {cut.viewUrl ? (
+                        <a href={cut.viewUrl} target="_blank" rel="noopener noreferrer" title="View the cut that was sent to the client" style={{ color: 'var(--text)', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 120 }}>{cut.filename}</a>
+                      ) : (
+                        <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 120 }}>{cut.filename}</span>
+                      )}
+                      {cut.shareUrl && (
+                        <button type="button" className="btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} title="Copy a no-login link you can forward to anyone" onClick={() => copyShareLink(cut)}>
+                          {copiedId === cut.id ? 'Copied ✓' : 'Copy link'}
+                        </button>
+                      )}
+                      <button type="button" className="btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => { setRowSendId(rowSendId === cut.id ? null : cut.id); setRowSendEmail(''); }}>Send to…</button>
+                      <button type="button" className="btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => resendCut(cut)}>Resend</button>
+                    </div>
+                    {rowSendId === cut.id && (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '0 11px 10px 11px' }}>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={rowSendEmail}
+                          onChange={(e) => setRowSendEmail(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && rowSendEmail.trim()) resendCutTo(cut, rowSendEmail); if (e.key === 'Escape') setRowSendId(null); }}
+                          placeholder="Send this version to… name@email.com"
+                          style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--panel2, #1e242c)', color: 'var(--text)', fontSize: 13 }}
+                        />
+                        <button type="button" className="btn-primary" style={{ padding: '6px 14px', fontSize: 12.5 }} disabled={!rowSendEmail.trim()} onClick={() => resendCutTo(cut, rowSendEmail)}>Send</button>
+                      </div>
                     )}
-                    <button type="button" className="btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => resendCut(cut)}>Resend</button>
                   </div>
                 ))}
               </div>
