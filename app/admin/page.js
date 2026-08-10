@@ -460,7 +460,7 @@ export default function AdminPage() {
   // deliver a cut (step 6)
   const [dKind, setDKind] = useState('rough_cut');
   const [dNote, setDNote] = useState('');
-  const [dFile, setDFile] = useState(null);
+  const [dFiles, setDFiles] = useState([]);          // one or more video files staged to send
   const [dPct, setDPct] = useState(0);
   const [dPhase, setDPhase] = useState('idle'); // idle | uploading | saving | done | error
   const [dMsg, setDMsg] = useState('');
@@ -1225,32 +1225,66 @@ export default function AdminPage() {
     });
   }
 
+  async function uploadOne(file) {
+    const contentType = file.type || 'application/octet-stream';
+    const { url, key } = await api('/api/admin/upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ clientId: mClientId, contentType }),
+    });
+    await putWithProgress(url, file, setDPct);
+    return { key, filename: file.name, contentType, size: file.size };
+  }
+
   async function sendCut(e) {
     e.preventDefault();
     setDMsg('');
     if (!mClientId) return setDMsg('Pick a client first — open their workspace from the Clients list.');
-    if (!dFile) return setDMsg('Choose a video file to send.');
+    if (!dFiles.length) return setDMsg('Choose at least one video file to send.');
 
-    const contentType = dFile.type || 'application/octet-stream';
     try {
+      // ---- FINAL: one OR more files → one bundled delivery, one email ----
+      if (dKind === 'final') {
+        setDPhase('uploading');
+        const uploaded = [];
+        for (let i = 0; i < dFiles.length; i++) {
+          setDPct(0);
+          setDMsg(dFiles.length > 1 ? `Uploading ${i + 1} of ${dFiles.length}…` : 'Uploading…');
+          uploaded.push(await uploadOne(dFiles[i]));
+        }
+        setDPhase('saving');
+        const result = await api('/api/admin/deliver-set', {
+          method: 'POST',
+          body: JSON.stringify({ clientId: mClientId, files: uploaded, note: dNote, sendTo: dSendTo, ccClient: dCcClient }),
+        });
+        setDPhase(result.emailed ? 'done' : 'error');
+        setDMsg(
+          result.emailed
+            ? `Sent — ${result.count} final${result.count === 1 ? '' : 's'} delivered in one email.`
+            : `Saved, but the email did not send${result.emailError ? ` (${result.emailError})` : ''}.`
+        );
+        setDFiles([]);
+        if (dFileRef.current) dFileRef.current.value = '';
+        setDSendTo('');
+        setDCcClient(false);
+        loadSentCuts(mClientId);
+        return;
+      }
+
+      // ---- ROUGH CUT: single file through the watermark pipeline ----
+      const file = dFiles[0];
       setDPhase('uploading');
       setDPct(0);
-      const { url, key } = await api('/api/admin/upload-url', {
-        method: 'POST',
-        body: JSON.stringify({ clientId: mClientId, contentType }),
-      });
-      await putWithProgress(url, dFile, setDPct);
-
+      const up = await uploadOne(file);
       setDPhase('saving');
-      const durationSec = dKind === 'rough_cut' ? await readVideoDuration(dFile) : null;
+      const durationSec = await readVideoDuration(file);
       const result = await api('/api/admin/deliver', {
         method: 'POST',
         body: JSON.stringify({
           clientId: mClientId,
-          key,
-          filename: dFile.name,
-          contentType,
-          size: dFile.size,
+          key: up.key,
+          filename: up.filename,
+          contentType: up.contentType,
+          size: up.size,
           kind: dKind,
           note: dNote,
           version: dVersion,
@@ -1262,7 +1296,9 @@ export default function AdminPage() {
 
       setDPhase('done');
       if (result.watermarking) {
-        setDMsg('Uploaded — watermarking now… (usually a minute or two)');
+        setDMsg(dFiles.length > 1
+          ? 'Uploaded the first file — watermarking now. (Rough cuts send one at a time; only finals bundle into one email.)'
+          : 'Uploaded — watermarking now… (usually a minute or two)');
         setDSendTo('');
         setDCcClient(false);
         if (result.cutRenderId) pollCutStatus(result.cutRenderId, mClientId);
@@ -1274,9 +1310,9 @@ export default function AdminPage() {
                 result.emailError ? ` (${result.emailError})` : ''
               }. Check Postmark env vars.`
         );
-        loadSentCuts(mClientId); // refresh the sent list + reset version & auto note
+        loadSentCuts(mClientId);
       }
-      setDFile(null);
+      setDFiles([]);
       if (dFileRef.current) dFileRef.current.value = '';
     } catch (err) {
       setDPhase('error');
@@ -1367,18 +1403,16 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <label htmlFor="d_file">Video file</label>
+          <label htmlFor="d_file">{dKind === 'final' ? 'Video file(s)' : 'Video file'}</label>
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
             onDrop={(e) => {
               e.preventDefault();
               setDragOver(false);
-              const f = e.dataTransfer.files?.[0];
-              if (f && (f.type.startsWith('video/') || !f.type)) {
-                setDFile(f);
-                if (dFileRef.current) dFileRef.current.value = '';
-              }
+              const fs = [...(e.dataTransfer.files || [])].filter((f) => f && (f.type.startsWith('video/') || !f.type));
+              if (fs.length) setDFiles((prev) => [...prev, ...fs]);
+              if (dFileRef.current) dFileRef.current.value = '';
             }}
             onClick={() => dFileRef.current?.click()}
             role="button"
@@ -1395,10 +1429,10 @@ export default function AdminPage() {
               fontSize: 14,
             }}
           >
-            {dFile ? (
-              <span style={{ color: 'var(--text)' }}>{dFile.name}</span>
+            {dFiles.length ? (
+              <span style={{ color: 'var(--text)' }}>{dFiles.length} file{dFiles.length === 1 ? '' : 's'} selected — click to add more</span>
             ) : (
-              <>Drag &amp; drop a video here, or <span style={{ color: 'var(--text)', textDecoration: 'underline' }}>click to choose</span></>
+              <>Drag &amp; drop {dKind === 'final' ? 'video(s)' : 'a video'} here, or <span style={{ color: 'var(--text)', textDecoration: 'underline' }}>click to choose</span></>
             )}
           </div>
           <input
@@ -1406,9 +1440,27 @@ export default function AdminPage() {
             ref={dFileRef}
             type="file"
             accept="video/*"
+            multiple
             style={{ display: 'none' }}
-            onChange={(e) => setDFile(e.target.files?.[0] || null)}
+            onChange={(e) => { const fs = [...(e.target.files || [])]; if (fs.length) setDFiles((prev) => [...prev, ...fs]); }}
           />
+          {dFiles.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 8 }}>
+              {dFiles.map((f, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: 'var(--panel2, #1e242c)', border: '1px solid var(--line)', borderRadius: 8, padding: '6px 10px' }}>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }}>{f.name}</span>
+                  <button type="button" onClick={() => setDFiles((prev) => prev.filter((_, j) => j !== i))} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 15, lineHeight: 1 }} title="Remove">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {dFiles.length > 1 && (
+            <p style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 6 }}>
+              {dKind === 'final'
+                ? 'These will be delivered together — one email, one page, your filenames kept as the labels.'
+                : 'Rough cuts send one at a time — only the first will send. Switch to Final to bundle them.'}
+            </p>
+          )}
 
           <label htmlFor="d_sendto">Send to</label>
           <input
