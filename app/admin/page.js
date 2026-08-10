@@ -104,7 +104,7 @@ async function readVideoDuration(file) {
 // Version-aware and editable — Josh can overwrite it per send.
 function brandNote(kind, v) {
   if (kind === 'final') {
-    return `Main Event Studio proudly presents your finished film. It's been a joy bringing your event to the screen — we hope it takes you right back to the day. Enjoy, and share it with everyone!  ·  www.maineventstudio.com`;
+    return `Main Event Studio proudly presents your finished video! It's been a pleasure bringing your celebration to the screen. Enjoy! We know the ones you share it with will love it too.  ·  www.maineventstudio.com`;
   }
   const tag = v && String(v).trim() ? ` — presenting ${String(v).trim()}` : '';
   return `Main Event Studio${tag}. Here's your latest cut — take a look and let us know what you think!  ·  www.maineventstudio.com`;
