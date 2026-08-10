@@ -102,7 +102,10 @@ async function readVideoDuration(file) {
 
 // Branded default note that pre-fills the "note to the client" field for every cut.
 // Version-aware and editable — Josh can overwrite it per send.
-function brandNote(v) {
+function brandNote(kind, v) {
+  if (kind === 'final') {
+    return `Main Event Studio proudly presents your finished film. It's been a joy bringing your event to the screen — we hope it takes you right back to the day. Enjoy, and share it with everyone!  ·  www.maineventstudio.com`;
+  }
   const tag = v && String(v).trim() ? ` — presenting ${String(v).trim()}` : '';
   return `Main Event Studio${tag}. Here's your latest cut — take a look and let us know what you think!  ·  www.maineventstudio.com`;
 }
@@ -604,7 +607,7 @@ export default function AdminPage() {
         .map((m) => parseInt(m[1], 10));
       const nextV = `V${nums.length ? Math.max(...nums) + 1 : 1}`;
       setDVersion(nextV);
-      setDNote(brandNote(nextV));
+      setDNote(brandNote(dKind, nextV));
       setDNoteAuto(true);
       setDCustomOpen(false);
       setDSendTo('');
@@ -612,7 +615,7 @@ export default function AdminPage() {
     } catch {
       setSentCuts([]);
       setDVersion('V1');
-      setDNote(brandNote('V1'));
+      setDNote(brandNote(dKind, 'V1'));
       setDNoteAuto(true);
       setDCustomOpen(false);
       setDSendTo('');
@@ -1354,7 +1357,7 @@ export default function AdminPage() {
                   type="radio"
                   name="d_kind"
                   checked={dKind === 'rough_cut'}
-                  onChange={() => setDKind('rough_cut')}
+                  onChange={() => { setDKind('rough_cut'); if (dNoteAuto) setDNote(brandNote('rough_cut', dVersion)); }}
                 />
                 Rough cut (auto-watermarked)
               </label>
@@ -1363,7 +1366,7 @@ export default function AdminPage() {
                   type="radio"
                   name="d_kind"
                   checked={dKind === 'final'}
-                  onChange={() => setDKind('final')}
+                  onChange={() => { setDKind('final'); if (dNoteAuto) setDNote(brandNote('final', dVersion)); }}
                 />
                 Final (clean, full-res)
               </label>
@@ -1375,7 +1378,7 @@ export default function AdminPage() {
             <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
               {VBTNS.map((label) => (
                 <button type="button" key={label} style={versionBtnStyle(label)}
-                  onClick={() => { setDVersion(label); setDCustomOpen(false); if (dNoteAuto) setDNote(brandNote(label)); }}>
+                  onClick={() => { setDVersion(label); setDCustomOpen(false); if (dNoteAuto) setDNote(brandNote(dKind, label)); }}>
                   {label}
                 </button>
               ))}
@@ -1384,13 +1387,13 @@ export default function AdminPage() {
                   autoFocus
                   value={isCustom ? dVersion : ''}
                   placeholder="Name it…"
-                  onChange={(e) => { setDVersion(e.target.value); if (dNoteAuto) setDNote(brandNote(e.target.value)); }}
+                  onChange={(e) => { setDVersion(e.target.value); if (dNoteAuto) setDNote(brandNote(dKind, e.target.value)); }}
                   onBlur={() => { if (!dVersion.trim()) setDCustomOpen(false); }}
                   style={{ width: 130, padding: '6px 10px', borderRadius: 8, border: '1px solid #43c088',
                     background: 'var(--panel2, #1e242c)', color: 'var(--text)', fontSize: 13 }}
                 />
               ) : (
-                <button type="button" onClick={() => { setDCustomOpen(true); setDVersion(''); if (dNoteAuto) setDNote(brandNote('')); }}
+                <button type="button" onClick={() => { setDCustomOpen(true); setDVersion(''); if (dNoteAuto) setDNote(brandNote(dKind, '')); }}
                   style={{ border: '1px solid var(--line)', background: 'var(--panel2, #1e242c)', color: 'var(--muted)',
                     borderRadius: 8, padding: '6px 13px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                   ＋ Custom
