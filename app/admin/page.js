@@ -428,6 +428,7 @@ export default function AdminPage() {
   const replaceInputRef = useRef(null);
   const replaceKeyRef = useRef(null);
   const [replacing, setReplacing] = useState(null); // r2_key currently uploading
+  const [rotatingKey, setRotatingKey] = useState(null); // r2_key currently rotating
   const [selKey, setSelKey] = useState(null);        // photo open in the big editor
   const bigDragRef = useRef(null);                   // drag-to-position state
 
@@ -910,6 +911,17 @@ export default function AdminPage() {
         .then(() => { setEditsSaving(false); setEditsSaved(true); })
         .catch(() => setEditsSaving(false));
     }, 500);
+  }
+
+  // Rotate a montage photo's ACTUAL stored image 90° (by r2_key), then reload the
+  // project photos so the editor preview + montage pick up the new orientation.
+  async function rotateProjPhoto(clientId, key) {
+    setRotatingKey(key);
+    try {
+      await api('/api/admin/media', { method: 'POST', body: JSON.stringify({ clientId, action: 'rotate', key }) });
+      await loadProjPhotos(clientId, true);
+    } catch { /* best-effort; the reload reflects the result */ }
+    setRotatingKey(null);
   }
 
   function editPhoto(clientId, key, patch) {
@@ -2001,6 +2013,7 @@ export default function AdminPage() {
                     <button type="button" className={e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { colorCorrect: true })}>On</button>
                   </div>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
+                    <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={rotatingKey === selP.key} title="Rotate this photo 90°" onClick={() => rotateProjPhoto(c.id, selP.key)}>{rotatingKey === selP.key ? 'Rotating…' : 'Rotate ↻'}</button>
                     <a href={selP.downloadUrl || selP.url} download={selP.filename} className="linklike" style={{ fontSize: 12 }}>Download</a>
                     <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={replacing === selP.key} onClick={() => { replaceKeyRef.current = selP.key; if (replaceInputRef.current) replaceInputRef.current.click(); }}>{replacing === selP.key ? 'Uploading…' : 'Replace'}</button>
                     <button type="button" className="linklike" style={{ fontSize: 12 }} onClick={() => editPhoto(c.id, selP.key, { removed: !e.removed })}>{e.removed ? 'Restore' : 'Remove'}</button>
