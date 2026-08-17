@@ -1748,6 +1748,9 @@ export default function AdminPage() {
                     <button type="button" className="btn-ghost" disabled={mediaBusy || idx === 0} onClick={() => mediaMove(c.id, k, f.id, -1)} title="Move up">↑</button>{' '}
                     <button type="button" className="btn-ghost" disabled={mediaBusy || idx === list.length - 1} onClick={() => mediaMove(c.id, k, f.id, 1)} title="Move down">↓</button>
                   </span>
+                  {!f.isVideo && (
+                    <button type="button" className="linklike" disabled={mediaBusy} title="Rotate this photo 90°" onClick={() => mediaAction(c.id, { action: 'rotate', id: f.id })}>Rotate ↻</button>
+                  )}
                   <a href={f.downloadUrl || f.url} download={f.filename} className="linklike">Download</a>
                   {pendingDelete === f.id ? (
                     <span style={{ whiteSpace: 'nowrap' }}>

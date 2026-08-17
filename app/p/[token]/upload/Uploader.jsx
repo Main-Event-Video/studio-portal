@@ -836,6 +836,15 @@ export default function Uploader({ token }) {
           onClick={(e) => { e.stopPropagation(); trashPhoto(m); }}
           style={{ position: 'absolute', top: 6, right: 6, zIndex: 6, width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.62)', color: '#fff', fontSize: 13, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >✕</button>
+        {mediaKind(m) === 'image' && (
+          <button
+            type="button"
+            title="Rotate 90°"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); organize({ action: 'rotate', id: m.id }); }}
+            style={{ position: 'absolute', top: 6, right: 38, zIndex: 6, width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.62)', color: '#fff', fontSize: 14, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >↻</button>
+        )}
         <div className="cap">{m.filename}</div>
       </div>
     );
