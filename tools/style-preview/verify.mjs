@@ -43,6 +43,34 @@ for (const style of Object.keys(STYLES)) {
       if (typeof e.duration === 'number' && e.duration <= 0) bad.push(`non-positive duration ${e.duration}`);
       (e.elements || []).forEach(walk);
     })({ elements: src.elements });
+    // Keyframe arrays must be strictly ordered in time and must not run past the
+    // element's own duration — Creatomate interpolates between consecutive
+    // keyframes, so an out-of-order pair silently produces garbage motion and a
+    // keyframe beyond the duration simply never arrives. Neither is visible in
+    // JSON.stringify, and neither is something I can test without a render.
+    const KF = ['x','y','x_scale','y_scale','scale','opacity','z_rotation','x_rotation','y_rotation','width','height','blur_radius','stroke_start','stroke_end','stroke_offset'];
+    (function kfWalk(e, parentDur) {
+      if (!e || typeof e !== 'object') return;
+      const dur = typeof e.duration === 'number' ? e.duration : parentDur;
+      for (const k of KF) {
+        const arr = e[k];
+        if (!Array.isArray(arr) || !arr.length || typeof arr[0] !== 'object') continue;
+        let prev = -Infinity;
+        for (const kf of arr) {
+          const t = typeof kf.time === 'number' ? kf.time : NaN;
+          if (!Number.isFinite(t)) { bad.push(`${e.name || e.type}.${k} keyframe with non-numeric time`); break; }
+          if (t < prev) { bad.push(`${e.name || e.type}.${k} keyframes out of order (${prev} then ${t})`); break; }
+          if (t < -1e-6) { bad.push(`${e.name || e.type}.${k} negative keyframe time ${t}`); break; }
+          prev = t;
+        }
+        const lastT = arr[arr.length - 1] && arr[arr.length - 1].time;
+        if (Number.isFinite(dur) && Number.isFinite(lastT) && lastT > dur + 1e-6) {
+          bad.push(`${e.name || e.type}.${k} last keyframe ${lastT} > duration ${dur}`);
+        }
+      }
+      (e.elements || []).forEach((c) => kfWalk(c, dur));
+    })({ elements: src.elements }, dur);
+
     if (mode === 'length60' && Math.abs(dur - 60) > 0.05 && !STYLES[style].multipage) {
       bad.push(`length mode did not snap to 60s (got ${dur.toFixed(2)})`);
     }
