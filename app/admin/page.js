@@ -446,7 +446,6 @@ export default function AdminPage() {
   const pcDrag = useRef(null);                        // { id, key } currently dragged
   const [pcOver, setPcOver] = useState(null);         // { key, id, album, side } hovered
   const pcOverRef = useRef(null);                     // same, synchronous (read on drop)
-  const [pcBusy, setPcBusy] = useState(false);        // saving a drag
   const [pcMsg, setPcMsg] = useState('');
   // Undo / redo for reorder moves. Stacks hold whole-timeline arrangements
   // ({top,albums}); lastArrRef is the currently-applied one. Reset per client.
@@ -454,6 +453,11 @@ export default function AdminPage() {
   const [redoStack, setRedoStack] = useState([]);
   const lastArrRef = useRef(null);
   const histClientRef = useRef(null);
+  // Cached full timeline order (photos + videos) so drags apply instantly with no
+  // per-drop fetch; saves run in the background, chained so they never race.
+  const fullOrderRef = useRef(null);      // [{ id, album }] in play order
+  const fullOrderClientRef = useRef(null);
+  const saveChainRef = useRef(null);
   const [selKey, setSelKey] = useState(null);        // photo open in the big editor
   const bigDragRef = useRef(null);                   // drag-to-position state
 
@@ -906,6 +910,9 @@ export default function AdminPage() {
       const { photos } = await api(`/api/admin/montage/photos?clientId=${clientId}`);
       setProjPhotos(photos || []);
       setProjPhotosClientId(clientId);
+      // Refresh + warm the cached full order (so the first drag is instant too).
+      fullOrderRef.current = null; fullOrderClientRef.current = null;
+      ensureFullOrder(clientId).catch(() => {});
     } catch (err) {
       setMErr(true);
       setMMsg(err.message);
@@ -951,79 +958,133 @@ export default function AdminPage() {
     else reorderByDrag(clientId, fallbackAlbum || null, null); // nothing hovered → end of that group
   }
 
-  // Persist a whole-timeline arrangement ({top,albums}) and refresh. Records it
-  // as the current state for undo/redo.
-  async function applyArrangementSave(clientId, arr) {
-    setPcBusy(true); setPcMsg('');
-    try {
-      await api('/api/admin/media', { method: 'POST', body: JSON.stringify({ clientId, action: 'setArrangement', top: arr.top, albums: arr.albums }) });
-      lastArrRef.current = arr;
-      setPcMsg('Saved ✓');
-      await loadProjPhotos(clientId, true);
-      if (roOpen && roClientId === clientId) loadReorder(clientId, true);
-    } catch { setPcMsg('Could not save the order.'); }
-    setPcBusy(false);
-    setTimeout(() => setPcMsg(''), 2000);
+  // Load the client's FULL timeline order (photos + videos) once and cache it.
+  // Everything after is done locally, so drags are instant.
+  async function ensureFullOrder(clientId) {
+    if (fullOrderClientRef.current === clientId && fullOrderRef.current) return fullOrderRef.current;
+    const { files, boxes } = await api(`/api/admin/media?clientId=${clientId}`);
+    const media = (files || []).filter((f) => !f.hidden);
+    const bx = (boxes || []).filter((b) => !b.hidden_at).map((b) => ({ name: b.name, position: b.position }));
+    const { structure } = buildTimeline(media, bx);
+    const list = [];
+    for (const n of structure) {
+      if (n.type === 'media') list.push({ id: n.item.id, album: null });
+      else for (const it of n.items) list.push({ id: it.id, album: n.name });
+    }
+    fullOrderRef.current = list; fullOrderClientRef.current = clientId;
+    return list;
   }
 
-  // Move the dragged photo (pcDrag.current = { id, key }) relative to `targetId`
-  // (`side` = 'before' | 'after'), or to the END of `destAlbum`'s group when
-  // targetId is null. Reorders against the client's FULL timeline (photos AND
-  // videos) so videos keep their slots, then persists via the shared
-  // setArrangement — exactly what the client reads back, so it stays in sync.
+  // Flatten an arrangement back into an ordered [{id, album}] list.
+  function flattenArrangement(arr) {
+    const list = [];
+    for (const t of (arr.top || [])) {
+      if (t.type === 'media') list.push({ id: t.id, album: null });
+      else if (t.type === 'album') for (const id of (arr.albums?.[t.name] || [])) list.push({ id, album: t.name });
+    }
+    return list;
+  }
+
+  // Reorder the on-screen photos to match `order` — no network, no reload.
+  function applyOrderToProjPhotos(order) {
+    setProjPhotos((cur) => {
+      const byId = new Map(cur.map((p) => [p.id, p]));
+      const next = [];
+      const used = new Set();
+      for (const it of order) { const p = byId.get(it.id); if (p) { next.push({ ...p, album: it.album || null }); used.add(it.id); } }
+      for (const p of cur) if (!used.has(p.id)) next.push(p); // safety: keep any stragglers
+      return next.map((p, i) => ({ ...p, index: i + 1 }));
+    });
+  }
+
+  // Save an arrangement in the background, chained so rapid moves never race.
+  function queueSave(clientId, arr) {
+    setPcMsg('Saving…');
+    const run = async () => {
+      try {
+        await api('/api/admin/media', { method: 'POST', body: JSON.stringify({ clientId, action: 'setArrangement', top: arr.top, albums: arr.albums }) });
+        setPcMsg('Saved ✓'); setTimeout(() => setPcMsg((m) => (m === 'Saved ✓' ? '' : m)), 1200);
+      } catch {
+        setPcMsg('Could not save — reloading…');
+        fullOrderRef.current = null; fullOrderClientRef.current = null;
+        loadProjPhotos(clientId, true);
+        if (roOpen && roClientId === clientId) loadReorder(clientId, true);
+      }
+    };
+    saveChainRef.current = (saveChainRef.current || Promise.resolve()).then(run, run);
+  }
+
+  // Apply a whole-timeline arrangement to the screen instantly + queue the save
+  // (used by undo/redo). Keeps the cache + on-screen order in lock-step.
+  function applyArrangementLocal(clientId, arr) {
+    const order = flattenArrangement(arr);
+    fullOrderRef.current = order; fullOrderClientRef.current = clientId;
+    lastArrRef.current = arr;
+    applyOrderToProjPhotos(order);
+    if (roOpen && roClientId === clientId) loadReorder(clientId, true);
+    queueSave(clientId, arr);
+  }
+
+  // Move the dragged photo relative to `targetId` (`side` = 'before' | 'after'),
+  // or to the END of `destAlbum`'s group when targetId is null. Applies instantly
+  // to the cached FULL timeline (photos AND videos keep their slots) and the
+  // screen, then saves in the background.
   async function reorderByDrag(clientId, destAlbum, targetId, side) {
     const drag = pcDrag.current;
-    setPcOver(null); pcOverRef.current = null;
-    if (!drag || !drag.id) { pcDrag.current = null; return; }
-    setPcBusy(true); setPcMsg('');
-    try {
-      const { files, boxes } = await api(`/api/admin/media?clientId=${clientId}`);
-      const media = (files || []).filter((f) => !f.hidden);
-      const bx = (boxes || []).filter((b) => !b.hidden_at).map((b) => ({ name: b.name, position: b.position }));
-      const { structure } = buildTimeline(media, bx);
-      const list = [];
-      for (const n of structure) {
-        if (n.type === 'media') list.push({ id: n.item.id, album: null });
-        else for (const it of n.items) list.push({ id: it.id, album: n.name });
-      }
-      const before = arrangementFromFlat(list); // snapshot for undo
-      const di = list.findIndex((x) => x.id === drag.id);
-      if (di < 0) { setPcMsg('Could not find that photo — try again.'); setPcBusy(false); pcDrag.current = null; return; }
-      const [moved] = list.splice(di, 1);
-      moved.album = destAlbum || null;
-      let ti = targetId != null ? list.findIndex((x) => x.id === targetId) : list.length;
-      if (ti < 0) ti = list.length;
-      else if (side === 'after' && targetId != null) ti += 1;
-      list.splice(ti, 0, moved);
-      const after = arrangementFromFlat(list);
-      // Record history for undo (loadProjPhotos clears it on client switch).
-      histClientRef.current = clientId;
-      setUndoStack((s) => [...s, before].slice(-50));
-      setRedoStack([]);
-      lastArrRef.current = after;
-      await api('/api/admin/media', { method: 'POST', body: JSON.stringify({ clientId, action: 'setArrangement', top: after.top, albums: after.albums }) });
-      setPcMsg('Saved ✓');
-      await loadProjPhotos(clientId, true);
-      if (roOpen && roClientId === clientId) loadReorder(clientId, true);
-    } catch { setPcMsg('Could not save the new order.'); }
-    setPcBusy(false);
-    pcDrag.current = null;
-    setTimeout(() => setPcMsg(''), 2500);
+    setPcOver(null); pcOverRef.current = null; pcDrag.current = null;
+    if (!drag || !drag.id) return;
+    let full;
+    try { full = (await ensureFullOrder(clientId)).slice(); }
+    catch { setPcMsg('Could not load the order — try again.'); return; }
+    const before = arrangementFromFlat(full); // snapshot for undo
+    const di = full.findIndex((x) => x.id === drag.id);
+    if (di < 0) { // cache stale → refetch next time
+      fullOrderRef.current = null; fullOrderClientRef.current = null;
+      loadProjPhotos(clientId, true);
+      return;
+    }
+    const [moved] = full.splice(di, 1);
+    moved.album = destAlbum || null;
+    let ti;
+    if (targetId != null) {
+      ti = full.findIndex((x) => x.id === targetId);
+      if (ti < 0) ti = full.length;
+      else if (side === 'after') ti += 1;
+    } else if (destAlbum) {
+      // Dropped into an album's open space → end of THAT album's run (keeps it contiguous).
+      let last = -1;
+      for (let i = 0; i < full.length; i++) if (full[i].album === destAlbum) last = i;
+      ti = last >= 0 ? last + 1 : full.length;
+    } else {
+      ti = full.length; // loose area → end of the timeline
+    }
+    full.splice(ti, 0, moved);
+    fullOrderRef.current = full; fullOrderClientRef.current = clientId;
+    const after = arrangementFromFlat(full);
+    // History for undo.
+    histClientRef.current = clientId;
+    setUndoStack((s) => [...s, before].slice(-50));
+    setRedoStack([]);
+    lastArrRef.current = after;
+    // Instant on-screen update, then background save.
+    applyOrderToProjPhotos(full);
+    if (roOpen && roClientId === clientId) loadReorder(clientId, true);
+    queueSave(clientId, after);
   }
 
-  async function undoOrder(clientId) {
-    if (!undoStack.length || pcBusy) return;
+  function undoOrder(clientId) {
+    if (!undoStack.length) return;
     const prev = undoStack[undoStack.length - 1];
     setUndoStack((s) => s.slice(0, -1));
     if (lastArrRef.current) setRedoStack((s) => [...s, lastArrRef.current]);
-    await applyArrangementSave(clientId, prev);
+    applyArrangementLocal(clientId, prev);
   }
-  async function redoOrder(clientId) {
-    if (!redoStack.length || pcBusy) return;
+  function redoOrder(clientId) {
+    if (!redoStack.length) return;
     const next = redoStack[redoStack.length - 1];
     setRedoStack((s) => s.slice(0, -1));
     if (lastArrRef.current) setUndoStack((s) => [...s, lastArrRef.current]);
-    await applyArrangementSave(clientId, next);
+    applyArrangementLocal(clientId, next);
   }
 
   // Load this client's saved photo edits (defaults if none yet).
@@ -2464,12 +2525,11 @@ export default function AdminPage() {
                 <strong style={{ fontSize: 13 }}>Photo editor{' '}
                   <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— drag a photo to reorder · double-click to edit</span></strong>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button type="button" onClick={() => undoOrder(c.id)} disabled={!undoStack.length || pcBusy} title="Undo the last move"
-                    style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: (!undoStack.length || pcBusy) ? 'var(--muted)' : 'var(--text)', cursor: (!undoStack.length || pcBusy) ? 'default' : 'pointer', opacity: (!undoStack.length || pcBusy) ? 0.5 : 1 }}>↶ Undo</button>
-                  <button type="button" onClick={() => redoOrder(c.id)} disabled={!redoStack.length || pcBusy} title="Redo the move"
-                    style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: (!redoStack.length || pcBusy) ? 'var(--muted)' : 'var(--text)', cursor: (!redoStack.length || pcBusy) ? 'default' : 'pointer', opacity: (!redoStack.length || pcBusy) ? 0.5 : 1 }}>↷ Redo</button>
-                  {pcBusy && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Saving…</span>}
-                  {pcMsg && <span style={{ fontSize: 12, fontWeight: 700, color: pcMsg.includes('Could not') || pcMsg.includes('refresh') ? '#e06b6b' : '#2fbf71' }}>{pcMsg}</span>}
+                  <button type="button" onClick={() => undoOrder(c.id)} disabled={!undoStack.length} title="Undo the last move"
+                    style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: !undoStack.length ? 'var(--muted)' : 'var(--text)', cursor: !undoStack.length ? 'default' : 'pointer', opacity: !undoStack.length ? 0.5 : 1 }}>↶ Undo</button>
+                  <button type="button" onClick={() => redoOrder(c.id)} disabled={!redoStack.length} title="Redo the move"
+                    style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: !redoStack.length ? 'var(--muted)' : 'var(--text)', cursor: !redoStack.length ? 'default' : 'pointer', opacity: !redoStack.length ? 0.5 : 1 }}>↷ Redo</button>
+                  {pcMsg && <span style={{ fontSize: 12, fontWeight: 700, color: pcMsg.includes('Could not') ? '#e06b6b' : (pcMsg === 'Saving…' ? 'var(--muted)' : '#2fbf71') }}>{pcMsg}</span>}
                   <span style={{ fontSize: 12, color: 'var(--muted)' }}>{Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed</span>
                 </span>
               </div>
