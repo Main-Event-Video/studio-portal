@@ -385,6 +385,7 @@ export default function AdminPage() {
     { value: 'party2', label: 'Party 2 — energetic, drift + varied transitions' },
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
     { value: 'duotone2', label: 'Duotone Split 2 — frantic, bg & hero transition separately' },
+    { value: 'duotone_pastel', label: 'Duotone Split Pastel — soft rainbow bg + true-colour hero' },
     { value: 'polaroid', label: 'Polaroid Drop — square print, thick white bottom' },
     { value: 'photo_drop', label: 'Photo Drop — whole photo, even white border' },
     { value: 'collage_classic', label: 'Collage Wall Classic — uniform photo grid, camera glides across' },
@@ -395,6 +396,7 @@ export default function AdminPage() {
     { value: 'trendy', label: 'Trendy Photo Wall — 3D angled grid of matte prints' },
     { value: 'multi_page', label: 'Multi Page — green screen, images pop on one by one' },
     { value: 'multi_page_record', label: 'Multi Page Record — green screen, page pivots then reveals' },
+    { value: 'two_panel', label: 'Two Panel — green screen, 2 photos per card, sides alternate' },
   ];
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
