@@ -129,6 +129,18 @@ for (const style of Object.keys(STYLES)) {
       });
     })(src.elements, dur, '');
 
+    // A VIDEO element with no explicit duration runs for its MEDIA length, so
+    // `loop` has nothing to loop into and a short backdrop clip simply stops
+    // partway through the montage. Images are fine without one — they have no
+    // intrinsic length — but every video must say how long it is on screen.
+    (function videoDur(e) {
+      if (!e || typeof e !== 'object') return;
+      if (e.type === 'video' && typeof e.duration !== 'number') {
+        bad.push(`video "${e.name || 'unnamed'}" has no explicit duration (would play once at media length, not loop)`);
+      }
+      (e.elements || []).forEach(videoDur);
+    })({ elements: src.elements });
+
     if (mode === 'length60' && Math.abs(dur - 60) > 0.05 && !STYLES[style].multipage) {
       bad.push(`length mode did not snap to 60s (got ${dur.toFixed(2)})`);
     }
