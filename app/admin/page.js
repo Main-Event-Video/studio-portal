@@ -440,6 +440,13 @@ export default function AdminPage() {
   const [roLoading, setRoLoading] = useState(false);
   const [roSaving, setRoSaving] = useState(false);
   const [roMsg, setRoMsg] = useState('');
+  // Drag-to-reorder in the Photo editor grid (and reorder track): the natural
+  // "grab a photo and drop it where you want it" gesture. Writes the same shared
+  // timeline, so it syncs to the client's portal.
+  const pcDrag = useRef(null);                        // r2_key currently dragged
+  const [pcOver, setPcOver] = useState(null);         // r2_key hovered (drop indicator)
+  const [pcBusy, setPcBusy] = useState(false);        // saving a drag
+  const [pcMsg, setPcMsg] = useState('');
   const [selKey, setSelKey] = useState(null);        // photo open in the big editor
   const bigDragRef = useRef(null);                   // drag-to-position state
 
@@ -896,6 +903,63 @@ export default function AdminPage() {
     setProjPhotosLoading(false);
   }
 
+  // Turn a flat, ordered list of { id, album } into the shared-timeline payload
+  // (top-level order + per-album order). An album becomes ONE top-level slot at
+  // the position of its first photo; its photos keep the order they appear in.
+  function arrangementFromFlat(items) {
+    const top = [];
+    const albums = {};
+    const seen = new Set();
+    for (const it of items) {
+      if (it.album) {
+        if (!seen.has(it.album)) { seen.add(it.album); top.push({ type: 'album', name: it.album }); }
+        (albums[it.album] = albums[it.album] || []).push(it.id);
+      } else {
+        top.push({ type: 'media', id: it.id });
+      }
+    }
+    return { top, albums };
+  }
+
+  // Move the dragged photo (pcDrag.current = { id, key }) to just BEFORE `beforeId`
+  // (or to the END of `destAlbum`'s group when beforeId is null), landing it in
+  // `destAlbum` (null = loose). We reorder against the client's FULL timeline
+  // (photos AND videos) so videos keep their slots, then persist via the shared
+  // setArrangement — which is exactly what the client reads back, so it syncs.
+  async function reorderByDrag(clientId, destAlbum, beforeId) {
+    const drag = pcDrag.current;
+    setPcOver(null);
+    if (!drag || !drag.id || drag.id === beforeId) { pcDrag.current = null; return; }
+    setPcBusy(true); setPcMsg('');
+    try {
+      // Full, current timeline (includes videos) with real db ids + album membership.
+      const { files, boxes } = await api(`/api/admin/media?clientId=${clientId}`);
+      const media = (files || []).filter((f) => !f.hidden);
+      const bx = (boxes || []).filter((b) => !b.hidden_at).map((b) => ({ name: b.name, position: b.position }));
+      const { structure } = buildTimeline(media, bx);
+      const list = [];
+      for (const n of structure) {
+        if (n.type === 'media') list.push({ id: n.item.id, album: null });
+        else for (const it of n.items) list.push({ id: it.id, album: n.name });
+      }
+      const di = list.findIndex((x) => x.id === drag.id);
+      if (di < 0) { setPcMsg('Could not find that photo — try again.'); setPcBusy(false); pcDrag.current = null; return; }
+      const [moved] = list.splice(di, 1);
+      moved.album = destAlbum || null;
+      let ti = beforeId != null ? list.findIndex((x) => x.id === beforeId) : list.length;
+      if (ti < 0) ti = list.length;
+      list.splice(ti, 0, moved);
+      const { top, albums } = arrangementFromFlat(list);
+      await api('/api/admin/media', { method: 'POST', body: JSON.stringify({ clientId, action: 'setArrangement', top, albums }) });
+      setPcMsg('Saved ✓');
+      await loadProjPhotos(clientId, true);
+      if (roOpen && roClientId === clientId) loadReorder(clientId, true);
+    } catch { setPcMsg('Could not save the new order.'); }
+    setPcBusy(false);
+    pcDrag.current = null;
+    setTimeout(() => setPcMsg(''), 2500);
+  }
+
   // Load this client's saved photo edits (defaults if none yet).
   async function loadPhotoEdits(clientId) {
     if (editsClientId === clientId) return;
@@ -1021,6 +1085,8 @@ export default function AdminPage() {
       <div
         key={k}
         onClick={live ? (e) => { e.stopPropagation(); onDrop(); } : undefined}
+        onDragOver={live ? (e) => e.preventDefault() : undefined}
+        onDrop={live ? (e) => { e.preventDefault(); e.stopPropagation(); onDrop(); } : undefined}
         style={{
           flex: '0 0 auto', width: live ? 22 : 8, alignSelf: 'stretch', minHeight: 74,
           margin: '0 2px', borderRadius: 6, cursor: live ? 'pointer' : 'default',
@@ -1036,10 +1102,13 @@ export default function AdminPage() {
     return (
       <div
         key={`${scope}:${album || ''}:${m.id}`}
+        draggable
+        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', m.id); } catch { /* older */ } setRoPick({ scope, album: album || null, id: m.id, kind: 'media' }); }}
+        onDragEnd={() => setRoPick((cur) => (cur && cur.id === m.id ? null : cur))}
         onClick={(e) => { e.stopPropagation(); roPickToggle({ scope, album: album || null, id: m.id, kind: 'media' }); }}
-        title={m.filename}
+        title={`${m.filename} — drag to reorder, or tap then tap a gap`}
         style={{
-          position: 'relative', flex: '0 0 auto', width: 96, cursor: 'pointer',
+          position: 'relative', flex: '0 0 auto', width: 96, cursor: 'grab',
           border: isPk ? '2px solid #38b6ff' : '2px solid transparent', borderRadius: 10, overflow: 'hidden',
           boxShadow: isPk ? '0 0 0 3px rgba(56,182,255,.3)' : 'none', background: '#0a0f18',
         }}
@@ -1066,6 +1135,8 @@ export default function AdminPage() {
       return (
         <div
           key={name}
+          onDragOver={(e) => { if (pickedIsMedia) e.preventDefault(); }}
+          onDrop={(e) => { if (pickedIsMedia) { e.preventDefault(); e.stopPropagation(); roDropInAlbum(name, count); } }}
           onClick={(e) => {
             e.stopPropagation();
             if (pickedIsMedia) roDropInAlbum(name, count);          // drop picked photo into this album (end)
@@ -2139,19 +2210,30 @@ export default function AdminPage() {
         {roOpen && roClientId === c.id && renderReorder(c)}
         {showRef && projPhotos.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8, marginBottom: 16 }}>
-            {projPhotos.map((p) => (
+            {projPhotos.map((p) => {
+              const isOver = pcOver === p.key && pcDrag.current && pcDrag.current.key !== p.key;
+              return (
               <div key={p.key || p.index} style={{ textAlign: 'center' }}>
-                <div style={{ position: 'relative' }}>
+                <div
+                  draggable
+                  onDragStart={(e) => { pcDrag.current = { id: p.id, key: p.key }; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', p.key); } catch { /* older */ } }}
+                  onDragEnd={() => { pcDrag.current = null; setPcOver(null); }}
+                  onDragOver={(e) => { if (pcDrag.current) { e.preventDefault(); if (pcOver !== p.key) setPcOver(p.key); } }}
+                  onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); e.stopPropagation(); reorderByDrag(c.id, p.album || null, p.id); } }}
+                  title="Drag to reorder"
+                  style={{ position: 'relative', cursor: 'grab', borderRadius: 6, outline: isOver ? '2px solid #38b6ff' : 'none' }}>
                   <img
                     src={p.url}
                     alt={p.filename}
+                    draggable={false}
                     style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }}
                   />
                   {p.importSeq != null && <span title={`Import #${String(p.importSeq).padStart(3, '0')} — permanent reference number`} style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 10, fontWeight: 900, letterSpacing: '.3px', background: '#f5a623', color: '#241700', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(p.importSeq).padStart(3, '0')}</span>}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{p.index}</div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -2269,9 +2351,16 @@ export default function AdminPage() {
           const photoCell = (p) => {
             const pe = { ...defE, ...(photoEdits.photos[p.key] || {}) };
             const isSel = p.key === selKey;
+            const isOver = pcOver === p.key && pcDrag.current && pcDrag.current.key !== p.key;
             return (
-              <div key={`t:${p.key || p.index}`} onDoubleClick={() => setSelKey(isSel ? null : p.key)} title="Double-click to edit"
-                style={{ border: isSel ? '2px solid #d8b56b' : '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', opacity: pe.removed ? 0.4 : 1, position: 'relative' }}>
+              <div key={`t:${p.key || p.index}`}
+                draggable
+                onDragStart={(e) => { pcDrag.current = { id: p.id, key: p.key }; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', p.key); } catch { /* older */ } }}
+                onDragEnd={() => { pcDrag.current = null; setPcOver(null); }}
+                onDragOver={(e) => { if (pcDrag.current) { e.preventDefault(); if (pcOver !== p.key) setPcOver(p.key); } }}
+                onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); e.stopPropagation(); reorderByDrag(c.id, p.album || null, p.id); } }}
+                onDoubleClick={() => setSelKey(isSel ? null : p.key)} title="Drag to reorder · double-click to edit"
+                style={{ border: isSel ? '2px solid #d8b56b' : (isOver ? '2px solid #38b6ff' : '1px solid var(--line)'), borderLeft: isOver ? '4px solid #38b6ff' : undefined, borderRadius: 8, overflow: 'hidden', cursor: 'grab', opacity: pe.removed ? 0.4 : 1, position: 'relative' }}>
                 <div style={{ aspectRatio: '16 / 9', background: '#000', overflow: 'hidden' }}>
                   <img src={p.url} alt={p.filename} draggable={false} style={{ width: '100%', height: '100%', ...styleFor(pe) }} />
                 </div>
@@ -2303,8 +2392,12 @@ export default function AdminPage() {
             <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
                 <strong style={{ fontSize: 13 }}>Photo editor{' '}
-                  <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— double-click a photo to edit it; edits apply to every style</span></strong>
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed</span>
+                  <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— drag a photo to reorder · double-click to edit</span></strong>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {pcBusy && <span style={{ fontSize: 12, color: 'var(--muted)' }}>Saving…</span>}
+                  {pcMsg && <span style={{ fontSize: 12, fontWeight: 700, color: pcMsg.includes('Could not') || pcMsg.includes('refresh') ? '#e06b6b' : '#2fbf71' }}>{pcMsg}</span>}
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed</span>
+                </span>
               </div>
               {hasAlbums ? (
                 groups.map((g, gi) => {
@@ -2320,15 +2413,21 @@ export default function AdminPage() {
                         <strong style={{ fontSize: 13 }}>{isAlbum ? g.album : 'Loose photos'}</strong>
                         <span style={{ color: 'var(--muted)', fontSize: 12 }}>{g.photos.length} photo{g.photos.length === 1 ? '' : 's'}</span>
                       </div>
-                      <div style={gridStyle}>{renderCells(g.photos)}</div>
+                      <div style={gridStyle}
+                        onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
+                        onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); reorderByDrag(c.id, g.album || null, null); } }}
+                      >{renderCells(g.photos)}</div>
                     </section>
                   );
                 })
               ) : (
-                <div style={gridStyle}>{renderCells(groups[0] ? groups[0].photos : [])}</div>
+                <div style={gridStyle}
+                  onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
+                  onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); reorderByDrag(c.id, null, null); } }}
+                >{renderCells(groups[0] ? groups[0].photos : [])}</div>
               )}
               <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-                Double-click a photo to open its editor right below it; use ‹ › to move between photos. Photos are grouped into their albums. Default is Fit (nothing cropped); Fill crops — then drag the big photo to position it. B&amp;W / Sepia and Auto-color render in the montage; contrast &amp; saturation preview in the editor (render tuning pending a test render). Removed photos are skipped.
+Drag any photo to a new spot to reorder it — the order saves automatically and syncs to the client’s portal. Double-click a photo to open its editor right below it; use ‹ › to move between photos. Photos are grouped into their albums. Default is Fit (nothing cropped); Fill crops — then drag the big photo to position it. B&amp;W / Sepia and Auto-color render in the montage; contrast &amp; saturation preview in the editor (render tuning pending a test render). Removed photos are skipped.
               </p>
               <input ref={replaceInputRef} type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; const key = replaceKeyRef.current; if (f && key) replacePhoto(c.id, key, f); }} />

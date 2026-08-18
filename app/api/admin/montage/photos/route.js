@@ -127,6 +127,7 @@ export async function GET(request) {
   const photos = await Promise.all(
     (data || []).slice(0, 500).map(async (m, i) => ({
       index: i + 1,
+      id: m.id,
       key: m.r2_key,
       filename: m.filename,
       album: m.folder_path || null,
