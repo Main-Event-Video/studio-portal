@@ -37,6 +37,15 @@
   // way). Wait for decode, then two frames, before capturing.
   window.settle = async () => {
     await Promise.all([...document.images].map((i) => (i.decode ? i.decode().catch(() => {}) : Promise.resolve())));
+    // Videos are scrubbed, not played — wait for the seek to actually land or the
+    // screenshot catches the previous frame.
+    await Promise.all([...document.querySelectorAll('video')].map((v) => new Promise((res) => {
+      if (v.readyState >= 2 && !v.seeking) return res();
+      const done = () => res();
+      v.addEventListener('seeked', done, { once: true });
+      v.addEventListener('loadeddata', done, { once: true });
+      setTimeout(done, 1200);
+    })));
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   };
 </script>

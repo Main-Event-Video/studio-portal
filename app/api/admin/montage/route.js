@@ -6,7 +6,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
-import { getViewUrl, getDownloadUrl } from '@/lib/r2';
+import { getViewUrl, getDownloadUrl, resolveBackground, BACKGROUND_PREFIX } from '@/lib/r2';
 import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
@@ -60,6 +60,13 @@ export async function POST(request) {
         texture: (background.texture && TEXTURES[background.texture]) ? String(background.texture) : null,
         animated: background.animated !== false,   // textures drift by default
         url: background.url ? String(background.url) : null,
+        // IMPORTED background from the studio library. We store the r2_key, never
+        // a URL: presigned URLs expire, and Export Full Rez re-renders from these
+        // stored params days later. The key is turned into a fresh presigned URL
+        // at render time by resolveBackground() — same rule as renderSequence.
+        r2_key: (background.r2_key && String(background.r2_key).startsWith(BACKGROUND_PREFIX))
+          ? String(background.r2_key) : null,
+        kind: background.kind === 'video' ? 'video' : (background.kind === 'image' ? 'image' : null),
         tint: background.tint ? String(background.tint) : null,
         opacity: background.opacity ? String(background.opacity) : null,
         blur: Number.isFinite(Number(background.blur)) ? Number(background.blur) : null,
@@ -272,6 +279,10 @@ export async function POST(request) {
       ? [greenItem, ...photoItemsBuilt, greenItem]
       : photoItemsBuilt;
 
+    // Presign the imported background (if any) for THIS render. bgControl keeps
+    // the r2_key for the params snapshot; bgResolved carries the live URL.
+    const bgResolved = await resolveBackground(bgControl);
+
     const source = buildMontageSource({
       items,
       style,
@@ -285,7 +296,7 @@ export async function POST(request) {
       assetBase: siteUrl || null,   // for collage light-leak overlays (public/overlays/*)
       background: (bgControl && bgControl.texture)
         ? { ...bgControl, textureUrl: `${siteUrl}/backgrounds/${bgControl.texture}.jpg` }
-        : bgControl,                // "Add background" control (green / texture / image+tint)
+        : bgResolved,               // green / texture / pasted url / imported library image or video
       mpTransition, mpStagger, mpHold, mpSpeed,   // Multi Page motion options
     });
 

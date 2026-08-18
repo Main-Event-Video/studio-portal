@@ -29,6 +29,10 @@ Creatomate draft render is proof. Known gaps, all marked `APPROX` in `sim.js`:
 - Blend modes are CSS `mix-blend-mode`, which is close but not identical.
 - Renders come out **brighter** than any preview (a finding from earlier
   sessions) — screen-blended layers stack harder in the real render.
+- **The sandbox Chromium has no H.264 decoder.** An `.mp4` in a `<video>` sits at
+  `readyState 0` forever and paints black. To preview a video background locally,
+  transcode a WebM proxy (`ffmpeg -i bg.mp4 -c:v libvpx-vp9 bg.webm`) and point
+  the harness at that. Creatomate has no such limit — this is preview-only.
 
 ## Why it earns its keep anyway
 
@@ -51,6 +55,9 @@ node strip.mjs   <label> [--n=12] [--from=0] [--to=0] [--w=480] [--cols=4]   # c
 node capture.mjs <out.mp4> [--fps=24] [--w=1280] [--max=0]                   # picker clip
 node verify.mjs                                                              # build EVERY style, 4 modes, assert sane JSON
 ```
+
+Background flags for `build-source.mjs`: `--bg-video` (a looping WebM backdrop,
+exercising the studio background library) and `--bg-image` (a still backdrop).
 
 `verify.mjs` is the one to run after any engine change. It builds every style in
 `STYLES` with cards+green, bare, 60-second length mode, and with dimensions

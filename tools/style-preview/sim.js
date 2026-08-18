@@ -250,6 +250,29 @@
         applyFilters(el, img.style, localT, ctx.scale);
         node.appendChild(img);
       }
+    } else if (el.type === 'video') {
+      // Video backdrops. Seeked rather than played: the whole capture pipeline is
+      // deterministic frame-stepping, so the video is scrubbed to the element's
+      // local time (wrapped when loop is set, exactly as Creatomate would).
+      const v = doc.createElement('video');
+      v.src = el.source;
+      v.muted = true;
+      v.playsInline = true;
+      v.preload = 'auto';
+      v.style.width = '100%';
+      v.style.height = '100%';
+      v.style.display = 'block';
+      v.style.objectFit = el.fit === 'contain' ? 'contain' : 'cover';
+      const trim = num(el.trim_start, 0);
+      const seek = () => {
+        const d = v.duration;
+        if (!Number.isFinite(d) || d <= 0) return;
+        const raw = trim + localT;
+        v.currentTime = el.loop ? (raw % d) : Math.min(raw, d - 0.001);
+      };
+      if (v.readyState >= 1) seek(); else v.addEventListener('loadedmetadata', seek, { once: true });
+      applyFilters(el, v.style, localT, ctx.scale);
+      node.appendChild(v);
     } else if (el.type === 'shape') {
       const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('viewBox', '0 0 100 100');

@@ -16,7 +16,7 @@ const out = args[0] || '/home/claude/preview/out.mp4';
 const val = (n, d) => { const a = args.find((x) => x.startsWith('--' + n + '=')); return a ? Number(a.split('=')[1]) : d; };
 const FPS = val('fps', 25), WIDTH = val('w', 960), MAXS = val('max', 0);
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 
 const server = createServer(async (req, res) => {
   try {

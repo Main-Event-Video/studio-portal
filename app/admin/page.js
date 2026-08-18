@@ -413,6 +413,61 @@ export default function AdminPage() {
   // list once a style has been seen and signed off.
   const NEW_STYLES = ['photo_slide', 'sliding_images', 'photo_ribbon', 'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel'];
 
+  // ---- Studio background library -------------------------------------------
+  // Imported backdrops — images AND videos — shared across every client, so a
+  // look is uploaded once and reused. Files go browser -> R2 directly via a
+  // presigned PUT; a 400MB background video never passes through Vercel.
+  const [bgLib, setBgLib] = useState(null);      // null = not loaded yet
+  const [bgLibErr, setBgLibErr] = useState('');
+  const [bgLibBusy, setBgLibBusy] = useState(false);
+  const bgFileRef = useRef(null);
+  const bgTargetSeg = useRef(null);
+
+  const loadBgLib = async () => {
+    setBgLibBusy(true);
+    setBgLibErr('');
+    try {
+      const { backgrounds } = await api('/api/admin/backgrounds');
+      setBgLib(backgrounds || []);
+    } catch (e) {
+      setBgLibErr(e.message);
+    } finally {
+      setBgLibBusy(false);
+    }
+  };
+
+  const uploadBackground = async (file, segKeyForSelect) => {
+    if (!file) return;
+    setBgLibBusy(true);
+    setBgLibErr('');
+    try {
+      const { url, key, kind } = await api('/api/admin/backgrounds', {
+        method: 'POST',
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+      });
+      const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+      await loadBgLib();
+      // Select what was just uploaded on the segment that asked for it.
+      if (segKeyForSelect) updateSegment(segKeyForSelect, { bgKey: key, bgKind: kind });
+    } catch (e) {
+      setBgLibErr(e.message);
+    } finally {
+      setBgLibBusy(false);
+    }
+  };
+
+  const deleteBackground = async (key) => {
+    setBgLibErr('');
+    try {
+      await api(`/api/admin/backgrounds?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+      setSegments((arr) => arr.map((x) => (x.bgKey === key ? { ...x, bgKey: '', bgKind: '' } : x)));
+      await loadBgLib();
+    } catch (e) {
+      setBgLibErr(e.message);
+    }
+  };
+
   // ---- Creatomate template porting tool (READ-ONLY dev utility) -------------
   // Lists the templates in the Creatomate project this app already renders with,
   // and downloads any one's source JSON (its RenderScript) so the look can be
@@ -464,7 +519,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '' });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -1628,9 +1683,13 @@ export default function AdminPage() {
               ? { green: true }
               : ['soft_focus', 'linen', 'gradient'].includes(s.bgMode)
                 ? { texture: s.bgMode, animated: true }
-                : (s.bgMode === 'image' && s.bgUrl?.trim())
-                  ? { url: s.bgUrl.trim(), tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
-                  : null,
+                : (s.bgMode === 'library' && s.bgKey)
+                  // r2_key, not a URL — the route presigns it at render time so
+                  // Export Full Rez still works days later.
+                  ? { r2_key: s.bgKey, kind: s.bgKind || 'image', tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
+                  : (s.bgMode === 'image' && s.bgUrl?.trim())
+                    ? { url: s.bgUrl.trim(), tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
+                    : null,
             // Multi Page motion options (only meaningful for the multi_page styles)
             mpTransition: s.mpTransition || 'record-fwd',
             mpStagger: s.mpStagger ? Number(s.mpStagger) : null,
@@ -2800,6 +2859,11 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
         )}
 
         {montageStep === 3 && (<>
+        {/* Hidden picker for background imports. Must live INSIDE Step 3: the
+            background control is here, and a ref to an input rendered in Step 1
+            is null while Step 3 is on screen. */}
+        <input ref={bgFileRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" style={{ display: 'none' }}
+          onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; uploadBackground(f, bgTargetSeg.current); }} />
         {/* Segment plan */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {segments.map((s, idx) => {
@@ -2917,14 +2981,85 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 </div>
                 <div className="field-group" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
                   <label style={{ color: 'var(--text)', display: 'block', marginBottom: 4 }}>Background</label>
-                  <select value={s.bgMode || 'default'} onChange={(e) => updateSegment(s.key, { bgMode: e.target.value })}>
+                  <select value={s.bgMode || 'default'} onChange={(e) => {
+                    updateSegment(s.key, { bgMode: e.target.value });
+                    if (e.target.value === 'library' && bgLib === null && !bgLibBusy) loadBgLib();
+                  }}>
                     <option value="default">Style default</option>
                     <option value="green">Green screen (keyable)</option>
                     <option value="soft_focus">Texture — Soft-focus (animated)</option>
                     <option value="linen">Texture — Cream linen (animated)</option>
                     <option value="gradient">Texture — Gradient wash (animated)</option>
-                    <option value="image">Image…</option>
+                    <option value="library">Imported image or video…</option>
+                    <option value="image">Image by URL…</option>
                   </select>
+                  {s.bgMode === 'library' && (() => {
+                    const tintRow = (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted)', marginTop: 8 }}>
+                        <span>Tint</span>
+                        <input type="color" value={s.bgTint || '#102040'} onChange={(e) => updateSegment(s.key, { bgTint: e.target.value })} />
+                        <span>Opacity</span>
+                        <input type="range" min="0" max="100" value={parseInt(s.bgOpacity || '50', 10)} onChange={(e) => updateSegment(s.key, { bgOpacity: e.target.value })} />
+                        <span>{parseInt(s.bgOpacity || '50', 10)}%</span>
+                      </div>
+                    );
+                    return (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <button type="button" className="btn-ghost" disabled={bgLibBusy}
+                            onClick={() => { bgTargetSeg.current = s.key; bgFileRef.current?.click(); }}>
+                            {bgLibBusy ? 'Working…' : '+ Import image or video'}
+                          </button>
+                          {bgLib !== null && (
+                            <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                              onClick={loadBgLib}>Refresh</button>
+                          )}
+                        </div>
+                        {bgLibErr && <div style={{ fontSize: 12, color: '#e5484d', marginTop: 6 }}>{bgLibErr}</div>}
+                        {bgLib && bgLib.length === 0 && !bgLibBusy && (
+                          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+                            Nothing imported yet. JPEG/PNG/WebP images, or MP4/MOV/WebM video.
+                          </div>
+                        )}
+                        {bgLib && bgLib.length > 0 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8, marginTop: 8, maxHeight: 260, overflowY: 'auto' }}>
+                            {bgLib.map((b) => {
+                              const sel = s.bgKey === b.key;
+                              return (
+                                <div key={b.key} style={{ position: 'relative' }}>
+                                  <button type="button"
+                                    onClick={() => updateSegment(s.key, { bgKey: b.key, bgKind: b.kind })}
+                                    title={b.filename}
+                                    style={{ display: 'block', width: '100%', padding: 0, cursor: 'pointer', background: '#000',
+                                      border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
+                                    <div style={{ width: '100%', aspectRatio: '16 / 9', background: '#000' }}>
+                                      {b.kind === 'video'
+                                        ? <video src={b.url} muted loop autoPlay playsInline preload="metadata"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                        : <img src={b.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                                    </div>
+                                    <div style={{ fontSize: 10.5, color: 'var(--muted)', padding: '3px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {b.kind === 'video' ? '▶ ' : ''}{b.filename}
+                                    </div>
+                                  </button>
+                                  <button type="button" title="Delete from the library"
+                                    onClick={() => deleteBackground(b.key)}
+                                    style={{ position: 'absolute', top: 2, right: 2, fontSize: 11, lineHeight: 1, padding: '2px 5px',
+                                      background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>✕</button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {s.bgKey && tintRow}
+                        {s.bgKind === 'video' && (
+                          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
+                            Video backdrops loop for the whole montage and render silent.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {s.bgMode === 'image' && (
                     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <input type="text" placeholder="Background image URL" value={s.bgUrl || ''} onChange={(e) => updateSegment(s.key, { bgUrl: e.target.value })} style={{ width: '100%' }} />
@@ -2938,7 +3073,10 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     </div>
                   )}
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                    Default keeps the style’s own backdrop. Green screen is keyable; Image sits behind, tinted.
+                    Default keeps the style’s own backdrop. Green screen is keyable. An imported image or video
+                    sits behind everything, tinted. Backgrounds apply to the one-at-a-time styles, Story Builder,
+                    Polaroid/Photo Drop and the slide family — the wall styles (Collage, Epic, Trendy, Gallery,
+                    Multi Page) supply their own backdrop and ignore this.
                   </div>
                 </div>
               </div>

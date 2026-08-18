@@ -13,7 +13,7 @@ const label = args[0] || 'strip';
 const val = (n, d) => { const a = args.find((x) => x.startsWith('--' + n + '=')); return a ? Number(a.split('=')[1]) : d; };
 const N = val('n', 12), WIDTH = val('w', 480), COLS = val('cols', 4);
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
 const server = createServer(async (req, res) => {
   try {
     const u = decodeURIComponent(req.url.split('?')[0]);

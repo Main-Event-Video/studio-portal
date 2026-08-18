@@ -8,7 +8,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
-import { getViewUrl, getDownloadUrl } from '@/lib/r2';
+import { getViewUrl, getDownloadUrl, resolveBackground } from '@/lib/r2';
 import { buildMontageSource, STYLES, styleNeedsDims } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 
@@ -113,6 +113,8 @@ export async function POST(request) {
       ? [greenItem, ...photoItemsBuilt, greenItem]
       : photoItemsBuilt;
 
+    const bgResolved = await resolveBackground(params.background || null);
+
     const source = buildMontageSource({
       items,
       style: src.style,
@@ -124,9 +126,12 @@ export async function POST(request) {
       subtitle: src.subtitle ? String(src.subtitle).toUpperCase() : null,
       watermarkUrl: wantFull ? null : `${siteUrl}/watermark.png`,
       assetBase: siteUrl || null,
+      // Reuse the draft's "Add background" control. An imported library background
+      // is stored as an r2_key, so it must be RE-PRESIGNED here — the draft's URL
+      // is long expired by the time anyone clicks Export Full Rez.
       background: (params.background && params.background.texture)
         ? { ...params.background, textureUrl: `${siteUrl}/backgrounds/${params.background.texture}.jpg` }
-        : (params.background || null),   // reuse the draft's "Add background" control
+        : bgResolved,
       mpTransition: params.mpTransition || null,   // reuse Multi Page motion options
       mpStagger: params.mpStagger ?? null,
       mpHold: params.mpHold ?? null,

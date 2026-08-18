@@ -47,6 +47,18 @@ const photoItems = pick.map((m) => ({
 const greenItem = { type: 'photo', green: true, url: '/public/green.png', fit: 'fill', w: 1920, h: 1080 };
 const items = flag('--no-green') ? photoItems : [greenItem, ...photoItems, greenItem];
 
+// Background control, for exercising the imported-background path:
+//   --bg-video   a looping video backdrop (the studio background library)
+//   --bg-image   a still backdrop
+const bgArg = flag('--bg-video')
+  // WebM, not MP4: the sandbox Chromium is an open-source build with NO H.264
+// decoder (an .mp4 <video> sits at readyState 0 forever and paints black).
+// Creatomate has no such limit — this is a PREVIEW-ONLY proxy format.
+  ? { videoUrl: '/samples_bg.webm', kind: 'video', tint: val('--bg-tint', null), opacity: val('--bg-opacity', null) }
+  : flag('--bg-image')
+    ? { url: `/samples/${manifest[3].file}`, kind: 'image', tint: '#102040', opacity: '55%' }
+    : null;
+
 const secs = val('--secs', null);
 const source = buildMontageSource({
   items,
@@ -59,7 +71,7 @@ const source = buildMontageSource({
   subtitle: 'BAT MITZVAH',
   watermarkUrl: flag('--no-watermark') ? null : '/public/watermark.png',
   assetBase: '/public', // overlays live under /public/overlays in this harness
-  background: null,
+  background: bgArg,
   mpTransition: 'record-fwd', mpStagger: null, mpHold: null, mpSpeed: null,
 });
 
