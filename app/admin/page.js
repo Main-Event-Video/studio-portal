@@ -397,7 +397,20 @@ export default function AdminPage() {
     { value: 'multi_page', label: 'Multi Page — green screen, images pop on one by one' },
     { value: 'multi_page_record', label: 'Multi Page Record — green screen, page pivots then reveals' },
     { value: 'two_panel', label: 'Two Panel — green screen, 2 photos per card, sides alternate' },
+    { value: 'photo_slide', label: 'Photo Slide — bordered prints slide across, each cut to its own shape' },
+    { value: 'sliding_images', label: 'Sliding Images — native-shape photos push in; the next photo sets the direction' },
+    { value: 'photo_ribbon', label: 'Photo Ribbon — one strip of native-shape photos, the next one always in view' },
+    { value: 'neon_frame', label: 'Neon Frame — a light runs around each photo\u2019s own edge, dark backdrop' },
+    // Reuses Party 2's real render clip on purpose: Party 3 IS Party 2's look —
+    // the difference is only what happens mid-transition, which a thumbnail
+    // cannot show honestly.
+    { value: 'party3', preview: 'party2', label: 'Party 3 — Party 2 movement with cover transitions (green-bleed fix test)' },
   ];
+
+  // Styles that have never been through a real Creatomate render. The "Try the
+  // new styles" button in Finish fires one short cheap draft of each. Prune this
+  // list once a style has been seen and signed off.
+  const NEW_STYLES = ['photo_slide', 'sliding_images', 'photo_ribbon', 'neon_frame', 'party3', 'two_panel', 'duotone_pastel'];
 
   // ---- Creatomate template porting tool (READ-ONLY dev utility) -------------
   // Lists the templates in the Creatomate project this app already renders with,
@@ -1633,6 +1646,68 @@ export default function AdminPage() {
     setMMsg(
       `Queued ${ok} render${ok === 1 ? '' : 's'}${errs.length ? ` — ${errs.length} failed: ${errs.join('; ')}` : ''}. ` +
         'They’ll appear below as Rendering, then Ready. Renders take a few minutes; use Refresh.'
+    );
+    loadMontages();
+  }
+
+  // ---- Try the new styles ---------------------------------------------------
+  // Fires ONE short watermarked draft per style in NEW_STYLES so a batch of new
+  // looks can be seen for a couple of credits instead of a couple of hundred.
+  // Deliberately cheap: the first TEST_PHOTOS photos, a fast pace, and NO title
+  // cards (8 seconds of cards per render is pure waste when you're judging motion).
+  //
+  // Cost, using Creatomate's published formula
+  //   credits = width x height x fps x seconds / 100,000,000
+  // A watermarked draft renders at render_scale 0.5 -> 960x540, so one ~13-second
+  // test is about 2 credits. Five styles is about 10. The estimate is shown on the
+  // button so it is never a surprise.
+  const TEST_PHOTOS = 6;
+  const TEST_SECONDS_PER_PHOTO = 1.6;
+  const testCreditEstimate = (styleCount) => {
+    const perRender = (TEST_PHOTOS + 2) * TEST_SECONDS_PER_PHOTO; // +2 green bookends
+    return Math.ceil(styleCount * (960 * 540 * 30 * perRender) / 100000000);
+  };
+
+  async function draftNewStyles(c) {
+    setMMsg('');
+    setMErr(false);
+    const N = projPhotos.length;
+    if (!N) { setMErr(true); return setMMsg('This client has no photos to test with.'); }
+    if (!mTitle.trim()) { setMErr(true); return setMMsg('Give it a title first — the render is named from it.'); }
+    const styles = NEW_STYLES.filter((s) => MONTAGE_STYLES.some((o) => o.value === s));
+    setGenBusy(true);
+    let ok = 0;
+    const errs = [];
+    for (const style of styles) {
+      try {
+        await api('/api/admin/montage', {
+          method: 'POST',
+          body: JSON.stringify({
+            clientId: c.id,
+            style,
+            title: mTitle.trim(),
+            subtitle: mSubtitle.trim() || null,
+            watermark: true,                       // watermark ON = draft = half res = 1/4 credits
+            photoSeconds: TEST_SECONDS_PER_PHOTO,
+            totalSeconds: null,
+            photoSpec: `1-${Math.min(TEST_PHOTOS, N)}`,
+            includeCards: false,                   // judging motion, not title cards
+            greenScreen: true,
+            background: null,                      // each style's own default (green on these)
+            mpTransition: 'record-fwd', mpStagger: null, mpHold: null,
+          }),
+        });
+        ok++;
+      } catch (err) {
+        errs.push(`${style}: ${err.message}`);
+      }
+    }
+    setGenBusy(false);
+    setMErr(errs.length > 0);
+    setMMsg(
+      `Queued ${ok} test draft${ok === 1 ? '' : 's'} (~${testCreditEstimate(ok)} credits)` +
+        `${errs.length ? ` — ${errs.length} failed: ${errs.join('; ')}` : ''}. ` +
+        'They appear below as Rendering, then Ready.'
     );
     loadMontages();
   }
@@ -2876,6 +2951,18 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             {genBusy ? 'Queuing…' : `Generate ${segments.length} segment${segments.length === 1 ? '' : 's'}`}
           </button>
         </div>
+        {NEW_STYLES.length > 0 && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+            <button type="button" className="btn-ghost" disabled={genBusy} onClick={() => draftNewStyles(c)}>
+              {genBusy ? 'Queuing…' : `Try the ${NEW_STYLES.length} new styles (~${testCreditEstimate(NEW_STYLES.length)} credits)`}
+            </button>
+            <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 10 }}>
+              One short watermarked draft of each style that has never been rendered — first {TEST_PHOTOS} photos,
+              no title cards, half resolution. Mix portrait and landscape photos in the first {TEST_PHOTOS} to see
+              how each style handles shape changes.
+            </span>
+          </div>
+        )}
         {mMsg && <p className={mErr ? 'msg-error' : 'msg-ok'} style={{ fontSize: 14 }}>{mMsg}</p>}
         </>)}
 

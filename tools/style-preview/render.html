@@ -1,0 +1,43 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<title>montage sim</title>
+<style>
+  html,body{margin:0;background:#0b0b0e;}
+  #mount{display:block;}
+  /* Fonts the engine asks for. Fallbacks are close enough for a sample clip;
+     the real render uses Creatomate's own font service. */
+  @font-face{font-family:'Playfair Display';src:local('DejaVu Serif'),local('Georgia');}
+</style>
+</head><body>
+<div id="mount"></div>
+<script src="/sim.js"></script>
+<script>
+  window.__ready = false;
+  window.__player = null;
+  async function boot() {
+    const q = new URLSearchParams(location.search);
+    const src = await (await fetch('/source.json?v=' + Date.now())).json();
+    const w = parseInt(q.get('w') || '960', 10);
+    window.__player = CreatomateSim.createPlayer(src, document.getElementById('mount'), { width: w });
+    window.__duration = window.__player.duration;
+    // Preload every image the source references, so a screenshot at t=0 is not blank.
+    const urls = new Set();
+    (function walk(e){ if(!e||typeof e!=='object')return;
+      if(e.type==='image'&&e.source)urls.add(e.source);
+      (e.elements||[]).forEach(walk); })({elements:src.elements});
+    await Promise.all([...urls].map(u=>new Promise(res=>{
+      const i=new Image(); i.onload=i.onerror=()=>res(); i.src=u;
+    })));
+    window.__ready = true;
+  }
+  boot();
+  window.seek = (t) => window.__player.seek(t);
+  // Each seek rebuilds the DOM, so every <img> is new and must decode again.
+  // Screenshotting before decode paints a flat grey placeholder (found the hard
+  // way). Wait for decode, then two frames, before capturing.
+  window.settle = async () => {
+    await Promise.all([...document.images].map((i) => (i.decode ? i.decode().catch(() => {}) : Promise.resolve())));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  };
+</script>
+</body></html>
