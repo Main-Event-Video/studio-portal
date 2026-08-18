@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabaseAdmin';
 import { getClientByToken } from '@/lib/portal';
 import { getViewUrl } from '@/lib/r2';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
-import { applyMediaAction } from '@/lib/mediaOrganize';
+import { applyMediaAction, applyArrangement } from '@/lib/mediaOrganize';
 import { makeShareToken, ensureSlug } from '@/lib/shareLink';
 
 export const runtime = 'nodejs';
@@ -183,86 +183,8 @@ export async function POST(request) {
   //                         timeline_pos = null
   // Small N (dozens of photos), so per-row updates are fine.
   if (action === 'setArrangement') {
-    const top = Array.isArray(body.top) ? body.top : [];
-    const albums = body.albums && typeof body.albums === 'object' ? body.albums : {};
-
-    // Persist the whole arrangement. writeAll(withTLP) writes every position;
-    // if this DB predates the timeline_pos column (migration 006 never applied),
-    // the first pass throws a "timeline_pos" error and we retry WITHOUT it —
-    // sort_number still records the order. Writes run in parallel chunks so a
-    // 100+ photo reorder finishes in a few fast waves, not 100 serial trips.
-    const writeAll = async (withTLP) => {
-      const mediaWrites = []; // () => Promise<string|null> (error message or null)
-      const albumRows = [];   // batched studio_boxes upsert payload
-
-      let rank = 1;
-      for (const entry of top) {
-        if (!entry || typeof entry !== 'object') continue;
-        if (entry.type === 'media' && entry.id) {
-          const pos = rank, id = entry.id;
-          mediaWrites.push(async () => {
-            const patch = withTLP
-              ? { folder_path: null, timeline_pos: pos }
-              : { folder_path: null, sort_number: pos };
-            const { error } = await db.from('studio_media').update(patch)
-              .eq('client_id', client.id).eq('kind', 'client_upload').eq('id', id);
-            return error ? error.message : null;
-          });
-        } else if (entry.type === 'album' && entry.name) {
-          const name = String(entry.name).trim();
-          if (!name) continue;
-          albumRows.push({ client_id: client.id, name, position: rank });
-        } else {
-          continue;
-        }
-        rank++;
-      }
-
-      for (const [name, ids] of Object.entries(albums)) {
-        const albumName = String(name).trim();
-        if (!albumName || !Array.isArray(ids)) continue;
-        let j = 1;
-        for (const id of ids) {
-          const pos = j, mid = id;
-          mediaWrites.push(async () => {
-            const patch = withTLP
-              ? { folder_path: albumName, sort_number: pos, timeline_pos: null }
-              : { folder_path: albumName, sort_number: pos };
-            const { error } = await db.from('studio_media').update(patch)
-              .eq('client_id', client.id).eq('kind', 'client_upload').eq('id', mid);
-            return error ? error.message : null;
-          });
-          j++;
-        }
-      }
-
-      if (albumRows.length) {
-        const { error } = await db.from('studio_boxes')
-          .upsert(albumRows, { onConflict: 'client_id,name' });
-        if (error) throw new Error(error.message);
-      }
-
-      const CHUNK = 20;
-      for (let i = 0; i < mediaWrites.length; i += CHUNK) {
-        const results = await Promise.all(mediaWrites.slice(i, i + CHUNK).map((fn) => fn()));
-        const firstErr = results.find((r) => r);
-        if (firstErr) throw new Error(firstErr);
-      }
-    };
-
-    try {
-      try {
-        await writeAll(true);
-      } catch (e) {
-        if (/timeline_pos/i.test(String(e?.message || e))) {
-          await writeAll(false); // DB has no timeline_pos column — order via sort_number only
-        } else {
-          throw e;
-        }
-      }
-    } catch (e) {
-      return NextResponse.json({ error: 'Could not save your order', detail: String(e.message || e) }, { status: 500 });
-    }
+    const result = await applyArrangement(db, client.id, { top: body.top, albums: body.albums });
+    if (result.error) return NextResponse.json({ error: result.error, detail: result.detail }, { status: result.status || 500 });
     return NextResponse.json({ ok: true });
   }
 

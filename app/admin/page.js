@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
 import { parsePhotoSpec } from '@/lib/montage';
+import { buildTimeline } from '@/lib/timelineOrder';
 
 // Clients move unwanted / duplicate files into this folder; only the admin
 // actually deletes them ("Empty Trash"). Must match the portal's constant.
@@ -429,6 +430,16 @@ export default function AdminPage() {
   const replaceKeyRef = useRef(null);
   const [replacing, setReplacing] = useState(null); // r2_key currently uploading
   const [rotatingKey, setRotatingKey] = useState(null); // r2_key currently rotating
+  // Admin timeline reorder (same order the client arranges; writes back to the
+  // shared timeline so admin<->client stays in sync).
+  const [roOpen, setRoOpen] = useState(false);        // reorder panel shown?
+  const [roClientId, setRoClientId] = useState(null);
+  const [roTl, setRoTl] = useState([]);               // buildTimeline structure
+  const [roPick, setRoPick] = useState(null);         // { scope:'top'|'album', album, id }
+  const [roOpenAlbums, setRoOpenAlbums] = useState(() => new Set());
+  const [roLoading, setRoLoading] = useState(false);
+  const [roSaving, setRoSaving] = useState(false);
+  const [roMsg, setRoMsg] = useState('');
   const [selKey, setSelKey] = useState(null);        // photo open in the big editor
   const bigDragRef = useRef(null);                   // drag-to-position state
 
@@ -922,6 +933,220 @@ export default function AdminPage() {
       await loadProjPhotos(clientId, true);
     } catch { /* best-effort; the reload reflects the result */ }
     setRotatingKey(null);
+  }
+
+  // ---- Admin timeline reorder (mirrors the client's tap-to-move) ----
+  async function loadReorder(clientId, force = false) {
+    if (!force && roClientId === clientId && roTl.length) return;
+    setRoLoading(true); setRoMsg('');
+    try {
+      const { files, boxes } = await api(`/api/admin/media?clientId=${clientId}`);
+      const media = (files || []).filter((f) => !f.hidden);
+      const bx = (boxes || []).filter((b) => !b.hidden_at).map((b) => ({ name: b.name, position: b.position }));
+      const { structure } = buildTimeline(media, bx);
+      setRoTl(structure);
+      setRoClientId(clientId);
+    } catch { setRoMsg('Could not load photos.'); }
+    setRoLoading(false);
+  }
+  const roIdOf = (n) => (n.type === 'media' ? n.item.id : n.name);
+  function roDetach(work) {
+    if (roPick.scope === 'top') {
+      const i = work.findIndex((n) => roIdOf(n) === roPick.id);
+      const [node] = work.splice(i, 1);
+      return { removedFrom: { top: true, idx: i }, node };
+    }
+    const ai = work.findIndex((n) => n.type === 'album' && n.name === roPick.album);
+    const album = { ...work[ai], items: work[ai].items.slice() };
+    const j = album.items.findIndex((m) => m.id === roPick.id);
+    const [m] = album.items.splice(j, 1);
+    work[ai] = album;
+    return { removedFrom: { album: roPick.album, idx: j }, node: { type: 'media', item: m } };
+  }
+  async function roCommit(work) {
+    setRoTl(work); setRoPick(null);
+    const top = work.map((n) => (n.type === 'media' ? { type: 'media', id: n.item.id } : { type: 'album', name: n.name }));
+    const albums = {};
+    work.forEach((n) => { if (n.type === 'album') albums[n.name] = n.items.map((m) => m.id); });
+    setRoSaving(true); setRoMsg('');
+    try {
+      await api('/api/admin/media', { method: 'POST', body: JSON.stringify({ clientId: roClientId, action: 'setArrangement', top, albums }) });
+      setRoMsg('Saved ✓');
+      if (projPhotosClientId === roClientId) loadProjPhotos(roClientId, true); // refresh the montage strip/order
+    } catch { setRoMsg('Could not save the order.'); }
+    setRoSaving(false);
+    setTimeout(() => setRoMsg(''), 2000);
+  }
+  function roDropTop(pos) {
+    if (!roPick) return;
+    const work = roTl.slice();
+    const { removedFrom, node } = roDetach(work);
+    let p = pos;
+    if (removedFrom.top && removedFrom.idx < pos) p -= 1;
+    work.splice(p, 0, node);
+    roCommit(work);
+  }
+  function roDropInAlbum(albumName, pos) {
+    if (!roPick || roPick.kind === 'album') return; // albums can't nest
+    const work = roTl.slice();
+    const { removedFrom, node } = roDetach(work);
+    let p = pos;
+    if (removedFrom.album === albumName && removedFrom.idx < pos) p -= 1;
+    const ti = work.findIndex((n) => n.type === 'album' && n.name === albumName);
+    if (ti < 0) return;
+    const album = { ...work[ti], items: work[ti].items.slice() };
+    album.items.splice(p, 0, node.item);
+    work[ti] = album;
+    roCommit(work);
+  }
+  function roMoveOut(albumName) {
+    if (!roPick || roPick.scope !== 'album' || roPick.album !== albumName) return;
+    const work = roTl.slice();
+    const { node } = roDetach(work);
+    const ai = work.findIndex((n) => n.type === 'album' && n.name === albumName);
+    work.splice(ai + 1, 0, node);
+    roCommit(work);
+  }
+  function roToggleOpen(name) {
+    setRoOpenAlbums((prev) => { const s = new Set(prev); if (s.has(name)) s.delete(name); else s.add(name); return s; });
+    setRoPick(null);
+  }
+  function roPickToggle(p) {
+    setRoPick((cur) => (cur && cur.scope === p.scope && (cur.album || null) === (p.album || null) && cur.id === p.id ? null : p));
+  }
+
+  // ---- Reorder UI (tap-to-move track; mirrors the client's Uploader) ----
+  function roGap(k, live, onDrop) {
+    return (
+      <div
+        key={k}
+        onClick={live ? (e) => { e.stopPropagation(); onDrop(); } : undefined}
+        style={{
+          flex: '0 0 auto', width: live ? 22 : 8, alignSelf: 'stretch', minHeight: 74,
+          margin: '0 2px', borderRadius: 6, cursor: live ? 'pointer' : 'default',
+          background: live ? 'repeating-linear-gradient(45deg,rgba(56,182,255,.25) 0 6px,transparent 6px 12px)' : 'transparent',
+          border: live ? '1.5px dashed #38b6ff' : 'none',
+        }}
+      />
+    );
+  }
+  function roMediaCard(m, num, scope, album) {
+    const isVideo = (m.contentType || '').startsWith('video');
+    const isPk = roPick && roPick.scope === scope && (roPick.album || null) === (album || null) && roPick.id === m.id;
+    return (
+      <div
+        key={`${scope}:${album || ''}:${m.id}`}
+        onClick={(e) => { e.stopPropagation(); roPickToggle({ scope, album: album || null, id: m.id, kind: 'media' }); }}
+        title={m.filename}
+        style={{
+          position: 'relative', flex: '0 0 auto', width: 96, cursor: 'pointer',
+          border: isPk ? '2px solid #38b6ff' : '2px solid transparent', borderRadius: 10, overflow: 'hidden',
+          boxShadow: isPk ? '0 0 0 3px rgba(56,182,255,.3)' : 'none', background: '#0a0f18',
+        }}
+      >
+        <div style={{ width: '100%', height: 72, background: '#050505', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {isVideo || !m.url
+            ? <span style={{ color: '#9fb3c8', fontSize: 12, fontWeight: 700 }}>{isVideo ? '▶ Video' : '📄'}</span>
+            : <img src={m.url} alt={m.filename} loading="lazy" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+        </div>
+        <span style={{ position: 'absolute', top: 4, left: 4, background: 'rgba(0,0,0,.72)', color: '#fff', fontSize: 11, fontWeight: 800, padding: '1px 6px', borderRadius: 8 }}>{num}</span>
+        <div style={{ fontSize: 9, color: '#7d8ea0', padding: '2px 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.filename}</div>
+      </div>
+    );
+  }
+  function roAlbumBlock(node) {
+    const name = node.name;
+    const count = node.items.length;
+    const isOpen = roOpenAlbums.has(name);
+    const pickedIsMedia = roPick && roPick.kind === 'media';
+    const isPk = roPick && roPick.scope === 'top' && roPick.kind === 'album' && roPick.id === name;
+
+    if (!isOpen) {
+      return (
+        <div
+          key={name}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (pickedIsMedia) roDropInAlbum(name, count);          // drop picked photo into this album (end)
+            else if (isPk) setRoPick(null);                          // tap picked album again = cancel
+            else if (!roPick) roPickToggle({ scope: 'top', album: null, id: name, kind: 'album' }); // pick album to relocate
+            else setRoPick(null);
+          }}
+          style={{
+            flex: '0 0 auto', width: 150, cursor: 'pointer', padding: 10, borderRadius: 12, color: '#eae6f0',
+            border: isPk ? '2px solid #7c5cff' : (pickedIsMedia ? '2px dashed #7c5cff' : '2px solid rgba(124,92,255,.5)'),
+            background: 'linear-gradient(160deg,rgba(124,92,255,.18),rgba(124,92,255,.05))',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 13 }}>📁 {name}</div>
+          <div style={{ fontSize: 11, color: '#b9a9e6', margin: '2px 0 6px' }}>{count} item{count === 1 ? '' : 's'}</div>
+          <div style={{ display: 'flex', gap: 2, height: 34, overflow: 'hidden' }}>
+            {node.items.slice(0, 4).map((m, i) => (
+              <span key={i} style={{ flex: 1, borderRadius: 4, background: (m.contentType || '').startsWith('video') ? '#050505' : `center/cover no-repeat url('${m.url}')` }} />
+            ))}
+          </div>
+          {pickedIsMedia
+            ? <div style={{ fontSize: 11, color: '#c9b8ff', marginTop: 6, fontWeight: 700 }}>＋ tap to add here</div>
+            : <button type="button" onClick={(e) => { e.stopPropagation(); roToggleOpen(name); }} style={{ marginTop: 6, fontSize: 11, background: 'transparent', border: '1px solid rgba(124,92,255,.5)', color: '#d8ccff', borderRadius: 8, padding: '3px 8px', cursor: 'pointer' }}>⤢ open</button>}
+        </div>
+      );
+    }
+
+    // open album — inline lane with its own gaps
+    const laneLive = pickedIsMedia;
+    const lane = [];
+    lane.push(roGap(`${name}-lg0`, laneLive, () => roDropInAlbum(name, 0)));
+    node.items.forEach((m, j) => {
+      lane.push(roMediaCard(m, j + 1, 'album', name));
+      lane.push(roGap(`${name}-lg${j + 1}`, laneLive, () => roDropInAlbum(name, j + 1)));
+    });
+    return (
+      <div key={name} onClick={(e) => e.stopPropagation()} style={{ flex: '0 0 auto', padding: 10, borderRadius: 12, border: '2px solid rgba(124,92,255,.6)', background: 'rgba(124,92,255,.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ fontWeight: 800, color: '#eae6f0' }}>📁 {name}</span>
+          <span style={{ fontSize: 11, color: '#b9a9e6' }}>{count} item{count === 1 ? '' : 's'}</span>
+          {roPick && roPick.scope === 'album' && roPick.album === name && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); roMoveOut(name); }} style={{ fontSize: 11, background: 'rgba(56,182,255,.15)', border: '1px solid #38b6ff', color: '#cfe6ff', borderRadius: 8, padding: '3px 8px', cursor: 'pointer' }}>⤴ Move out</button>
+          )}
+          <button type="button" onClick={(e) => { e.stopPropagation(); roToggleOpen(name); }} style={{ marginLeft: 'auto', fontSize: 11, background: 'rgba(124,92,255,.2)', border: '1px solid rgba(124,92,255,.5)', color: '#e6dcff', borderRadius: 8, padding: '3px 10px', cursor: 'pointer' }}>Done ✓</button>
+        </div>
+        {count === 0 && !laneLive
+          ? <div style={{ fontSize: 12, color: '#9fb3c8', padding: '8px 4px' }}>Empty — pick a photo from the timeline, then tap here to add it.</div>
+          : <div style={{ display: 'flex', alignItems: 'stretch', overflowX: 'auto', paddingBottom: 2 }}>{lane}</div>}
+      </div>
+    );
+  }
+  function renderReorder(c) {
+    const els = [];
+    const topLive = !!roPick;
+    let n = 0;
+    els.push(roGap('rtg0', topLive, () => roDropTop(0)));
+    roTl.forEach((node, idx) => {
+      if (node.type === 'media') { n += 1; els.push(roMediaCard(node.item, n, 'top')); }
+      else els.push(roAlbumBlock(node));
+      els.push(roGap(`rtg${idx + 1}`, topLive, () => roDropTop(idx + 1)));
+    });
+    return (
+      <div style={{ marginTop: 12, border: '1px solid #24304a', borderRadius: 12, background: '#0d1420', padding: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+          <strong style={{ color: '#cfe0f5', fontSize: 13 }}>Reorder timeline</strong>
+          <span style={{ fontSize: 12, color: '#8ea3bd' }}>Tap a photo or album to pick it up, then tap a striped gap to drop it. Changes save automatically and sync to the client’s portal.</span>
+          {roLoading && <span style={{ fontSize: 12, color: '#8ea3bd' }}>Loading…</span>}
+          {roSaving && <span style={{ fontSize: 12, color: '#8ea3bd' }}>Saving…</span>}
+          {roMsg && <span style={{ fontSize: 12, color: roMsg.includes('Could not') ? '#ff9a9a' : '#6ee7a0', fontWeight: 700 }}>{roMsg}</span>}
+          <button type="button" onClick={() => loadReorder(c.id, true)} style={{ marginLeft: 'auto', fontSize: 12, background: 'transparent', border: '1px solid #24304a', color: '#9fb3c8', borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}>↻ Refresh</button>
+        </div>
+        {roTl.length === 0 && !roLoading
+          ? <div style={{ fontSize: 12, color: '#8ea3bd', padding: 8 }}>No photos to arrange yet.</div>
+          : <div style={{ display: 'flex', alignItems: 'stretch', overflowX: 'auto', padding: '4px 0', minHeight: 96 }}>{els}</div>}
+        {roPick && (
+          <div style={{ marginTop: 8, fontSize: 12, color: '#38b6ff' }}>
+            Picked {roPick.kind === 'album' ? `album “${roPick.id}”` : 'a photo'} — tap a striped gap to place it{roPick.scope === 'album' ? ', or ⤴ Move out to the timeline' : ''}.{' '}
+            <button type="button" onClick={() => setRoPick(null)} style={{ background: 'transparent', border: 'none', color: '#9fb3c8', textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>Cancel</button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   function editPhoto(clientId, key, patch) {
@@ -1895,9 +2120,22 @@ export default function AdminPage() {
               <button type="button" className="linklike" onClick={() => setShowRef((v) => !v)}>
                 {showRef ? 'Hide numbered photos' : 'Show numbered photos'}
               </button>
+              {' · '}
+              <button
+                type="button"
+                className="linklike"
+                onClick={() => {
+                  const opening = !(roOpen && roClientId === c.id);
+                  setRoOpen(opening);
+                  if (opening) loadReorder(c.id);
+                }}
+              >
+                {roOpen && roClientId === c.id ? 'Close reorder' : 'Reorder photos'}
+              </button>
             </>
           )}
         </p>
+        {roOpen && roClientId === c.id && renderReorder(c)}
         {showRef && projPhotos.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8, marginBottom: 16 }}>
             {projPhotos.map((p) => (

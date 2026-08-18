@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl } from '@/lib/r2';
-import { applyMediaAction } from '@/lib/mediaOrganize';
+import { applyMediaAction, applyArrangement } from '@/lib/mediaOrganize';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,7 +33,8 @@ export async function GET(request) {
     .order('folder_path', { ascending: true, nullsFirst: true })
     .order('sort_number', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true });
-  let { data, error } = await run(`${cols}, hidden_at`);
+  let { data, error } = await run(`${cols}, hidden_at, timeline_pos`);
+  if (error) ({ data, error } = await run(`${cols}, hidden_at`));
   if (error) ({ data, error } = await run(cols));
   if (error) return NextResponse.json({ error: 'Could not load files', detail: error.message }, { status: 500 });
 
@@ -44,6 +45,7 @@ export async function GET(request) {
       contentType: m.content_type,
       isVideo: (m.content_type || '').startsWith('video'),
       sortNumber: m.sort_number,
+      timelinePos: m.timeline_pos ?? null,
       folderPath: m.folder_path,
       sizeBytes: m.size_bytes,
       hidden: !!m.hidden_at,
@@ -80,6 +82,11 @@ export async function POST(request) {
   if (!clientId) return NextResponse.json({ error: 'Missing clientId' }, { status: 400 });
 
   const db = createServiceClient();
+  if (body.action === 'setArrangement') {
+    const r = await applyArrangement(db, clientId, { top: body.top, albums: body.albums });
+    if (r.error) return NextResponse.json({ error: r.error, detail: r.detail }, { status: r.status || 500 });
+    return NextResponse.json({ ok: true });
+  }
   const result = await applyMediaAction(db, clientId, body, { allowDelete: true });
   if (result.error) {
     return NextResponse.json({ error: result.error, detail: result.detail }, { status: result.status || 500 });
