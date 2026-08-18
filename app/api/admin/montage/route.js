@@ -67,6 +67,12 @@ export async function POST(request) {
         r2_key: (background.r2_key && String(background.r2_key).startsWith(BACKGROUND_PREFIX))
           ? String(background.r2_key) : null,
         kind: background.kind === 'video' ? 'video' : (background.kind === 'image' ? 'image' : null),
+        // Length of the backdrop CLIP, read in the browser when it was picked.
+        // Lets the engine lay overlapping copies and cross-dissolve each wrap,
+        // instead of hard-looping a clip that was never built to loop. Absent =
+        // fall back to a plain loop.
+        clipS: (Number.isFinite(Number(background.clipS)) && Number(background.clipS) > 0)
+          ? Number(background.clipS) : null,
         tint: background.tint ? String(background.tint) : null,
         opacity: background.opacity ? String(background.opacity) : null,
         blur: Number.isFinite(Number(background.blur)) ? Number(background.blur) : null,

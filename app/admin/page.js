@@ -420,6 +420,29 @@ export default function AdminPage() {
   const [bgLib, setBgLib] = useState(null);      // null = not loaded yet
   const [bgLibErr, setBgLibErr] = useState('');
   const [bgLibBusy, setBgLibBusy] = useState(false);
+  // How long each backdrop CLIP runs, in seconds, keyed by its R2 key. The
+  // engine needs this to cross-dissolve each loop: a clip that was not built to
+  // loop wraps with a visible jump, so copies are laid end to end and blended
+  // at the seam — which is only placeable if we know where the seam is. Read in
+  // the browser, from the file on upload and from the gallery thumbnails
+  // otherwise, so backdrops imported before this existed still get it.
+  const [bgDur, setBgDur] = useState({});
+  const noteBgDur = (key, d) => {
+    const secs = Number(d);
+    if (!key || !(secs > 0) || !Number.isFinite(secs)) return;
+    setBgDur((m) => (m[key] ? m : { ...m, [key]: Math.round(secs * 1000) / 1000 }));
+  };
+  // Duration straight from the chosen file, before it is uploaded.
+  const readVideoDuration = (file) => new Promise((resolve) => {
+    if (!file || !String(file.type || '').startsWith('video/')) return resolve(null);
+    const v = document.createElement('video');
+    const url = URL.createObjectURL(file);
+    const done = (d) => { URL.revokeObjectURL(url); resolve(Number.isFinite(d) && d > 0 ? d : null); };
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => done(v.duration);
+    v.onerror = () => done(null);
+    v.src = url;
+  });
   const bgFileRef = useRef(null);
   const bgTargetSeg = useRef(null);
 
@@ -447,9 +470,11 @@ export default function AdminPage() {
       });
       const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
       if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+      const clipS = await readVideoDuration(file);
+      if (clipS) noteBgDur(key, clipS);
       await loadBgLib();
       // Select what was just uploaded on the segment that asked for it.
-      if (segKeyForSelect) updateSegment(segKeyForSelect, { bgKey: key, bgKind: kind });
+      if (segKeyForSelect) updateSegment(segKeyForSelect, { bgKey: key, bgKind: kind, bgClipS: clipS || null });
     } catch (e) {
       setBgLibErr(e.message);
     } finally {
@@ -519,7 +544,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '' });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -1686,7 +1711,7 @@ export default function AdminPage() {
                 : (s.bgMode === 'library' && s.bgKey)
                   // r2_key, not a URL — the route presigns it at render time so
                   // Export Full Rez still works days later.
-                  ? { r2_key: s.bgKey, kind: s.bgKind || 'image', tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
+                  ? { r2_key: s.bgKey, kind: s.bgKind || 'image', clipS: s.bgClipS || null, tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
                   : (s.bgMode === 'image' && s.bgUrl?.trim())
                     ? { url: s.bgUrl.trim(), tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
                     : null,
@@ -3028,13 +3053,21 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                               return (
                                 <div key={b.key} style={{ position: 'relative' }}>
                                   <button type="button"
-                                    onClick={() => updateSegment(s.key, { bgKey: b.key, bgKind: b.kind })}
+                                    onClick={() => updateSegment(s.key, { bgKey: b.key, bgKind: b.kind, bgClipS: b.kind === 'video' ? (bgDur[b.key] || null) : null })}
                                     title={b.filename}
                                     style={{ display: 'block', width: '100%', padding: 0, cursor: 'pointer', background: '#000',
                                       border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 8, overflow: 'hidden' }}>
                                     <div style={{ width: '100%', aspectRatio: '16 / 9', background: '#000' }}>
                                       {b.kind === 'video'
                                         ? <video src={b.url} muted loop autoPlay playsInline preload="metadata"
+                                            onLoadedMetadata={(ev) => {
+                                              noteBgDur(b.key, ev.currentTarget.duration);
+                                              // Backfill a selection made before the metadata arrived,
+                                              // so an older backdrop still gets its crossfade.
+                                              if (s.bgKey === b.key && b.kind === 'video' && !s.bgClipS && ev.currentTarget.duration > 0) {
+                                                updateSegment(s.key, { bgClipS: Math.round(ev.currentTarget.duration * 1000) / 1000 });
+                                              }
+                                            }}
                                             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                                         : <img src={b.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
                                     </div>
