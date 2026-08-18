@@ -60,9 +60,21 @@ Background flags for `build-source.mjs`: `--bg-video` (a looping WebM backdrop,
 exercising the studio background library) and `--bg-image` (a still backdrop).
 
 `verify.mjs` is the one to run after any engine change. It builds every style in
-`STYLES` with cards+green, bare, 60-second length mode, and with dimensions
-missing (the probe-failed path), then asserts no `undefined`/`NaN`/`null%`, no
-zero durations, no image without a source, and that length mode actually snaps.
+`STYLES` in seven modes — cards+green, bare, 60-second length mode, dimensions
+missing (the probe-failed path), and image / video / texture backgrounds — then
+asserts no `undefined`/`NaN`/`null%`, no zero durations, no image without a
+source, keyframes ordered and inside their element's duration, that length mode
+actually snaps, and **no same-track overlaps**.
+
+That last check is the important one. A track is a lane: two elements sharing one
+and overlapping in time is not a valid timeline, and Creatomate resolves it by
+dropping one of them. The only legal overlap is a transition. This is what caught
+the imported-background bug — the fill, the backdrop and the tint all sat on
+track 1 for the whole montage, so the backdrop vanished after the first shot.
+**The simulator could not have caught it**: it stacks overlapping layers rather
+than modelling the conflict, so it showed the background working perfectly.
+
+Structural checks and visual checks catch different things. Run both.
 
 ## Making a picker clip
 
