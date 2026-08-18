@@ -160,6 +160,9 @@
         s.tx = (1 - p) * 100; break;              // enters from the right
       case 'scale':
         s.sc = 0.6 + 0.4 * p; s.opacity = p; break;
+      case 'wipe': {
+        s.clip = `inset(0 0 0 ${((1 - p) * 100).toFixed(1)}%)`; break;   // APPROX: linear reveal, incoming only
+      }
       case 'circular-wipe': {
         const r = p * 75;                          // % of the box diagonal
         s.clip = `circle(${r}% at 50% 50%)`; break;
@@ -226,14 +229,27 @@
       drawn.sort((a, b) => a.z - b.z);
       drawn.forEach((d) => node.appendChild(d.node));
     } else if (el.type === 'image') {
-      const img = doc.createElement('img');
-      img.src = el.source;
-      img.style.width = '100%';
-      img.style.height = '100%';
-      img.style.display = 'block';
-      img.style.objectFit = el.fit === 'contain' ? 'contain' : 'cover';
-      applyFilters(el, img.style, localT, ctx.scale);
-      node.appendChild(img);
+      if (el.repeat) {
+        // Creatomate's `repeat: true` turns the image into a tiled pattern fill.
+        // Tile at the source's natural pixel size scaled to the preview, so the
+        // dot density matches what a 1920-wide render would produce.
+        const probe = new Image();
+        probe.src = el.source;
+        const nw = probe.naturalWidth || 224;
+        node.style.backgroundImage = `url("${el.source}")`;
+        node.style.backgroundRepeat = 'repeat';
+        node.style.backgroundSize = `${(nw * (ctx.scale || 1)).toFixed(1)}px auto`;
+        applyFilters(el, st, localT, ctx.scale);
+      } else {
+        const img = doc.createElement('img');
+        img.src = el.source;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.display = 'block';
+        img.style.objectFit = el.fit === 'contain' ? 'contain' : 'cover';
+        applyFilters(el, img.style, localT, ctx.scale);
+        node.appendChild(img);
+      }
     } else if (el.type === 'shape') {
       const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('viewBox', '0 0 100 100');

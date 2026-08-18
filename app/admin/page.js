@@ -400,6 +400,7 @@ export default function AdminPage() {
     { value: 'photo_slide', label: 'Photo Slide — bordered prints slide across, each cut to its own shape' },
     { value: 'sliding_images', label: 'Sliding Images — native-shape photos push in; the next photo sets the direction' },
     { value: 'photo_ribbon', label: 'Photo Ribbon — one strip of native-shape photos, the next one always in view' },
+    { value: 'comic_book', label: 'Comic Book — moves happen in comic, the real photo is the reveal' },
     { value: 'neon_frame', label: 'Neon Frame — a light runs around each photo\u2019s own edge, dark backdrop' },
     // Reuses Party 2's real render clip on purpose: Party 3 IS Party 2's look —
     // the difference is only what happens mid-transition, which a thumbnail
@@ -410,7 +411,7 @@ export default function AdminPage() {
   // Styles that have never been through a real Creatomate render. The "Try the
   // new styles" button in Finish fires one short cheap draft of each. Prune this
   // list once a style has been seen and signed off.
-  const NEW_STYLES = ['photo_slide', 'sliding_images', 'photo_ribbon', 'neon_frame', 'party3', 'two_panel', 'duotone_pastel'];
+  const NEW_STYLES = ['photo_slide', 'sliding_images', 'photo_ribbon', 'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel'];
 
   // ---- Creatomate template porting tool (READ-ONLY dev utility) -------------
   // Lists the templates in the Creatomate project this app already renders with,

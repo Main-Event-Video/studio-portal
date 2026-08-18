@@ -28,6 +28,10 @@ const pick = manifest.slice(0, count);
 const photoItems = pick.map((m) => ({
   type: 'photo',
   url: `/samples/${m.file}`,
+  // Comic Book uses a SECOND, pre-rendered image. In production that comes from a
+  // server-side sharp pipeline cached in R2; here it is the sandbox-generated art
+  // so the preview shows the real target look rather than the fallback.
+  ...(flag('--comic') ? { altUrl: `/comic/${m.file}` } : {}),
   // Mirror editFor() in the render route EXACTLY. It never emits null for
   // contrast/saturation/size — it defaults them to 100. (Passing contrast:null
   // here made Number(null)===0, so applyPhotoColor emitted contrast '-100%' and
@@ -54,7 +58,7 @@ const source = buildMontageSource({
   title: 'DYLAN',
   subtitle: 'BAT MITZVAH',
   watermarkUrl: flag('--no-watermark') ? null : '/public/watermark.png',
-  assetBase: '/public'.replace(/\/public$/, ''), // overlays resolve to /overlays/*
+  assetBase: '/public', // overlays live under /public/overlays in this harness
   background: null,
   mpTransition: 'record-fwd', mpStagger: null, mpHold: null, mpSpeed: null,
 });
