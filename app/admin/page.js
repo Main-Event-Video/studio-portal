@@ -444,7 +444,8 @@ export default function AdminPage() {
   // "grab a photo and drop it where you want it" gesture. Writes the same shared
   // timeline, so it syncs to the client's portal.
   const pcDrag = useRef(null);                        // { id, key } currently dragged
-  const [pcOver, setPcOver] = useState(null);         // { key, side } hovered (drop indicator)
+  const [pcOver, setPcOver] = useState(null);         // { key, id, album, side } hovered
+  const pcOverRef = useRef(null);                     // same, synchronous (read on drop)
   const [pcBusy, setPcBusy] = useState(false);        // saving a drag
   const [pcMsg, setPcMsg] = useState('');
   // Undo / redo for reorder moves. Stacks hold whole-timeline arrangements
@@ -936,6 +937,19 @@ export default function AdminPage() {
     try { const r = e.currentTarget.getBoundingClientRect(); return (e.clientX - r.left) > r.width / 2 ? 'after' : 'before'; }
     catch { return 'before'; }
   }
+  // Record the clip currently hovered while dragging (drives the green indicator
+  // AND the drop). Kept in a ref too so the drop reads the freshest value even if
+  // the release lands in a gap between cells.
+  function setDropHover(o) { pcOverRef.current = o; setPcOver(o); }
+  // Commit wherever the cursor last hovered a real clip — so a drop in the gap
+  // between two clips still lands exactly beside the clip you were pointing at,
+  // instead of falling through to "append to the end".
+  function commitDrop(clientId, fallbackAlbum) {
+    if (!pcDrag.current) return;
+    const o = pcOverRef.current;
+    if (o && o.id != null && o.id !== pcDrag.current.id) reorderByDrag(clientId, o.album || null, o.id, o.side);
+    else reorderByDrag(clientId, fallbackAlbum || null, null); // nothing hovered → end of that group
+  }
 
   // Persist a whole-timeline arrangement ({top,albums}) and refresh. Records it
   // as the current state for undo/redo.
@@ -959,7 +973,7 @@ export default function AdminPage() {
   // setArrangement — exactly what the client reads back, so it stays in sync.
   async function reorderByDrag(clientId, destAlbum, targetId, side) {
     const drag = pcDrag.current;
-    setPcOver(null);
+    setPcOver(null); pcOverRef.current = null;
     if (!drag || !drag.id) { pcDrag.current = null; return; }
     setPcBusy(true); setPcMsg('');
     try {
@@ -2269,9 +2283,9 @@ export default function AdminPage() {
                 <div
                   draggable
                   onDragStart={(e) => { pcDrag.current = { id: p.id, key: p.key }; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', p.key); } catch { /* older */ } }}
-                  onDragEnd={() => { pcDrag.current = null; setPcOver(null); }}
-                  onDragOver={(e) => { if (pcDrag.current) { e.preventDefault(); const s = dropSide(e); if (!pcOver || pcOver.key !== p.key || pcOver.side !== s) setPcOver({ key: p.key, side: s }); } }}
-                  onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); e.stopPropagation(); reorderByDrag(c.id, p.album || null, p.id, dropSide(e)); } }}
+                  onDragEnd={() => { pcDrag.current = null; setDropHover(null); }}
+                  onDragOver={(e) => { if (pcDrag.current && pcDrag.current.key !== p.key) { e.preventDefault(); const s = dropSide(e); if (!pcOver || pcOver.key !== p.key || pcOver.side !== s) setDropHover({ key: p.key, id: p.id, album: p.album || null, side: s }); } }}
+                  onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); e.stopPropagation(); commitDrop(c.id, p.album || null); } }}
                   title="Drag to reorder"
                   style={{ position: 'relative', cursor: 'grab', borderRadius: 6, outline: over ? '2px solid rgba(56,182,255,.5)' : 'none', outlineOffset: '-2px' }}>
                   <img
@@ -2410,9 +2424,9 @@ export default function AdminPage() {
               <div key={`t:${p.key || p.index}`}
                 draggable
                 onDragStart={(e) => { pcDrag.current = { id: p.id, key: p.key }; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', p.key); } catch { /* older */ } }}
-                onDragEnd={() => { pcDrag.current = null; setPcOver(null); }}
-                onDragOver={(e) => { if (pcDrag.current) { e.preventDefault(); const s = dropSide(e); if (!pcOver || pcOver.key !== p.key || pcOver.side !== s) setPcOver({ key: p.key, side: s }); } }}
-                onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); e.stopPropagation(); reorderByDrag(c.id, p.album || null, p.id, dropSide(e)); } }}
+                onDragEnd={() => { pcDrag.current = null; setDropHover(null); }}
+                onDragOver={(e) => { if (pcDrag.current && pcDrag.current.key !== p.key) { e.preventDefault(); const s = dropSide(e); if (!pcOver || pcOver.key !== p.key || pcOver.side !== s) setDropHover({ key: p.key, id: p.id, album: p.album || null, side: s }); } }}
+                onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); e.stopPropagation(); commitDrop(c.id, p.album || null); } }}
                 onDoubleClick={() => setSelKey(isSel ? null : p.key)} title="Drag to reorder · double-click to edit"
                 style={{ border: isSel ? '2px solid #d8b56b' : '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', cursor: 'grab', opacity: pe.removed ? 0.4 : 1, position: 'relative', outline: over ? '2px solid rgba(56,182,255,.5)' : 'none', outlineOffset: '-2px' }}>
                 <div style={{ aspectRatio: '16 / 9', background: '#000', overflow: 'hidden' }}>
@@ -2475,7 +2489,7 @@ export default function AdminPage() {
                       </div>
                       <div style={gridStyle}
                         onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
-                        onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); reorderByDrag(c.id, g.album || null, null); } }}
+                        onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); commitDrop(c.id, g.album || null); } }}
                       >{renderCells(g.photos)}</div>
                     </section>
                   );
@@ -2483,7 +2497,7 @@ export default function AdminPage() {
               ) : (
                 <div style={gridStyle}
                   onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
-                  onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); reorderByDrag(c.id, null, null); } }}
+                  onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); commitDrop(c.id, null); } }}
                 >{renderCells(groups[0] ? groups[0].photos : [])}</div>
               )}
               <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
