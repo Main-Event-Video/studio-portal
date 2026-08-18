@@ -8,6 +8,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl } from '@/lib/r2';
 import { orderedClientMedia } from '@/lib/clientTimeline';
 import { multiPageLayout, twoPanelLayout, STYLES } from '@/lib/montage';
+import { importSeqMap } from '@/lib/importSeq';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,6 +49,9 @@ export async function GET(request) {
       .maybeSingle();
     if (mErr || !m) return NextResponse.json({ error: 'Render not found' }, { status: 404 });
 
+    // Stable per-photo import numbers (001, 002 …) — permanent reference ids.
+    const impSeq = await importSeqMap(db, m.client_id);
+
     const seq = Array.isArray(m.params?.renderSequence) ? m.params.renderSequence : null;
     // Old renders predate renderSequence → we can't know the exact subset; fall
     // back to the whole timeline so the adjuster still works (just not filtered).
@@ -56,6 +60,7 @@ export async function GET(request) {
       if (error) return NextResponse.json({ error: 'Could not load photos', detail: error.message }, { status: 500 });
       const photos = await Promise.all((media || []).slice(0, 500).map(async (mm, i) => ({
         index: i + 1, key: mm.r2_key, filename: mm.filename, album: mm.folder_path || null,
+        importSeq: impSeq.byKey.get(mm.r2_key) ?? null,
         url: await getViewUrl(mm.r2_key, 3600), downloadUrl: await getDownloadUrl(mm.r2_key, mm.filename, 3600),
       })));
       return NextResponse.json({ photos, partial: true });
@@ -101,6 +106,7 @@ export async function GET(request) {
       key: it.r2_key,
       filename: it.filename,
       album: it.album,
+      importSeq: impSeq.byKey.get(it.r2_key) ?? null,
       url: it.url,
       downloadUrl: await getDownloadUrl(it.r2_key, it.filename || 'photo', 3600),
       ...(layout && layout[i]
@@ -115,12 +121,16 @@ export async function GET(request) {
   const { media: data, error } = await orderedClientMedia(db, clientId, { imagesOnly: true });
   if (error) return NextResponse.json({ error: 'Could not load photos', detail: error.message }, { status: 500 });
 
+  // Stable per-photo import numbers (001, 002 …) — permanent reference ids.
+  const impSeq = await importSeqMap(db, clientId);
+
   const photos = await Promise.all(
     (data || []).slice(0, 500).map(async (m, i) => ({
       index: i + 1,
       key: m.r2_key,
       filename: m.filename,
       album: m.folder_path || null,
+      importSeq: impSeq.byKey.get(m.r2_key) ?? null,
       url: await getViewUrl(m.r2_key, 3600),
       downloadUrl: await getDownloadUrl(m.r2_key, m.filename, 3600),
     }))

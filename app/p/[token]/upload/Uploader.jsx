@@ -153,6 +153,7 @@ const CSS = `
 #uploadflow .card.video .vdur{font-size:11px;color:#c9d4de;font-weight:700;}
 #uploadflow .card.video{border-color:#3a3350;}
 #uploadflow .num{position:absolute;top:5px;left:5px;background:rgba(0,0,0,.72);color:#fff;border-radius:999px;min-width:20px;height:20px;padding:0 5px;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+#uploadflow .impno{position:absolute;top:calc(var(--tz) - 23px);left:5px;background:#f5a623;color:#241700;border-radius:6px;height:18px;padding:0 6px;font-size:10.5px;font-weight:900;letter-spacing:.3px;display:flex;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.5);z-index:6;}
 #uploadflow .cap{font-size:11px;color:var(--mut);text-align:center;padding:4px 2px 5px;max-width:var(--tz);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #uploadflow .card.picked{outline:3px solid var(--neon);outline-offset:-1px;}
 #uploadflow .card.picked::after{content:"moving…";position:absolute;inset:auto 0 0 0;background:var(--neon);color:#0d0913;font-size:10px;font-weight:800;text-align:center;padding:2px;}
@@ -830,6 +831,7 @@ export default function Uploader({ token }) {
           })()}
         </div>
         <span className="num">{num}</span>
+        {m.importSeq != null && <span className="impno" title={`Import #${String(m.importSeq).padStart(3, '0')} — this photo’s permanent reference number`}>{String(m.importSeq).padStart(3, '0')}</span>}
         <button
           type="button"
           title="Delete this photo"
@@ -1206,9 +1208,10 @@ export default function Uploader({ token }) {
                   style={{ position: 'relative', width: 120, height: 120, borderRadius: 10, overflow: 'hidden', background: '#000', cursor: 'grab', border: SEL.has(m.id) ? '2px solid #38b6ff' : '2px solid transparent', boxShadow: SEL.has(m.id) ? '0 0 0 3px rgba(56,182,255,.28)' : 'none' }}>
                   {tileInner(m)}
                   <span style={{ position: 'absolute', top: 5, left: 5, fontSize: 11, fontWeight: 800, background: 'rgba(0,0,0,.72)', color: '#fff', padding: '1px 6px', borderRadius: 999 }}>{playNo[m.id]}</span>
+                  {m.importSeq != null && <span title={`Import #${String(m.importSeq).padStart(3, '0')} — this photo’s permanent reference number`} style={{ position: 'absolute', bottom: 5, left: 5, fontSize: 10.5, fontWeight: 900, letterSpacing: '.3px', background: '#f5a623', color: '#241700', padding: '1px 6px', borderRadius: 6, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(m.importSeq).padStart(3, '0')}</span>}
                   {SEL.has(m.id) && <span style={{ position: 'absolute', top: 5, right: 5, width: 20, height: 20, borderRadius: 6, background: '#38b6ff', color: '#0d0913', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900 }}>✓</span>}
                   <button type="button" onClick={(e) => { e.stopPropagation(); openMoveMenu(e, [m.id]); }} title="Move to an album"
-                    style={{ position: 'absolute', bottom: 5, left: 5, border: 'none', background: 'rgba(0,0,0,.72)', color: '#fff', borderRadius: 8, fontSize: 11.5, fontWeight: 800, padding: '3px 7px', cursor: 'pointer' }}>Move ▾</button>
+                    style={{ position: 'absolute', bottom: 5, left: 46, border: 'none', background: 'rgba(0,0,0,.72)', color: '#fff', borderRadius: 8, fontSize: 11.5, fontWeight: 800, padding: '3px 7px', cursor: 'pointer' }}>Move ▾</button>
                   <button type="button" onClick={(e) => { e.stopPropagation(); trashPhoto(m); }} title="Move to Trash"
                     style={{ position: 'absolute', bottom: 5, right: 5, width: 22, height: 22, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.66)', color: '#fff', cursor: 'pointer', fontSize: 12, lineHeight: 1 }}>✕</button>
                 </div>

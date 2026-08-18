@@ -6,6 +6,7 @@ import { getViewUrl } from '@/lib/r2';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
 import { applyMediaAction, applyArrangement } from '@/lib/mediaOrganize';
 import { makeShareToken, ensureSlug } from '@/lib/shareLink';
+import { importSeqMap } from '@/lib/importSeq';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -58,6 +59,9 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Could not load media', detail: error.message }, { status: 500 });
   }
 
+  // Stable per-photo import numbers (001, 002 …) — permanent reference ids.
+  const seq = await importSeqMap(db, client.id);
+
   const media = await Promise.all(
     (data || []).map(async (m) => {
       // Durable links for delivered cuts. shareUrl → the BRANDED share page
@@ -80,6 +84,7 @@ export async function GET(request) {
         sortNumber: m.sort_number,
         folderPath: m.folder_path,
         timelinePos: m.timeline_pos ?? null,
+        importSeq: seq.byId.get(m.id) ?? null,
         createdAt: m.created_at,
         url: await getViewUrl(m.r2_key, 3600),
         ...(token ? { shareUrl: `${shareBase}/s/${token}` } : {}),

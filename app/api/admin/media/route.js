@@ -8,6 +8,7 @@ import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl } from '@/lib/r2';
 import { applyMediaAction, applyArrangement } from '@/lib/mediaOrganize';
+import { importSeqMap } from '@/lib/importSeq';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,9 @@ export async function GET(request) {
   if (error) ({ data, error } = await run(cols));
   if (error) return NextResponse.json({ error: 'Could not load files', detail: error.message }, { status: 500 });
 
+  // Stable per-photo import numbers (001, 002 …) — permanent reference ids.
+  const seq = await importSeqMap(db, clientId);
+
   const files = await Promise.all(
     (data || []).map(async (m) => ({
       id: m.id,
@@ -46,6 +50,7 @@ export async function GET(request) {
       isVideo: (m.content_type || '').startsWith('video'),
       sortNumber: m.sort_number,
       timelinePos: m.timeline_pos ?? null,
+      importSeq: seq.byId.get(m.id) ?? null,
       folderPath: m.folder_path,
       sizeBytes: m.size_bytes,
       hidden: !!m.hidden_at,

@@ -1050,6 +1050,7 @@ export default function AdminPage() {
             : <img src={m.url} alt={m.filename} loading="lazy" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
         </div>
         <span style={{ position: 'absolute', top: 4, left: 4, background: 'rgba(0,0,0,.72)', color: '#fff', fontSize: 11, fontWeight: 800, padding: '1px 6px', borderRadius: 8 }}>{num}</span>
+        {m.importSeq != null && <span title={`Import #${String(m.importSeq).padStart(3, '0')} — permanent reference number`} style={{ position: 'absolute', top: 52, left: 4, background: '#f5a623', color: '#241700', fontSize: 10, fontWeight: 900, letterSpacing: '.3px', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(m.importSeq).padStart(3, '0')}</span>}
         <div style={{ fontSize: 9, color: '#7d8ea0', padding: '2px 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.filename}</div>
       </div>
     );
@@ -2140,11 +2141,14 @@ export default function AdminPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8, marginBottom: 16 }}>
             {projPhotos.map((p) => (
               <div key={p.key || p.index} style={{ textAlign: 'center' }}>
-                <img
-                  src={p.url}
-                  alt={p.filename}
-                  style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }}
-                />
+                <div style={{ position: 'relative' }}>
+                  <img
+                    src={p.url}
+                    alt={p.filename}
+                    style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 6, border: '1px solid var(--line)' }}
+                  />
+                  {p.importSeq != null && <span title={`Import #${String(p.importSeq).padStart(3, '0')} — permanent reference number`} style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 10, fontWeight: 900, letterSpacing: '.3px', background: '#f5a623', color: '#241700', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(p.importSeq).padStart(3, '0')}</span>}
+                </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{p.index}</div>
               </div>
             ))}
@@ -2272,6 +2276,7 @@ export default function AdminPage() {
                   <img src={p.url} alt={p.filename} draggable={false} style={{ width: '100%', height: '100%', ...styleFor(pe) }} />
                 </div>
                 <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{p.index}</span>
+                {p.importSeq != null && <span title={`Import #${String(p.importSeq).padStart(3, '0')} — permanent reference number`} style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 10, fontWeight: 900, letterSpacing: '.3px', background: '#f5a623', color: '#241700', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(p.importSeq).padStart(3, '0')}</span>}
                 {pe.removed && <span style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 9, background: '#e23b3b', color: '#fff', padding: '1px 5px', borderRadius: 4 }}>removed</span>}
               </div>
             );
@@ -2707,11 +2712,14 @@ export default function AdminPage() {
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
                             {adjPhotos.map((p) => (
                               <div key={p.key}>
-                                <img
-                                  src={p.url}
-                                  alt={p.filename}
-                                  style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 8, border: adjMap[p.key] ? '2px solid var(--blue)' : '1px solid var(--line)' }}
-                                />
+                                <div style={{ position: 'relative' }}>
+                                  <img
+                                    src={p.url}
+                                    alt={p.filename}
+                                    style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 8, border: adjMap[p.key] ? '2px solid var(--blue)' : '1px solid var(--line)' }}
+                                  />
+                                  {p.importSeq != null && <span title={`Import #${String(p.importSeq).padStart(3, '0')} — permanent reference number`} style={{ position: 'absolute', bottom: 5, left: 5, fontSize: 10, fontWeight: 900, letterSpacing: '.3px', background: '#f5a623', color: '#241700', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(p.importSeq).padStart(3, '0')}</span>}
+                                </div>
                                 <div style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {p.index}. {p.filename}
                                 </div>
