@@ -398,6 +398,47 @@ export default function AdminPage() {
     { value: 'multi_page_record', label: 'Multi Page Record — green screen, page pivots then reveals' },
     { value: 'two_panel', label: 'Two Panel — green screen, 2 photos per card, sides alternate' },
   ];
+
+  // ---- Creatomate template porting tool (READ-ONLY dev utility) -------------
+  // Lists the templates in the Creatomate project this app already renders with,
+  // and downloads any one's source JSON (its RenderScript) so the look can be
+  // rebuilt as a montage style in lib/montage.js. We never render FROM a hosted
+  // template — the engine builds its own source — so this is purely a way to read
+  // a design out of the Creatomate editor. Uses the existing server-side API key;
+  // nothing about the render integration changes.
+  const [cmTemplates, setCmTemplates] = useState(null); // null = not loaded yet
+  const [cmTplErr, setCmTplErr] = useState('');
+  const [cmTplBusy, setCmTplBusy] = useState(false);
+  const loadCmTemplates = async () => {
+    setCmTplBusy(true);
+    setCmTplErr('');
+    try {
+      const { templates } = await api('/api/admin/creatomate/templates');
+      setCmTemplates(templates || []);
+    } catch (e) {
+      setCmTplErr(e.message);
+    } finally {
+      setCmTplBusy(false);
+    }
+  };
+  const downloadCmTemplate = async (t) => {
+    setCmTplErr('');
+    try {
+      const { template } = await api(`/api/admin/creatomate/templates?id=${encodeURIComponent(t.id)}`);
+      const slug = String(t.name || t.id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || t.id;
+      const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `creatomate-${slug}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 4000);
+    } catch (e) {
+      setCmTplErr(e.message);
+    }
+  };
   const [mClientId, setMClientId] = useState('');
   const [mClientName, setMClientName] = useState('');
   const [mTitle, setMTitle] = useState('');       // honoree — used on any segment with cards
@@ -2593,6 +2634,44 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 );
               })}
             </div>
+
+            {/* Read-only porting tool: read a look out of the Creatomate editor so
+                it can be rebuilt as a style above. Nothing here renders anything. */}
+            <details style={{ marginTop: 14, border: '1px solid var(--line)', borderRadius: 10, padding: '8px 12px' }}
+              onToggle={(ev) => { if (ev.currentTarget.open && cmTemplates === null && !cmTplBusy) loadCmTemplates(); }}>
+              <summary style={{ cursor: 'pointer', fontSize: 12.5, color: 'var(--muted)' }}>
+                Creatomate templates (porting tool)
+              </summary>
+              <p style={{ fontSize: 11.5, color: 'var(--muted)', margin: '8px 0' }}>
+                Templates in the Creatomate project this portal already renders with. Download a template’s
+                source JSON to have its look rebuilt as a montage style. Read-only — nothing is created or
+                changed at Creatomate.
+              </p>
+              {cmTplBusy && <div style={{ fontSize: 12 }}>Loading…</div>}
+              {cmTplErr && <div style={{ fontSize: 12, color: '#e5484d' }}>{cmTplErr}</div>}
+              {cmTemplates && cmTemplates.length === 0 && !cmTplBusy && (
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  No templates in this Creatomate project.
+                </div>
+              )}
+              {cmTemplates && cmTemplates.length > 0 && (
+                <div style={{ display: 'grid', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
+                  {cmTemplates.map((t) => (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                      <code style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t.id}</code>
+                      <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                        onClick={() => downloadCmTemplate(t)}>Download JSON</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {cmTemplates !== null && !cmTplBusy && (
+                <button type="button" className="btn-ghost" style={{ fontSize: 11, padding: '2px 8px', marginTop: 8 }}
+                  onClick={loadCmTemplates}>Refresh</button>
+              )}
+            </details>
+
             {(() => {
               const st = segments[0]?.style;
               if (st !== 'multi_page' && st !== 'multi_page_record') return null;
