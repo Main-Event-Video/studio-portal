@@ -377,6 +377,12 @@ export default function AdminPage() {
   const [openClientId, setOpenClientId] = useState(null);
   const [activeTool, setActiveTool] = useState(null); // 'montage' | 'cut' | null
 
+  // Fixing a setup typo. Holds a working copy of the client being edited
+  // ({ id, display_name, last_name, email, event_date, event_type }) or null.
+  const [editing, setEditing] = useState(null);
+  const [editError, setEditError] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+
   // montage generator (spine v1)
   const MONTAGE_STYLES = [
     { value: 'hollywood', label: 'Hollywood — gold on black, slow + cinematic' },
@@ -1848,6 +1854,51 @@ export default function AdminPage() {
     } catch (e) {
       setListError(e.message);
     }
+  }
+
+  // Correct a mistake made at setup. Most often the email, which is the
+  // client's PORTAL USERNAME — mistype it and they cannot sign in at all.
+  function startEditClient(c) {
+    setEditError('');
+    setEditing({
+      id: c.id,
+      display_name: c.display_name || '',
+      last_name: c.last_name || '',
+      email: c.email || '',
+      event_date: c.event_date || '',
+      event_type: c.event_type || '',
+    });
+    // Opened from the client list: bring their workspace up, because the
+    // editor lives in the header pill.
+    if (openClientId !== c.id) {
+      pickClient(c);
+      setOpenClientId(c.id);
+      setActiveTool(null);
+    }
+  }
+
+  async function saveClientDetails() {
+    if (!editing) return;
+    setEditBusy(true);
+    setEditError('');
+    try {
+      await api(`/api/admin/clients/${editing.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'set_details',
+          display_name: editing.display_name,
+          last_name: editing.last_name,
+          email: editing.email,
+          event_date: editing.event_date,
+          event_type: editing.event_type,
+        }),
+      });
+      setEditing(null);
+      loadClients();
+    } catch (e) {
+      setEditError(e.message);
+    }
+    setEditBusy(false);
   }
 
   function putWithProgress(url, file, onProgress) {
@@ -3446,14 +3497,59 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             <div>
               <button type="button" className="btn-ghost" style={{ marginBottom: 12 }} onClick={() => { setOpenClientId(null); setActiveTool(null); }}>{'←'} Return to client list</button>
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 14px', border: '1px solid var(--blue)', borderRadius: 12, background: 'rgba(47,107,255,0.06)', marginBottom: 14 }}>
-                <h2 className="neon neon-blue" style={{ margin: 0 }}>{c.display_name}</h2>
-                {c.archived && <span className="pill archived">archived</span>}
-                <span style={{ color: 'var(--muted)', fontSize: 13 }}>{c.email}</span>
-                <span style={{ color: 'var(--muted)', fontSize: 13 }}>{c.event_date}{c.event_type ? ` · ${c.event_type}` : ''}</span>
-                <span style={{ flex: 1 }} />
-                <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
-                <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>
-                <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>{c.archived ? 'Unarchive' : 'Archive'}</button>
+                {editing && editing.id === c.id ? (
+                  <div style={{ width: '100%' }}>
+                    <div className="grid-2">
+                      <div>
+                        <label htmlFor="ed_display_name">Welcome name (shown on portal)</label>
+                        <input id="ed_display_name" value={editing.display_name} onChange={(e) => setEditing({ ...editing, display_name: e.target.value })} />
+                      </div>
+                      <div>
+                        <label htmlFor="ed_last_name">Last name (password base)</label>
+                        <input id="ed_last_name" value={editing.last_name} onChange={(e) => setEditing({ ...editing, last_name: e.target.value })} />
+                      </div>
+                      <div>
+                        <label htmlFor="ed_email">Client email (their portal username)</label>
+                        <input id="ed_email" type="email" value={editing.email} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
+                      </div>
+                      <div>
+                        <label htmlFor="ed_event_date">Event date</label>
+                        <input id="ed_event_date" type="date" value={editing.event_date} onChange={(e) => setEditing({ ...editing, event_date: e.target.value })} />
+                      </div>
+                      <div>
+                        <label htmlFor="ed_event_type">Event type (optional)</label>
+                        <input id="ed_event_type" placeholder="Bar Mitzvah, Wedding…" value={editing.event_type} onChange={(e) => setEditing({ ...editing, event_type: e.target.value })} />
+                      </div>
+                    </div>
+                    <p style={{ color: 'var(--muted)', fontSize: 12, margin: '10px 0 0' }}>
+                      The email is what this client signs in with, so correcting it changes their
+                      username — resend the portal link if they already have the old one. Their
+                      current password keeps working; the last name and date only decide what a
+                      future Reset password would generate.
+                    </p>
+                    {editError && <p className="msg-error">{editError}</p>}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      <button type="button" className="btn-primary" disabled={editBusy} onClick={saveClientDetails}>
+                        {editBusy ? 'Saving…' : 'Save changes'}
+                      </button>
+                      <button type="button" className="btn-ghost" disabled={editBusy} onClick={() => { setEditing(null); setEditError(''); }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <h2 className="neon neon-blue" style={{ margin: 0 }}>{c.display_name}</h2>
+                    {c.archived && <span className="pill archived">archived</span>}
+                    <span style={{ color: 'var(--muted)', fontSize: 13 }}>{c.email}</span>
+                    <span style={{ color: 'var(--muted)', fontSize: 13 }}>{c.event_date}{c.event_type ? ` · ${c.event_type}` : ''}</span>
+                    <span style={{ flex: 1 }} />
+                    <button className="btn-ghost" onClick={() => startEditClient(c)} title="Fix a name, email or date entered at setup">✎ Edit</button>
+                    <CopyButton text={`${siteUrl}/p/${c.portal_token}`} label="Copy portal link" />
+                    <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>
+                    <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>{c.archived ? 'Unarchive' : 'Archive'}</button>
+                  </>
+                )}
               </div>
               <div className="client-workspace">
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -3549,6 +3645,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.last_upload_at)}</td>
                         <td>{c.upload_count ?? 0}</td>
                         <td style={{ whiteSpace: 'nowrap' }}>
+                          <button className="btn-ghost" onClick={() => startEditClient(c)} title="Fix a name, email or date entered at setup">✎ Edit</button>{' '}
                           <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
                           <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>
                             {c.archived ? 'Unarchive' : 'Archive'}
