@@ -54,7 +54,7 @@ export default async function PortalHome({ params, searchParams }) {
       </div>
       <div style={{ textAlign: 'center' }}>
         <h1 className="neon neon-blue" style={{ fontSize: 30, margin: '8px 0 4px' }}>
-          Welcome, {client.display_name}
+          Welcome {client.display_name}
         </h1>
         {when && <p style={{ color: 'var(--muted)', marginTop: 0 }}>{when}</p>}
       </div>

@@ -33,7 +33,7 @@ export default function PasswordGate({ token, displayName }) {
       </div>
       <form className="panel" onSubmit={submit}>
         <p className="eyebrow">Your private portal</p>
-        <h2 className="neon neon-blue" style={{ marginTop: 4 }}>Welcome, {displayName}</h2>
+        <h2 className="neon neon-blue" style={{ marginTop: 4 }}>Welcome {displayName}</h2>
         <p style={{ color: 'var(--muted)', fontSize: 14, marginTop: 0 }}>
           Enter your password to open your portal.
         </p>
