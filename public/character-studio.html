@@ -803,7 +803,7 @@ function showHandoff(){ const dev=detectDevice(); const ho=$('handoffGo'), qr=$(
 $('handoffGo').onclick=()=>{ primeAudio(); startCapture(); };
 $('handoffBack').onclick=()=>{ showScreen('startScreen'); };
 $('start').onclick=()=>{ if(running) return; if(!mode){ const mm=document.querySelector('.modes'); if(mm){ mm.classList.remove('needpick'); void mm.offsetWidth; mm.classList.add('needpick'); try{mm.scrollIntoView({behavior:'smooth',block:'center'});}catch(e){} } const h=document.getElementById('modehint'); if(h) h.style.display='block'; return; } primeAudio(); const dev=detectDevice();
-  if(mode==='self' && dev==='phone'){ startCapture(); } else { showHandoff(); } };
+  if(MEP.on || (mode==='self' && dev==='phone')){ startCapture(); } else { showHandoff(); } };
 $('redo').onclick=()=>{ token++; running=false; paused=false; backReq=false; stopAudio(); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } const ov=$('pausedOverlay'); if(ov) ov.classList.remove('on'); showScreen('startScreen'); };
 $('exit').onclick=()=>{ token++; running=false; paused=false; backReq=false; stopAudio(); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } const ov=$('pausedOverlay'); if(ov) ov.classList.remove('on'); showScreen('startScreen'); };
 $('capnow').onclick=()=>{ captureNow=true; };
