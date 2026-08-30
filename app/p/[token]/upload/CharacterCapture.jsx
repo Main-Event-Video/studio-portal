@@ -3,6 +3,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { POSES, POSE_COUNT, CAPTURE_INTRO, CAPTURE_INTRO_TITLE } from '@/lib/characterPoses';
 
+// ---- Studio character voices (spoken guidance) ------------------------------
+// The six personalities from the studio builder. Clips live in
+// public/character-voices/<theme>/<key>.mp3 and are played per pose. Best-effort:
+// a missing clip just plays nothing.
+const VOICE_THEMES = [
+  ['warm', '😊 Friendly'],
+  ['mommy', '🤗 Sweet'],
+  ['drill', '🪖 Drill sgt'],
+  ['cockney', '🎩 Cockney'],
+  ['robotic', '🤖 Robot'],
+  ['pirate', '🏴‍☠️ Pirate'],
+];
+// Map each of the 12 canonical poses to its voice clip key.
+const VOICE_FOR_POSE = {
+  'face-front-neutral': 'neutral',
+  'face-front-smile': 'smile',
+  'face-front-angry': 'angry',
+  'face-34-left': 'face34left',
+  'face-34-right': 'face34right',
+  'face-profile-left': 'profileleft',
+  'face-profile-right': 'profileright',
+  'head-top': 'headtop',
+  'body-front-apose': 'bodyfront',
+  'body-back': 'bodyback',
+  'body-left': 'bodyleft',
+  'body-right': 'bodyright',
+};
+
 // Full-screen guided camera for the client's "Character Build" reference shots.
 // Someone else takes the photos (no selfies) — rear camera by default. Uses a
 // live getUserMedia preview with a pose outline when available, and falls back
@@ -180,6 +208,12 @@ export default function CharacterCapture({ token, character = null, existing = [
     return !mobileUA && !narrow && noTouch;
   });
 
+  // ---- spoken guidance (studio voices) ----
+  const [voiceTheme, setVoiceTheme] = useState('warm');
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [greeted, setGreeted] = useState(false);   // welcome line has played
+  const audioRef = useRef(null);
+
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const nativeRef = useRef(null);   // native camera <input>
@@ -215,7 +249,57 @@ export default function CharacterCapture({ token, character = null, existing = [
 
   useEffect(() => () => stopStream(), [stopStream]);  // cleanup on unmount
 
-  function close() { stopStream(); onClose?.(); }
+  function close() { stopStream(); stopVoice(); onClose?.(); }
+
+  // ---- spoken guidance ----
+  const playClip = useCallback((key, onEnd) => {
+    let a = audioRef.current;
+    if (!a) { a = new Audio(); audioRef.current = a; }
+    try { a.pause(); } catch { /* ignore */ }
+    a.onended = null;
+    if (!voiceOn || !key) { if (onEnd) onEnd(); return; }
+    a.src = `/character-voices/${voiceTheme}/${key}.mp3`;
+    a.currentTime = 0;
+    if (onEnd) a.onended = onEnd;
+    const p = a.play();
+    if (p && p.catch) p.catch(() => { if (onEnd) onEnd(); });
+  }, [voiceOn, voiceTheme]);
+
+  const stopVoice = useCallback(() => { try { audioRef.current?.pause(); } catch { /* ignore */ } }, []);
+
+  // Pick a voice and play a short sample so they can hear it (this runs inside a
+  // tap, so it also unlocks audio for the rest of the shoot).
+  function previewVoice(val) {
+    setVoiceTheme(val); setVoiceOn(true);
+    try {
+      let a = audioRef.current; if (!a) { a = new Audio(); audioRef.current = a; }
+      a.pause(); a.onended = null; a.src = `/character-voices/${val}/smile.mp3`; a.currentTime = 0;
+      const p = a.play(); if (p && p.catch) p.catch(() => {});
+    } catch { /* ignore */ }
+  }
+
+  // Enter the capture stage; greet with the welcome line the first time. The tap
+  // that calls this is the user gesture that unlocks audio playback on iOS.
+  function enterCapture(greet = true) {
+    setStage('capture');
+    if (greet && !greeted && voiceOn) playClip('welcome', () => setGreeted(true));
+    else setGreeted(true);
+  }
+
+  // Speak the current pose (after the welcome), but not while reviewing a shot.
+  useEffect(() => {
+    if (stage !== 'capture' || !greeted || preview) return undefined;
+    playClip(VOICE_FOR_POSE[POSES[idx]?.slug]);
+    return undefined;
+  }, [stage, idx, greeted, preview, playClip]);
+
+  // Ending line on the finish screen.
+  useEffect(() => {
+    if (stage === 'finished') playClip('done');
+    return undefined;
+  }, [stage, playClip]);
+
+  useEffect(() => () => stopVoice(), [stopVoice]);  // stop audio on unmount
 
   // Create the named character before shooting (or when arriving via QR link).
   async function createCharacter() {
@@ -337,6 +421,7 @@ export default function CharacterCapture({ token, character = null, existing = [
         <button className="back" onClick={close} aria-label="Return to photo upload">‹ Photos</button>
         <span className="ttl">Character Build{charName ? ` — ${charName}` : ''}</span>
         <span style={{ fontSize: 13, color: '#93a3b6', marginLeft: 'auto' }}>{doneCount}/{POSE_COUNT}</span>
+        <button onClick={() => { setVoiceOn((v) => !v); stopVoice(); }} aria-label={voiceOn ? 'Mute voice' : 'Unmute voice'} title={voiceOn ? 'Mute voice' : 'Unmute voice'} style={{ background: 'none', border: 'none', color: '#93a3b6', fontSize: 20, lineHeight: 1, cursor: 'pointer', padding: '0 4px' }}>{voiceOn ? '🔊' : '🔇'}</button>
         <button className="x" onClick={close} aria-label="Close">×</button>
       </div>
 
@@ -370,7 +455,7 @@ export default function CharacterCapture({ token, character = null, existing = [
           {busy && busy !== 'uploading' && <p className="qrnote" style={{ color: '#38b6ff' }}>{busy}</p>}
           <button className="btn ghost" onClick={() => extraRef.current?.click()}>Upload photos from this computer instead</button>
           <button className="btn ghost" onClick={close}>Not now</button>
-          <button className="smalllink" onClick={() => setStage('capture')}>Use this computer’s camera anyway</button>
+          <button className="smalllink" onClick={() => enterCapture()}>Use this computer’s camera anyway</button>
           <input ref={extraRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={onExtraPick} />
         </div>
       )}
@@ -380,7 +465,20 @@ export default function CharacterCapture({ token, character = null, existing = [
           <h1>{CAPTURE_INTRO_TITLE}</h1>
           <p className="lead">This is your character photo shoot! A dozen quick poses and you’re done. These stay separate — they’re not part of your event video.</p>
           <ul className="guide">{CAPTURE_INTRO.map((g, i) => <li key={i}>{g}</li>)}</ul>
-          <button className="btn" onClick={() => setStage('capture')}>Let’s go — 12 quick photos →</button>
+          <div style={{ margin: '2px 0 16px' }}>
+            <p style={{ fontSize: 14.5, fontWeight: 800, color: '#f4f1f8', margin: '0 0 8px' }}>Pick your guide’s voice 🔊 <span style={{ fontWeight: 600, color: '#93a3b6', fontSize: 13 }}>(tap to hear it)</span></p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {VOICE_THEMES.map(([val, label]) => (
+                <button key={val} type="button" onClick={() => previewVoice(val)}
+                  style={{ padding: '9px 13px', borderRadius: 999, fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                    border: '1.5px solid ' + (voiceTheme === val ? '#38b6ff' : '#2c2438'),
+                    background: voiceTheme === val ? 'rgba(56,182,255,.16)' : '#141020', color: '#eae6f0' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="btn" onClick={() => enterCapture()}>Let’s go — 12 quick photos →</button>
           <button className="btn ghost" onClick={() => extraRef.current?.click()}>Upload my own photos instead</button>
           <button className="btn ghost" onClick={close}>Not now</button>
           <input ref={extraRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={onExtraPick} />
@@ -459,7 +557,7 @@ export default function CharacterCapture({ token, character = null, existing = [
           <h1>That’s a wrap — nice! 🎉</h1>
           <p className="lead">All 12 shots are saved and sent to Main Event Studio. You’re all set!</p>
           <button className="btn" onClick={close}>Done</button>
-          <button className="btn ghost" onClick={() => { setIdx(0); setStage('capture'); }}>Go back &amp; retake a shot</button>
+          <button className="btn ghost" onClick={() => { setIdx(0); enterCapture(false); }}>Go back &amp; retake a shot</button>
           <button className="btn ghost" onClick={() => extraRef.current?.click()}>Add more of my own photos</button>
           <input ref={extraRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={onExtraPick} />
         </div>
