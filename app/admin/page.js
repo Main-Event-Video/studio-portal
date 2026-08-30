@@ -347,6 +347,19 @@ function fmtDate(iso) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// Green "loaded" ring for a client-workspace tab: intake submitted, files
+// uploaded, or a character build finished. Layered on top of btn-ghost/btn-primary
+// so the tab reads as "there's something in here" at a glance.
+const TAB_DONE_STYLE = { borderColor: '#37d99a', boxShadow: '0 0 0 1px #37d99a, 0 0 10px rgba(55,217,154,0.30)' };
+// True when this client-workspace tab has content worth the green ring.
+function tabLoaded(c, tool) {
+  if (!c) return false;
+  if (tool === 'intake') return !!c.intake_submitted;
+  if (tool === 'files') return !!c.has_files;
+  if (tool === 'character') return !!c.character_done;
+  return false;
+}
+
 export default function AdminPage() {
   const [session, setSession] = useState(null);
   const [checked, setChecked] = useState(false);
@@ -3555,10 +3568,10 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <button type="button" className={activeTool === 'montage' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'montage')}>Montage Maker</button>
                   <button type="button" className={activeTool === 'cut' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'cut')}>Send a cut</button>
-                  <button type="button" className={activeTool === 'intake' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'intake')}>Intake form</button>
-                  <button type="button" className={activeTool === 'files' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'files')}>Files</button>
+                  <button type="button" className={activeTool === 'intake' ? 'btn-primary' : 'btn-ghost'} style={tabLoaded(c, 'intake') ? TAB_DONE_STYLE : undefined} onClick={() => chooseTool(c, 'intake')}>Intake form</button>
+                  <button type="button" className={activeTool === 'files' ? 'btn-primary' : 'btn-ghost'} style={tabLoaded(c, 'files') ? TAB_DONE_STYLE : undefined} onClick={() => chooseTool(c, 'files')}>Files</button>
                   <button type="button" className={activeTool === 'info' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'info')}>Details</button>
-                  <button type="button" className={activeTool === 'character' ? 'btn-primary' : 'btn-ghost'} onClick={() => chooseTool(c, 'character')}>Character builds</button>
+                  <button type="button" className={activeTool === 'character' ? 'btn-primary' : 'btn-ghost'} style={tabLoaded(c, 'character') ? TAB_DONE_STYLE : undefined} onClick={() => chooseTool(c, 'character')}>Character builds</button>
                 </div>
                 {activeTool === 'montage' && renderMontageTool(c)}
                 {activeTool === 'cut' && renderCutTool()}
@@ -3675,6 +3688,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                                 <button
                                   type="button"
                                   className={activeTool === 'intake' ? 'btn-primary' : 'btn-ghost'}
+                                  style={tabLoaded(c, 'intake') ? TAB_DONE_STYLE : undefined}
                                   onClick={() => chooseTool(c, 'intake')}
                                 >
                                   Intake form
@@ -3682,6 +3696,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                                 <button
                                   type="button"
                                   className={activeTool === 'files' ? 'btn-primary' : 'btn-ghost'}
+                                  style={tabLoaded(c, 'files') ? TAB_DONE_STYLE : undefined}
                                   onClick={() => chooseTool(c, 'files')}
                                 >
                                   Files
@@ -3696,6 +3711,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                                 <button
                                   type="button"
                                   className={activeTool === 'character' ? 'btn-primary' : 'btn-ghost'}
+                                  style={tabLoaded(c, 'character') ? TAB_DONE_STYLE : undefined}
                                   onClick={() => chooseTool(c, 'character')}
                                 >
                                   Character builds
