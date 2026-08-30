@@ -183,6 +183,7 @@
   .pausedOverlay span{font-size:15px;letter-spacing:.08em;text-transform:uppercase}
   .pausedOverlay>div{font-size:46px;line-height:1.2}
 </style>
+<style>.modes.needpick .mode{border-color:var(--gold)!important;box-shadow:0 0 0 2px var(--gold)}.modes.needpick{animation:needp .45s ease 3}@keyframes needp{50%{transform:scale(1.02)}}</style>
 </head>
 <body>
 
@@ -207,6 +208,7 @@
     <div class="mode" data-mode="other"><div class="pref">Preferred</div><b>🙌 Someone's filming me</b><span>Sharper &amp; easier — they aim, you follow the prompts.</span></div>
     <div class="mode" data-mode="self"><b>🤳 I'm filming myself</b><span>Hands-free — extra coaching, prop it up or use a mirror.</span></div>
   </div>
+  <div id="modehint" style="display:none;color:var(--gold);font-size:13.5px;font-weight:800;margin:2px 0 12px">👆 First, tap who's holding the camera.</div>
   <div class="voicebar">
     <div class="voicetop"><div><b>🔊 Voice guidance</b><span>Choose the voice that's right for you 👇</span></div>
       <label class="switch"><input type="checkbox" id="voiceOn" checked><span class="tr"></span><span class="kn"></span></label></div>
@@ -800,7 +802,7 @@ function showHandoff(){ const dev=detectDevice(); const ho=$('handoffGo'), qr=$(
   showScreen('handoffScreen'); }
 $('handoffGo').onclick=()=>{ primeAudio(); startCapture(); };
 $('handoffBack').onclick=()=>{ showScreen('startScreen'); };
-$('start').onclick=()=>{ if(running||!mode) return; primeAudio(); const dev=detectDevice();
+$('start').onclick=()=>{ if(running) return; if(!mode){ const mm=document.querySelector('.modes'); if(mm){ mm.classList.remove('needpick'); void mm.offsetWidth; mm.classList.add('needpick'); try{mm.scrollIntoView({behavior:'smooth',block:'center'});}catch(e){} } const h=document.getElementById('modehint'); if(h) h.style.display='block'; return; } primeAudio(); const dev=detectDevice();
   if(mode==='self' && dev==='phone'){ startCapture(); } else { showHandoff(); } };
 $('redo').onclick=()=>{ token++; running=false; paused=false; backReq=false; stopAudio(); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } const ov=$('pausedOverlay'); if(ov) ov.classList.remove('on'); showScreen('startScreen'); };
 $('exit').onclick=()=>{ token++; running=false; paused=false; backReq=false; stopAudio(); if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } const ov=$('pausedOverlay'); if(ov) ov.classList.remove('on'); showScreen('startScreen'); };
@@ -896,7 +898,6 @@ if (MEP.on) { document.addEventListener('DOMContentLoaded', () => {
   const back = () => { location.href = '/p/' + encodeURIComponent(MEP.token) + '/upload'; };
   const a = document.getElementById('actAgain');
   if (a) { a.textContent = '← Back to my photos'; a.onclick = back; }
-  const g = document.getElementById('gateScreen'); if (g) g.remove(); // no password gate in the portal
 }); }
 </script>
 </body>
