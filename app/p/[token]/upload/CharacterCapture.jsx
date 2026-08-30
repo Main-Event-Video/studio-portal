@@ -211,8 +211,11 @@ export default function CharacterCapture({ token, character = null, existing = [
   // ---- spoken guidance (studio voices) ----
   const [voiceTheme, setVoiceTheme] = useState('warm');
   const [voiceOn, setVoiceOn] = useState(true);
-  const [greeted, setGreeted] = useState(false);   // welcome line has played
+  const [readyToPose, setReadyToPose] = useState(false); // welcome finished → poses may speak
   const audioRef = useRef(null);
+  const genRef = useRef(0);         // bumps on every speak; cancels stale onended
+  const spokenIdxRef = useRef(-1);  // last pose we spoke (never double-speak one)
+  const greetedRef = useRef(false); // welcome has played once
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -251,53 +254,65 @@ export default function CharacterCapture({ token, character = null, existing = [
 
   function close() { stopStream(); stopVoice(); onClose?.(); }
 
-  // ---- spoken guidance ----
-  const playClip = useCallback((key, onEnd) => {
-    let a = audioRef.current;
-    if (!a) { a = new Audio(); audioRef.current = a; }
-    try { a.pause(); } catch { /* ignore */ }
-    a.onended = null;
-    if (!voiceOn || !key) { if (onEnd) onEnd(); return; }
-    a.src = `/character-voices/${voiceTheme}/${key}.mp3`;
-    a.currentTime = 0;
-    if (onEnd) a.onended = onEnd;
-    const p = a.play();
-    if (p && p.catch) p.catch(() => { if (onEnd) onEnd(); });
-  }, [voiceOn, voiceTheme]);
+  // ---- spoken guidance: ONE audio channel, overlap-proof ----
+  const stopVoice = useCallback(() => {
+    genRef.current += 1;                 // invalidate any pending onended
+    const a = audioRef.current;
+    if (a) { try { a.onended = null; a.pause(); } catch { /* ignore */ } }
+  }, []);
 
-  const stopVoice = useCallback(() => { try { audioRef.current?.pause(); } catch { /* ignore */ } }, []);
+  // Speak one clip from the given voice. Hard-stops whatever was playing first,
+  // and the gen guard makes a superseded clip's onended a no-op — so a chained
+  // line can never fire late over a newer one (that was the double-audio bug).
+  const speak = useCallback((theme, key, onEnd) => {
+    genRef.current += 1; const gen = genRef.current;
+    let a = audioRef.current; if (!a) { a = new Audio(); audioRef.current = a; }
+    try { a.onended = null; a.pause(); } catch { /* ignore */ }
+    if (!key) { if (onEnd) onEnd(); return; }
+    try {
+      a.src = `/character-voices/${theme}/${key}.mp3`; a.currentTime = 0;
+      a.onended = () => { if (gen === genRef.current && onEnd) onEnd(); };
+      const p = a.play();
+      if (p && p.catch) p.catch(() => { if (gen === genRef.current && onEnd) onEnd(); });
+    } catch { if (onEnd) onEnd(); }
+  }, []);
 
-  // Pick a voice and play a short sample so they can hear it (this runs inside a
-  // tap, so it also unlocks audio for the rest of the shoot).
+  // Pick a voice and play a short sample (runs in a tap → unlocks audio on iOS).
   function previewVoice(val) {
     setVoiceTheme(val); setVoiceOn(true);
-    try {
-      let a = audioRef.current; if (!a) { a = new Audio(); audioRef.current = a; }
-      a.pause(); a.onended = null; a.src = `/character-voices/${val}/smile.mp3`; a.currentTime = 0;
-      const p = a.play(); if (p && p.catch) p.catch(() => {});
-    } catch { /* ignore */ }
+    speak(val, 'smile');
   }
 
-  // Enter the capture stage; greet with the welcome line the first time. The tap
-  // that calls this is the user gesture that unlocks audio playback on iOS.
+  // Enter capture; greet once, THEN allow pose lines. readyToPose flips only when
+  // the welcome ends, so the greeting and the first pose never overlap.
   function enterCapture(greet = true) {
     setStage('capture');
-    if (greet && !greeted && voiceOn) playClip('welcome', () => setGreeted(true));
-    else setGreeted(true);
+    spokenIdxRef.current = -1;
+    setReadyToPose(false);
+    if (greet && !greetedRef.current && voiceOn) {
+      greetedRef.current = true;
+      speak(voiceTheme, 'welcome', () => setReadyToPose(true));
+    } else {
+      greetedRef.current = true;
+      setReadyToPose(true);
+    }
   }
 
-  // Speak the current pose (after the welcome), but not while reviewing a shot.
+  // Speak the visible pose — only after the welcome, never while reviewing a
+  // shot, and never twice for the same pose.
   useEffect(() => {
-    if (stage !== 'capture' || !greeted || preview) return undefined;
-    playClip(VOICE_FOR_POSE[POSES[idx]?.slug]);
+    if (stage !== 'capture' || preview || !readyToPose) return undefined;
+    if (spokenIdxRef.current === idx) return undefined;
+    spokenIdxRef.current = idx;
+    if (voiceOn) speak(voiceTheme, VOICE_FOR_POSE[POSES[idx]?.slug]);
     return undefined;
-  }, [stage, idx, greeted, preview, playClip]);
+  }, [stage, idx, preview, readyToPose, voiceOn, voiceTheme, speak]);
 
   // Ending line on the finish screen.
   useEffect(() => {
-    if (stage === 'finished') playClip('done');
+    if (stage === 'finished' && voiceOn) speak(voiceTheme, 'done');
     return undefined;
-  }, [stage, playClip]);
+  }, [stage, voiceOn, voiceTheme, speak]);
 
   useEffect(() => () => stopVoice(), [stopVoice]);  // stop audio on unmount
 
