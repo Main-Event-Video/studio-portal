@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
+import { isCharacterFolder } from '@/lib/characterPoses';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,7 +51,7 @@ export async function GET(request) {
   let { data: media, error: mediaErr } = await runStats('client_id, created_at, folder_path, hidden_at');
   if (mediaErr) ({ data: media } = await runStats('client_id, created_at, folder_path'));
   for (const m of media || []) {
-    const s = stats[m.client_id] || (stats[m.client_id] = { upload_count: 0, trash_count: 0, last_upload_at: null });
+    const s = stats[m.client_id] || (stats[m.client_id] = { upload_count: 0, trash_count: 0, file_count: 0, last_upload_at: null });
     // last_upload_at = when they last uploaded anything (even if later removed).
     if (!s.last_upload_at || m.created_at > s.last_upload_at) s.last_upload_at = m.created_at;
     // Hidden photos are excluded everywhere (client never sees them) — skip entirely.
@@ -58,13 +59,39 @@ export async function GET(request) {
     // Trashed = set aside for removal: tracked separately, NOT in the billable count.
     if (m.folder_path === TRASH_FOLDER) { s.trash_count += 1; continue; }
     s.upload_count += 1; // active / billable
+    // file_count = the client's actual project photos — EXCLUDES the reserved
+    // character-build shots so the "Files" tab lights up only for real uploads.
+    if (!isCharacterFolder(m.folder_path)) s.file_count += 1;
   }
+
+  // Per-client status flags for the admin tab badges (green when "loaded").
+  // Bulk (one query each), best-effort: a missing table/column must never break
+  // the client list.
+  const intakeDone = new Set();
+  try {
+    const { data: intakeRows } = await db.from('studio_intake').select('client_id');
+    for (const r of intakeRows || []) intakeDone.add(r.client_id);
+  } catch { /* intake table absent — leave all un-flagged */ }
+
+  const charDone = new Set();
+  try {
+    let { data: charRows, error: charErr } = await db
+      .from('studio_characters').select('client_id, done_at, deleted_at').not('done_at', 'is', null);
+    if (charErr) {
+      ({ data: charRows } = await db
+        .from('studio_characters').select('client_id, done_at').not('done_at', 'is', null));
+    }
+    for (const r of charRows || []) { if (r.done_at && !r.deleted_at) charDone.add(r.client_id); }
+  } catch { /* characters table absent — leave all un-flagged */ }
 
   const clients = (data || []).map((c) => ({
     ...c,
     upload_count: stats[c.id]?.upload_count || 0,
     trash_count: stats[c.id]?.trash_count || 0,
     last_upload_at: stats[c.id]?.last_upload_at || null,
+    has_files: (stats[c.id]?.file_count || 0) > 0,
+    intake_submitted: intakeDone.has(c.id),
+    character_done: charDone.has(c.id),
   }));
   return NextResponse.json({ clients });
 }
