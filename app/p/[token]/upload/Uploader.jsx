@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildTimeline } from '@/lib/timelineOrder';
 import { isCharacterFolder } from '@/lib/characterPoses';
-import CharacterCapture from './CharacterCapture';
 
 // Files moved here are set aside for the studio to clear. Clients can also delete their own uploads outright (the ✕ on each photo).
 const TRASH_FOLDER = 'Trash';
@@ -214,7 +213,7 @@ export default function Uploader({ token }) {
   const [orgMsg, setOrgMsg] = useState('');
   const [saveErr, setSaveErr] = useState(false);  // last save failed → honest status + retry
   const lastOrgPayload = useRef(null);             // last organize() payload, for retry
-  const [activeChar, setActiveChar] = useState(null);         // open capture: {id,name,existing} | {build:true} | null
+  const [qrChar, setQrChar] = useState(null);                 // desktop QR modal: null=closed, ''=new character, '<id>'=continue that one
   const [characters, setCharacters] = useState([]);           // multi-character roster
   const [isDesktop, setIsDesktop] = useState(false);          // desktop → non-phone copy
 
@@ -261,11 +260,12 @@ export default function Uploader({ token }) {
     // Deep-link from the desktop QR: land straight in Character Build on the phone.
     const sp = new URLSearchParams(window.location.search);
     if (sp.get('start') === 'character') {
+      // Phone landed here from the desktop QR (already signed in) — go straight
+      // into the studio builder for a new or specific character.
       const wantChar = sp.get('character');
-      if (wantChar) pendingCharRef.current = wantChar; // continue this specific character once the roster loads
-      else setActiveChar({ build: true });
-      const clean = window.location.pathname + window.location.hash;
-      window.history.replaceState(null, '', clean); // drop the param so a refresh doesn't re-trigger
+      const q = 'token=' + encodeURIComponent(token) + (wantChar ? '&character=' + encodeURIComponent(wantChar) : '');
+      window.location.replace('/character-studio.html?' + q);
+      return;
     }
   }, []);
   const goView = useCallback((v) => {
@@ -304,18 +304,16 @@ export default function Uploader({ token }) {
   }, [token]);
   useEffect(() => { loadCharacters(); }, [loadCharacters]);
 
-  // When arriving via a per-character QR deep-link, open that character to
-  // continue once the roster (with its name + captured slots) has loaded.
-  const pendingCharRef = useRef(null);
-  useEffect(() => {
-    const id = pendingCharRef.current;
-    if (!id) return;
-    const ch = characters.find((c) => c.id === id);
-    if (ch) {
-      pendingCharRef.current = null;
-      setActiveChar({ id: ch.id, name: ch.name, existing: ch.slots || [] });
-    }
-  }, [characters]);
+  // Start or continue a character shoot. On a phone we jump straight into the
+  // studio builder; on a computer we show a QR so the shoot happens on a phone
+  // (someone photographs you — no webcam selfies).
+  function openCharacter(charId, name) {
+    if (isDesktop) { setQrChar(charId || ''); return; }
+    const q = 'token=' + encodeURIComponent(token)
+      + (charId ? '&character=' + encodeURIComponent(charId) : '')
+      + (name ? '&name=' + encodeURIComponent(name) : '');
+    window.location.href = '/character-studio.html?' + q;
+  }
 
   async function deleteCharacter(ch) {
     if (typeof window !== 'undefined' && !window.confirm(`Delete the character “${ch.name || 'Unnamed'}”? Main Event Studio can restore it if you change your mind.`)) return;
@@ -1066,7 +1064,7 @@ export default function Uploader({ token }) {
                 <div key={ch.id} className="charitem">
                   <button
                     className="charrow"
-                    onClick={() => setActiveChar({ id: ch.id, name: ch.name, existing: ch.slots || [] })}
+                    onClick={() => openCharacter(ch.id, ch.name)}
                   >
                     <span className="crmeta">
                       <span className="crname">{ch.name || 'Unnamed character'}</span>
@@ -1091,7 +1089,7 @@ export default function Uploader({ token }) {
                 </div>
               );
             })}
-            <button className="charadd" onClick={() => { window.location.href = '/character-studio.html?token=' + encodeURIComponent(token); }}>
+            <button className="charadd" onClick={() => openCharacter(null, '')}>
               ＋ {characters.length === 0 ? 'Start a character' : 'Build another character'}
             </button>
           </div>
@@ -1293,14 +1291,17 @@ export default function Uploader({ token }) {
           <button type="button" onClick={() => setLastTrashed(null)} style={{ border: 'none', background: 'transparent', color: '#9fb3c8', cursor: 'pointer', fontSize: 16 }}>✕</button>
         </div>
       )}
-      {activeChar && (
-        <CharacterCapture
-          token={token}
-          character={activeChar.build ? null : { id: activeChar.id, name: activeChar.name }}
-          existing={activeChar.existing || []}
-          onClose={() => { setActiveChar(null); loadMine(); loadCharacters(); }}
-          onChanged={() => { loadMine(); loadCharacters(); }}
-        />
+      {qrChar !== null && (
+        <div onClick={() => setQrChar(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#0b0710', border: '1px solid #241a30', borderRadius: 16, padding: '22px 22px 18px', maxWidth: 360, width: '100%', textAlign: 'center', color: '#eae6f0' }}>
+            <h3 style={{ margin: '0 0 6px', fontSize: 20 }}>Continue on your phone</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 14, color: '#aab6c4', lineHeight: 1.5 }}>Your character shoot happens on a phone — grab a friend to take the photos (no selfies!). Scan this, sign in, and it drops you straight into the shoot.</p>
+            <div style={{ background: '#fff', borderRadius: 14, padding: 14, width: 236, height: 236, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img src={`/api/portal/character-qr?token=${encodeURIComponent(token)}${qrChar ? `&character=${encodeURIComponent(qrChar)}` : ''}`} alt="Scan to continue on your phone" width={208} height={208} style={{ display: 'block', width: '100%', height: '100%' }} />
+            </div>
+            <button type="button" onClick={() => setQrChar(null)} style={{ marginTop: 16, width: '100%', padding: 12, borderRadius: 12, border: '1.5px solid #38b6ff', background: 'transparent', color: '#38b6ff', fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>Done</button>
+          </div>
+        </div>
       )}
     </main>
   );
