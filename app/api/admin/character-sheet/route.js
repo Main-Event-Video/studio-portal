@@ -39,6 +39,8 @@ export async function GET(request) {
   if (!characterId) return NextResponse.json({ error: 'Missing characterId' }, { status: 400 });
 
   const nameOverride = url.searchParams.get('name');
+  // Target AI program to stamp on the sheet (openart/higgsfield/midjourney/lora).
+  const program = url.searchParams.get('program') || '';
   // regenerate=1 forces a fresh AI write-up (bypasses the cache), e.g. if you
   // want a new take. Normal downloads reuse the cached write-up — no re-billing.
   const force = url.searchParams.get('regenerate') === '1';
@@ -46,6 +48,7 @@ export async function GET(request) {
   try {
     sheet = await buildCharacterSheet(db, characterId, {
       ...(nameOverride ? { name: nameOverride } : {}),
+      ...(program ? { program } : {}),
       ...(force ? { force: true } : {}),
     });
   } catch (e) {

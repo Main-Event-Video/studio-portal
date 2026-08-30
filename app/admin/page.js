@@ -123,11 +123,36 @@ async function fetchCharacterList(clientId) {
   return Array.isArray(j.characters) ? j.characters : [];
 }
 
-// Download one character's build sheet by character id.
-async function downloadCharacterSheetById(characterId, name, regenerate = false) {
+// Fetch ONE character's captured shots (with signed view URLs) + saved program,
+// for the admin build panel gallery.
+async function fetchCharacterDetail(characterId) {
   const { data } = await supabase.auth.getSession();
   const token = data?.session?.access_token;
-  const q = `${name ? `&name=${encodeURIComponent(name)}` : ''}${regenerate ? '&regenerate=1' : ''}`;
+  const res = await fetch(`/api/admin/character?characterId=${characterId}`, {
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+  });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+// Save which AI tool this character is being built for.
+async function saveCharacterProgram(characterId, program) {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  const res = await fetch('/api/admin/character', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ characterId, program: program || null }),
+  });
+  return res.ok;
+}
+
+// Download one character's build sheet by character id (optionally stamped for a
+// target AI program).
+async function downloadCharacterSheetById(characterId, name, regenerate = false, program = '') {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  const q = `${name ? `&name=${encodeURIComponent(name)}` : ''}${program ? `&program=${encodeURIComponent(program)}` : ''}${regenerate ? '&regenerate=1' : ''}`;
   const res = await fetch(`/api/admin/character-sheet?characterId=${characterId}&download=1${q}`, {
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
@@ -148,56 +173,166 @@ async function downloadCharacterSheetById(characterId, name, regenerate = false)
   return { ok: true };
 }
 
-// Admin control: pick one of the client's characters and download its sheet.
-function CharacterSheetPicker({ client }) {
+// AI tools the studio exports characters for (value + label). Keep in sync with
+// PROGRAMS in the API and PROGRAM_INFO in lib/characterSheet.js.
+const PROGRAM_OPTS = [
+  ['', 'Choose a program…'],
+  ['openart', 'OpenArt — Character'],
+  ['higgsfield', 'Higgsfield — Soul ID'],
+  ['midjourney', 'Midjourney — cref / oref'],
+  ['lora', 'LoRA training'],
+];
+
+// Admin "Character builds" panel: pick a character (a client may have several),
+// see all their captured reference shots like the client's review page, choose
+// the target AI program, then export the ready-to-use sheet.
+function CharacterSheetPicker({ client, onZoom }) {
   const [chars, setChars] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState('');
-  const [err, setErr] = useState('');
+  const [selectedId, setSelectedId] = useState('');
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [program, setProgram] = useState('');
+  const [savingProg, setSavingProg] = useState(false);
   const [regen, setRegen] = useState(false);
+  const [busyExport, setBusyExport] = useState(false);
+  const [err, setErr] = useState('');
+
+  // Load the roster; auto-select the first character.
   useEffect(() => {
     let alive = true;
-    setLoading(true);
+    setLoading(true); setSelectedId(''); setDetail(null);
     fetchCharacterList(client.id).then((list) => {
       if (!alive) return;
       setChars(list);
+      setSelectedId(list[0]?.id || '');
       setLoading(false);
     });
     return () => { alive = false; };
   }, [client.id]);
 
-  async function download(ch) {
-    setBusyId(ch.id); setErr('');
-    const r = await downloadCharacterSheetById(ch.id, ch.name || '', regen);
-    setBusyId('');
+  // Load the selected character's shots + saved program.
+  useEffect(() => {
+    if (!selectedId) { setDetail(null); return undefined; }
+    let alive = true;
+    setDetailLoading(true); setErr('');
+    fetchCharacterDetail(selectedId).then((d) => {
+      if (!alive) return;
+      setDetail(d);
+      setProgram(d?.program || '');
+      setDetailLoading(false);
+    });
+    return () => { alive = false; };
+  }, [selectedId]);
+
+  const selected = chars.find((c) => c.id === selectedId) || null;
+
+  async function changeProgram(p) {
+    setProgram(p); setSavingProg(true);
+    await saveCharacterProgram(selectedId, p);
+    setSavingProg(false);
+  }
+
+  async function exportSheet() {
+    if (!selectedId) return;
+    setBusyExport(true); setErr('');
+    const r = await downloadCharacterSheetById(selectedId, selected?.name || detail?.name || '', regen, program);
+    setBusyExport(false);
     if (!r.ok) setErr(r.error || 'Failed');
   }
 
   if (loading) return <p style={{ fontSize: 13, color: 'var(--muted)' }}>Loading…</p>;
   if (!chars.length) return <p style={{ fontSize: 13, color: 'var(--muted)' }}>No character builds yet.</p>;
 
+  const shots = detail?.shots || [];
+  const extras = detail?.extras || [];
+  const doneCount = detail?.done ?? selected?.done ?? 0;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 520 }}>
-      <label style={{ fontSize: 12, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <input type="checkbox" checked={regen} onChange={(e) => setRegen(e.target.checked)} /> Generate a fresh write-up on download
-      </label>
-      {chars.map((ch) => (
-        <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid rgba(127,127,127,0.3)', borderRadius: 8 }}>
-          <span style={{ fontWeight: 700 }}>{ch.name || 'Unnamed'}</span>
-          <span style={{ fontSize: 12, opacity: 0.65 }}>{ch.done}/{ch.total}{ch.done >= ch.total ? ' ✓' : ''}</span>
-          <span style={{ flex: 1 }} />
-          <button
-            type="button"
-            className="btn-ghost"
-            disabled={!!busyId}
-            title="Download this character's build sheet (PNG)"
-            onClick={() => download(ch)}
-          >
-            {busyId === ch.id ? 'Building…' : 'Download sheet'}
-          </button>
-        </div>
-      ))}
-      {err && <span style={{ color: '#ff6b6b', fontSize: 12 }}>{err}</span>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* character selector — a client may have several */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {chars.map((ch) => {
+          const on = ch.id === selectedId;
+          return (
+            <button
+              key={ch.id}
+              type="button"
+              onClick={() => setSelectedId(ch.id)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+                borderRadius: 999, cursor: 'pointer', fontWeight: 600, fontSize: 14, color: 'var(--text)',
+                border: '1px solid ' + (on ? '#3d7bff' : 'rgba(127,127,127,0.35)'),
+                background: on ? 'rgba(61,123,255,0.14)' : 'transparent',
+              }}
+            >
+              {ch.name || 'Unnamed'}
+              <span style={{ fontSize: 12, opacity: 0.7 }}>{ch.done}/{ch.total}{ch.done >= ch.total ? ' ✓' : ''}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {detailLoading && <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>Loading photos…</p>}
+
+      {!detailLoading && detail && (
+        <>
+          {/* photo gallery — canonical pose order, like the client's review page */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
+            {shots.map((s) => (
+              <div key={s.slot} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{
+                  position: 'relative', aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden',
+                  border: '1px solid rgba(127,127,127,0.3)',
+                  background: s.has ? '#0b0713' : 'rgba(127,127,127,0.08)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {s.has && s.url ? (
+                    <img src={s.url} alt={s.label}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }}
+                      onClick={() => onZoom && onZoom({ type: 'image', url: s.url, filename: s.label })} />
+                  ) : (
+                    <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: 6 }}>not taken yet</span>
+                  )}
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{s.label}</span>
+              </div>
+            ))}
+            {extras.map((e, i) => (e.url ? (
+              <div key={`x${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(127,127,127,0.3)', background: '#0b0713' }}>
+                  <img src={e.url} alt="Own photo" style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }}
+                    onClick={() => onZoom && onZoom({ type: 'image', url: e.url, filename: e.filename || 'Own photo' })} />
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>Own photo</span>
+              </div>
+            ) : null))}
+          </div>
+
+          {/* program + export controls */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, paddingTop: 4 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+              <span style={{ fontWeight: 700 }}>Exporting for</span>
+              <select value={program} onChange={(e) => changeProgram(e.target.value)}
+                style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.4)', background: 'var(--panel, #0e0a16)', color: 'var(--text)', fontSize: 14 }}>
+                {PROGRAM_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              {savingProg && <span style={{ fontSize: 12, color: 'var(--muted)' }}>saving…</span>}
+            </label>
+            <span style={{ flex: 1 }} />
+            <label style={{ fontSize: 12, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={regen} onChange={(e) => setRegen(e.target.checked)} /> Fresh write-up
+            </label>
+            <button type="button" className="btn-primary" disabled={busyExport || doneCount === 0}
+              title={doneCount === 0 ? 'No shots captured yet' : 'Export this character sheet (PNG) to drag into your AI tool'}
+              onClick={exportSheet}>
+              {busyExport ? 'Building…' : 'Export character sheet'}
+            </button>
+          </div>
+          {doneCount === 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>This character has no shots yet.</span>}
+          {err && <span style={{ color: '#ff6b6b', fontSize: 12 }}>{err}</span>}
+        </>
+      )}
     </div>
   );
 }
@@ -3580,8 +3715,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 {activeTool === 'info' && <ClientInfoForm client={c} siteUrl={siteUrl} onSaved={loadClients} />}
                 {activeTool === 'character' && (
                   <div style={{ padding: '8px 2px' }}>
-                    <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>Pick a character for this client, then download their build sheet.</p>
-                    <CharacterSheetPicker client={c} />
+                    <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>Pick a character, review their shots, choose the program you&rsquo;re exporting for, then export the sheet.</p>
+                    <CharacterSheetPicker client={c} onZoom={setLightbox} />
                   </div>
                 )}
                 {!activeTool && <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 10 }}>Pick a tool above to get started.</p>}
@@ -3727,8 +3862,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                               {activeTool === 'info' && <ClientInfoForm client={c} siteUrl={siteUrl} onSaved={loadClients} />}
                               {activeTool === 'character' && (
                                 <div style={{ padding: '8px 2px' }}>
-                                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>Pick a character for this client, then download their build sheet.</p>
-                                  <CharacterSheetPicker client={c} />
+                                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 8px' }}>Pick a character, review their shots, choose the program you&rsquo;re exporting for, then export the sheet.</p>
+                                  <CharacterSheetPicker client={c} onZoom={setLightbox} />
                                 </div>
                               )}
                             </div>
