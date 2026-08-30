@@ -1299,7 +1299,9 @@ export default function Uploader({ token }) {
             <div style={{ background: '#fff', borderRadius: 14, padding: 14, width: 236, height: 236, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <img src={`/api/portal/character-qr?token=${encodeURIComponent(token)}${qrChar ? `&character=${encodeURIComponent(qrChar)}` : ''}`} alt="Scan to continue on your phone" width={208} height={208} style={{ display: 'block', width: '100%', height: '100%' }} />
             </div>
-            <button type="button" onClick={() => setQrChar(null)} style={{ marginTop: 16, width: '100%', padding: 12, borderRadius: 12, border: '1.5px solid #38b6ff', background: 'transparent', color: '#38b6ff', fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>Done</button>
+            <p style={{ margin: '14px 0 8px', fontSize: 12.5, color: '#7f8b99' }}>We recommend a phone — but you can stay here:</p>
+            <button type="button" onClick={() => { const q = 'token=' + encodeURIComponent(token) + (qrChar ? '&character=' + encodeURIComponent(qrChar) : ''); window.location.href = '/character-studio.html?' + q; }} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1.5px solid #38b6ff', background: '#38b6ff', color: '#04210f', fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>Continue on this computer →</button>
+            <button type="button" onClick={() => setQrChar(null)} style={{ marginTop: 10, width: '100%', padding: 10, borderRadius: 12, border: 'none', background: 'transparent', color: '#93a3b6', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Close</button>
           </div>
         </div>
       )}
