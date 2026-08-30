@@ -1091,7 +1091,7 @@ export default function Uploader({ token }) {
                 </div>
               );
             })}
-            <button className="charadd" onClick={() => setActiveChar({ build: true })}>
+            <button className="charadd" onClick={() => { window.location.href = '/character-studio.html?token=' + encodeURIComponent(token); }}>
               ＋ {characters.length === 0 ? 'Start a character' : 'Build another character'}
             </button>
           </div>
