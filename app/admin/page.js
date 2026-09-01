@@ -3076,17 +3076,28 @@ export default function AdminPage() {
             const k = albumKey(albumName);
             const b = (photoEdits.albumBorders || {})[k] || null;
             const open = borderPanel === k;
+            const on = borderIsOn(b);
+            // Sits immediately after the photo count, not pushed to the far right —
+            // a control flush against the panel edge reads as chrome and gets
+            // scanned past, which is exactly what happened the first time.
             return (
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-                {borderIsOn(b) && (
-                  <span title={`${b.w.toFixed(1)} ${b.color}`}
-                    style={{ width: 15, height: 15, borderRadius: 3, border: `2px solid ${b.color}`, flex: '0 0 auto' }} />
-                )}
-                <button type="button" className="linklike" style={{ fontSize: 12 }}
-                  onClick={() => setBorderPanel(open ? null : k)}>
-                  {open ? 'Done' : (borderIsOn(b) ? 'Border: on' : 'Add a border')}
-                </button>
-              </div>
+              <button type="button" onClick={() => setBorderPanel(open ? null : k)}
+                title="Give every photo in this album the same border"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer',
+                  border: `1px solid ${open || on ? '#d8b56b' : 'var(--line)'}`,
+                  background: open ? 'rgba(216,181,107,0.16)' : 'transparent',
+                  color: open || on ? '#d8b56b' : 'var(--muted)',
+                }}>
+                <span aria-hidden="true" style={{
+                  width: 13, height: 13, borderRadius: 3, flex: '0 0 auto',
+                  border: `2px solid ${on ? b.color : 'currentColor'}`,
+                  opacity: on ? 1 : 0.7,
+                }} />
+                {open ? 'Done' : (on ? `Border ${b.w.toFixed(1)}` : 'Border')}
+              </button>
             );
           };
 
