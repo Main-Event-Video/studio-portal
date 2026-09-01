@@ -293,10 +293,15 @@
         // non-scaling-stroke keeps the line an even thickness — the viewBox is
         // stretched (preserveAspectRatio=none) and a path-space stroke would come
         // out thicker on one axis than the other.
+        // A BARE / 'px' width is in the SOURCE's pixel space (1920x1080), not the
+        // preview's, so it must be scaled down by the same factor as the stage.
+        // Without this the preview drew a 28px border at 28 preview pixels — about
+        // five times too heavy — which made the thickness slider impossible to
+        // judge from a contact strip. (Found while checking photo borders.)
         const swRaw = el.stroke_width;
         const sw = String(swRaw).includes('vmin') ? (num(swRaw, 1) / 100) * vmin
           : String(swRaw).includes('%') ? (num(swRaw, 1) / 100) * Math.min(boxW, boxH)
-            : num(swRaw, 1);
+            : num(swRaw, 1) * (ctx && ctx.scale ? ctx.scale : 1);
         path.setAttribute('stroke-width', String(Math.max(0.5, sw)));
         path.setAttribute('stroke-linecap', el.stroke_cap === 'butt' ? 'butt' : (el.stroke_cap || 'round'));
         path.setAttribute('stroke-linejoin', el.stroke_join || 'round');

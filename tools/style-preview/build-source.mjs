@@ -40,8 +40,11 @@ const photoItems = pick.map((m) => ({
   framing: 'top', fit: null, size: 100, colorCorrect: false,
   mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null,
   // Dimensions are only supplied when the real route would probe them.
-  w: needsDims ? m.w : null,
-  h: needsDims ? m.h : null,
+  // A border forces the dimension probe in the real route, so dims are always
+  // present when one is on.
+  ...(flag('--border') ? { border: { on: true, w: Number(val('--border-w', 2.2)), color: val('--border-c', '#FFFFFF'), at: 1 } } : {}),
+  w: (needsDims || flag('--border')) ? m.w : null,
+  h: (needsDims || flag('--border')) ? m.h : null,
 }));
 
 const greenItem = { type: 'photo', green: true, url: '/public/green.png', fit: 'fill', w: 1920, h: 1080 };
@@ -73,6 +76,7 @@ const source = buildMontageSource({
   assetBase: '/public', // overlays live under /public/overlays in this harness
   background: bgArg,
   mpTransition: 'record-fwd', mpStagger: null, mpHold: null, mpSpeed: null,
+  duoPalette: val('--duo-pal', null), duoTreatment: val('--duo-treat', null),
 });
 
 // assetBase is used as `${assetBase}/overlays/x.png` in the engine; '' gives

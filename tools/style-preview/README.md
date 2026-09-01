@@ -60,7 +60,7 @@ Background flags for `build-source.mjs`: `--bg-video` (a looping WebM backdrop,
 exercising the studio background library) and `--bg-image` (a still backdrop).
 
 `verify.mjs` is the one to run after any engine change. It builds every style in
-`STYLES` in seven modes — cards+green, bare, 60-second length mode, dimensions
+`STYLES` in nine modes — cards+green, bare, 60-second length mode, dimensions
 missing (the probe-failed path), and image / video / texture backgrounds — then
 asserts no `undefined`/`NaN`/`null%`, no zero durations, no image without a
 source, keyframes ordered and inside their element's duration, that length mode
@@ -74,7 +74,22 @@ track 1 for the whole montage, so the backdrop vanished after the first shot.
 **The simulator could not have caught it**: it stacks overlapping layers rather
 than modelling the conflict, so it showed the background working perfectly.
 
+It also covers **photo borders** (two modes: with probed dimensions, and with the
+probe failed) — asserting no border rect collapses to zero or escapes its box —
+and builds all six Duotone palettes against all three background treatments on
+the three duotone styles. It reports how many styles actually draw a border, so
+coverage is a fact on the record rather than an assumption.
+
 Structural checks and visual checks catch different things. Run both.
+
+## A simulator bug worth knowing about
+
+`stroke_width` written as a bare number or `"28 px"` is in the SOURCE's pixel
+space (1920x1080), not the preview's. The simulator used to draw it at face value
+in preview pixels — about five times too heavy at a 420px-wide strip — which made
+the border thickness slider impossible to judge from a contact sheet. It is now
+multiplied by `ctx.scale`. `vmin` and `%` widths were always scaled correctly;
+only bare/px was wrong.
 
 ## Making a picker clip
 

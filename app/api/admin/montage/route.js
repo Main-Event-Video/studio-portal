@@ -11,6 +11,7 @@ import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims } from '@/li
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
 import { isHeic } from '@/lib/heic';
+import { resolveBorder, borderIsOn } from '@/lib/photoBorder';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,7 +49,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -106,6 +107,9 @@ export async function POST(request) {
   // TOP (keep heads); a per-render Fix-framing adjustment still overrides it.
   const pe = client.photo_edits && typeof client.photo_edits === 'object' ? client.photo_edits : {};
   const pePhotos = pe.photos && typeof pe.photos === 'object' ? pe.photos : {};
+  // A photo's album decides which global border applies to it, so the r2_key ->
+  // album map has to be built before any photo object is made.
+  const albumByKey = new Map();
   const editFor = (k) => {
     const e = pePhotos[k] || {};
     return {
@@ -121,12 +125,17 @@ export async function POST(request) {
       saturation: Number.isFinite(Number(e.saturation)) ? Math.min(200, Math.max(0, Math.round(Number(e.saturation)))) : 100,
       posX: Number.isFinite(Number(e.posX)) ? Number(e.posX) : null,
       posY: Number.isFinite(Number(e.posY)) ? Number(e.posY) : null,
+      // Album border vs per-photo border, most recently set one wins. Resolved
+      // here (not in the engine) so the stored render snapshot carries the border
+      // that was actually chosen at this moment — an Export Final months later
+      // reproduces THIS draft even if the album's border has changed since.
+      border: resolveBorder(pe, k, albumByKey.get(k) || null),
     };
   };
   const photoObj = (k) => {
     const e = editFor(k);
     const adj = adjustments && adjustments[k] != null ? adjustments[k] : undefined; // number 0 (slider top) must survive
-    return { type: 'photo', r2_key: k, framing: adj != null ? adj : e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect, mode: e.mode, contrast: e.contrast, saturation: e.saturation, posX: e.posX, posY: e.posY };
+    return { type: 'photo', r2_key: k, framing: adj != null ? adj : e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect, mode: e.mode, contrast: e.contrast, saturation: e.saturation, posX: e.posX, posY: e.posY, border: borderIsOn(e.border) ? e.border : null };
   };
 
   // Full timeline (photos + videos) in play order. Photos define the 1..N
@@ -134,6 +143,7 @@ export async function POST(request) {
   // the editor keys their real clip into.
   const { items: timelineItems, error: mErr } = await orderedClientTimeline(db, clientId);
   if (mErr) return NextResponse.json({ error: 'Could not load media', detail: mErr.message }, { status: 500 });
+  for (const m of timelineItems || []) albumByKey.set(m.r2_key, m.folder_path || null);
   const photosAll = (timelineItems || []).filter((m) => (m.content_type || '').startsWith('image/') && !isHeic({ filename: m.filename, contentType: m.content_type }));
   if (photosAll.length < 1) {
     return NextResponse.json(
@@ -239,6 +249,9 @@ export async function POST(request) {
         mpStagger: Number.isFinite(Number(mpStagger)) ? Number(mpStagger) : null,
         mpHold: Number.isFinite(Number(mpHold)) ? Number(mpHold) : null,
         mpSpeed: Number.isFinite(Number(mpSpeed)) ? Number(mpSpeed) : null,
+        // Duotone background colour, snapshotted so Export Final matches the draft.
+        duoPalette: duoPalette || null,
+        duoTreatment: duoTreatment || null,
 
         // Fully-resolved play sequence (r2_keys + each photo's edits AT THIS
         // MOMENT, placeholder names) — the snapshot the "Export Final" re-render
@@ -262,7 +275,13 @@ export async function POST(request) {
     // tiled/print walls, Epic, plus Photo Drop (native-aspect card) and Story
     // Builder (aspect-aware fan). Without this, aspect defaults to square and
     // Photo Drop squishes landscapes.
-    const needsDims = styleNeedsDims(st);
+    // A border has to know where the picture's edge IS. Josh chose "hug the actual
+    // photo edge", and on a Fit photo that edge is the letterbox rect, which is
+    // only computable from the photo's real pixel shape. So a border forces the
+    // dimension probe on styles that would otherwise skip it. It costs a header
+    // range-fetch per photo and only when a border is actually switched on.
+    const anyBorder = sequence.some((s) => s.type === 'photo' && borderIsOn(s.border));
+    const needsDims = styleNeedsDims(st) || anyBorder;
     // Long-lived presigned URLs — Creatomate fetches these while rendering.
     // Placeholders carry only a name (a green gap the editor keys their clip into).
     const photoItemsBuilt = await Promise.all(
@@ -270,7 +289,7 @@ export async function POST(request) {
         if (s.type !== 'photo') return { type: 'placeholder', name: s.name };
         const url = await getViewUrl(s.r2_key, 21600);
         const dims = needsDims ? await probeDims(url) : null;
-        return { type: 'photo', url, framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY, w: dims?.w || null, h: dims?.h || null };
+        return { type: 'photo', url, framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY, border: s.border || null, w: dims?.w || null, h: dims?.h || null };
       })
     );
 
@@ -304,6 +323,7 @@ export async function POST(request) {
         ? { ...bgControl, textureUrl: `${siteUrl}/backgrounds/${bgControl.texture}.jpg` }
         : bgResolved,               // green / texture / pasted url / imported library image or video
       mpTransition, mpStagger, mpHold, mpSpeed,   // Multi Page motion options
+      duoPalette, duoTreatment,                   // Duotone background colour
     });
 
     const render = await createRender({
