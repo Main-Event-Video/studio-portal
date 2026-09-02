@@ -3751,9 +3751,9 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             rows.map((m) => (
               <div key={m.id} style={{
                 border: '1px solid var(--line)',
-                borderLeft: m.watermarked ? '1px solid var(--line)' : '4px solid #2f6bff',
+                borderLeft: m.watermarked ? '1px solid var(--line)' : '4px solid #22c55e',
                 borderRadius: 10, padding: 14, marginBottom: 12,
-                background: m.watermarked ? 'rgba(255,255,255,0.02)' : 'rgba(47,107,255,0.06)',
+                background: m.watermarked ? 'rgba(255,255,255,0.02)' : 'rgba(34,197,94,0.08)',
                 opacity: m.hidden ? 0.5 : 1,
               }}>
                 {/* Header: title + status badge + remove (X) */}
@@ -3763,6 +3763,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     // finished video cannot change without re-rendering it, so this
                     // deliberately leaves it alone rather than implying otherwise.
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                      <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: 'rgba(127,127,127,0.16)', color: 'var(--muted)', flex: '0 0 auto' }}>{m.seq}</span>
                       <input
                         autoFocus
                         value={renameText}
@@ -3779,6 +3780,15 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         onClick={() => { reviewMontage(m.id, { label: renameText }); setRenamingId(null); }}>Save</button>
                       <button type="button" className="linklike" style={{ fontSize: 12 }}
                         onClick={() => setRenamingId(null)}>Cancel</button>
+                      {/* What the exported file will actually be called. Mirrors
+                          safeName()/renderName() on the server so the name you
+                          type and the file you get cannot disagree silently. */}
+                      <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {(() => {
+                          const safe = String(renameText || '').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+                          return safe ? `${m.seq}_${safe}.mp4` : m.name;
+                        })()}
+                      </span>
                       {m.label && (
                         <button type="button" className="linklike" style={{ fontSize: 12, color: 'var(--muted)' }}
                           title="Go back to showing the montage title"
@@ -3787,6 +3797,15 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     </span>
                   ) : (
                     <strong style={{ fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                      {/* The permanent studio number. Stamped when the render is
+                          made and never reused; a full-rez export carries its
+                          draft's number with HR on the end. It is not editable,
+                          which is the point of it. */}
+                      <span title="Studio render number — permanent, matches the export file name"
+                        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, fontWeight: 800,
+                          padding: '2px 7px', borderRadius: 6, flex: '0 0 auto',
+                          background: m.watermarked ? 'rgba(127,127,127,0.16)' : '#22c55e',
+                          color: m.watermarked ? 'var(--muted)' : '#05230f' }}>{m.seq}</span>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.label || m.title}</span>
                       <button type="button" title="Rename this render (list only — the video's title card is unchanged)"
                         onClick={() => { setRenameText(m.label || ''); setRenamingId(m.id); }}
@@ -3826,7 +3845,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--muted)' }}>
                   {m.watermarked
                     ? <span className="pill">low rez</span>
-                    : <span className="pill" style={{ background: '#2f6bff', color: '#fff', borderColor: '#2f6bff', fontWeight: 700, letterSpacing: '.03em' }}>HIGH REZ</span>}
+                    : <span className="pill" style={{ background: '#22c55e', color: '#05230f', borderColor: '#22c55e', fontWeight: 800, letterSpacing: '.03em' }}>HIGH REZ</span>}
                   {m.starred && <span className="pill" style={{ color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
                   {m.includeCards === false && <span className="pill">no cards</span>}
                   {m.hidden && <span className="pill">hidden</span>}
