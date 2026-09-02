@@ -422,6 +422,9 @@ export async function GET(request) {
       client: m.studio_clients?.display_name || '—',
       style: m.style,
       title: m.title,
+      // A nickname the admin typed for this render; the list shows it instead of
+      // the title card text so repeat attempts are tellable apart.
+      label: m.params?.label || null,
       subtitle: m.subtitle,
       photoSeconds: m.params?.photoSeconds || null,
       adjustments: m.params?.adjustments || {},
