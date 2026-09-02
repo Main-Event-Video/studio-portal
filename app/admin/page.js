@@ -1710,7 +1710,7 @@ export default function AdminPage() {
       const shot = projPhotos.find((x) => x && x.url);
       const cssFilter = trKey === 'bw' ? 'grayscale(1)' : trKey === 'sepia' ? 'sepia(.8)' : 'none';
       const halfPreview = (pair, side) => (
-        <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+        <div style={{ position: 'relative', flex: 1, overflow: 'hidden', isolation: 'isolate' }}>
           {shot && <img src={shot.url} alt="" style={{ position: 'absolute', inset: 0, width: '200%', height: '100%', objectFit: 'cover', objectPosition: side === 'l' ? 'left center' : 'right center', left: side === 'l' ? 0 : '-100%', filter: cssFilter }} />}
           <span style={{ position: 'absolute', inset: 0, background: pair[0], mixBlendMode: 'multiply', opacity: tr.mul ? parseFloat(tr.mul) / 100 : 1 }} />
           <span style={{ position: 'absolute', inset: 0, background: pair[1], mixBlendMode: 'screen', opacity: parseFloat(tr.scr) / 100 }} />
@@ -1744,15 +1744,36 @@ export default function AdminPage() {
               {halfPreview(pal.pairs[2 % pal.pairs.length], 'r')}
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', flex: 1, minWidth: 220 }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
-                {pal.pairs.slice(0, 8).map((pr, i) => (
-                  <span key={i} title={`${pr[0]} / ${pr[1]}`} style={{ width: 22, height: 14, borderRadius: 3, border: '1px solid var(--line)', background: `linear-gradient(90deg, ${pr[0]}, ${pr[1]})` }} />
-                ))}
+              {/* One swatch per PALETTE, and every one of them is clickable. The
+                  first version showed the pairs INSIDE the chosen palette as plain
+                  spans — they looked exactly like a picker and did nothing when
+                  clicked, which is the obvious thing to reach for. */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {[['', st === 'duotone_pastel' ? 'Pastel' : 'Neon', DUO_PALETTES[st === 'duotone_pastel' ? 'pastel' : 'neon']]]
+                  .concat(Object.entries(DUO_PALETTES).map(([k, v]) => [k, v.label.replace(/\s*\(.*\)$/, ''), v]))
+                  .map(([k, short, v], i) => {
+                    const on = (seg.duoPalette || '') === k;
+                    const stops = v.pairs.slice(0, 4).flat().join(', ');
+                    return (
+                      <button key={`${k}:${i}`} type="button" onClick={() => set({ duoPalette: k })}
+                        title={k ? v.label : 'This style\u2019s own colours'}
+                        style={{
+                          padding: 0, borderRadius: 7, overflow: 'hidden', cursor: 'pointer', width: 78,
+                          border: on ? '2px solid #38b6ff' : '1px solid var(--line)',
+                          background: 'transparent', textAlign: 'center',
+                        }}>
+                        <span style={{ display: 'block', height: 20, background: `linear-gradient(90deg, ${stops})` }} />
+                        <span style={{ display: 'block', fontSize: 10, padding: '2px 3px', fontWeight: on ? 700 : 400, color: on ? '#38b6ff' : 'var(--muted)' }}>
+                          {k ? short : 'Default'}
+                        </span>
+                      </button>
+                    );
+                  })}
               </div>
               <p style={{ margin: 0 }}>
-                The montage cycles through this palette, a different pair each
-                shot, so the swatches show the whole run — the preview is the
-                first and third pair on {shot ? 'one of this client\u2019s photos' : 'a photo (add photos to see it)'}.
+                Click a swatch or use the dropdown — they do the same thing. The
+                montage cycles through the chosen palette, a different colour pair
+                on each shot; the preview shows two of them on {shot ? 'one of this client\u2019s photos' : 'a photo (add photos to see it)'}.
               </p>
               <p style={{ margin: '7px 0 0', color: '#d8b56b' }}>
                 The preview uses the same multiply and screen blending the render
@@ -3128,22 +3149,27 @@ export default function AdminPage() {
                   <button type="button" className={on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 9px', fontSize: 11 }}
                     onClick={() => onChange({ on: true, w, color })}>On</button>
                 </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: on ? 1 : 0.45 }}>
+                {/* Deliberately NOT disabled while the border is off. They used to
+                    be, which meant clicking a colour swatch on a fresh album did
+                    nothing at all — you had to find and press On first. Picking a
+                    colour or a thickness IS asking for a border, so it switches
+                    itself on (every handler already sends on: true). */}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   Thickness
-                  <input type="range" min={BORDER_MIN} max={BORDER_MAX} step="0.1" value={w} disabled={!on} style={{ width: 110 }}
+                  <input type="range" min={BORDER_MIN} max={BORDER_MAX} step="0.1" value={w} style={{ width: 110 }}
                     onChange={(ev) => onChange({ on: true, w: Number(ev.target.value), color })} />
                   <span style={{ display: 'inline-block', minWidth: 30 }}>{w.toFixed(1)}</span>
                 </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: on ? 1 : 0.45 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   Colour
-                  <input type="color" value={color} disabled={!on} aria-label="Border colour"
-                    style={{ width: 34, height: 26, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'transparent', cursor: on ? 'pointer' : 'default' }}
+                  <input type="color" value={color} aria-label="Border colour"
+                    style={{ width: 34, height: 26, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
                     onChange={(ev) => onChange({ on: true, w, color: ev.target.value.toUpperCase() })} />
                   {BORDER_SWATCHES.map((sw) => (
-                    <button key={sw} type="button" title={sw} disabled={!on}
+                    <button key={sw} type="button" title={sw}
                       onClick={() => onChange({ on: true, w, color: sw })}
-                      style={{ width: 18, height: 18, borderRadius: 4, cursor: on ? 'pointer' : 'default',
-                        border: color === sw ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw, padding: 0 }} />
+                      style={{ width: 18, height: 18, borderRadius: 4, cursor: 'pointer',
+                        border: (on && color === sw) ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw, padding: 0 }} />
                   ))}
                 </span>
                 {extra}
