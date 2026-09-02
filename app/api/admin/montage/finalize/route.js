@@ -79,7 +79,15 @@ export async function POST(request) {
       status: 'queued',
       photo_count: photoCount,
       watermarked: !wantFull,                    // full = no watermark; low = watermarked draft
-      params: { ...params, rerenderOf: src.id }, // same settings, marked as a re-render of the source
+      // Same RENDER SETTINGS, marked as a re-render of the source. Review state
+      // is deliberately not carried over: a brand-new export has not been viewed,
+      // is not starred, is not hidden, and its name is resolved through
+      // rerenderOf at read time so renaming the draft renames the export too
+      // (copying the label here would freeze the two apart).
+      params: (() => {
+        const { viewed, starred, hidden, label, ...settings } = params || {};
+        return { ...settings, rerenderOf: src.id };
+      })(),
     })
     .select('id')
     .single();

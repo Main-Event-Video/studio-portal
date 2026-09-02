@@ -716,6 +716,12 @@ export default function AdminPage() {
   const [photoEdits, setPhotoEdits] = useState({ photos: {}, colorCorrect: false, albumBorders: {} });
   // Which album's border panel is expanded in Edit Photos ('' = the loose photos).
   const [borderPanel, setBorderPanel] = useState(null);
+  // Albums collapsed in Edit Photos, by album key. A long shoot is hundreds of
+  // photos and you are usually working inside one album at a time.
+  const [collapsedAlbums, setCollapsedAlbums] = useState({});
+  // Which render is being renamed, and the text so far.
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameText, setRenameText] = useState('');
   // Each photo's true pixel shape, learned from the <img> as it loads. The border
   // preview needs it to place the frame on a Fit photo's real edge rather than the
   // slot's, and the browser already knows it — no extra server round-trip.
@@ -3257,28 +3263,58 @@ export default function AdminPage() {
                     style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'transparent', color: !redoStack.length ? 'var(--muted)' : 'var(--text)', cursor: !redoStack.length ? 'default' : 'pointer', opacity: !redoStack.length ? 0.5 : 1 }}>↷ Redo</button>
                   {pcMsg && <span style={{ fontSize: 12, fontWeight: 700, color: pcMsg.includes('Could not') ? '#e06b6b' : (pcMsg === 'Saving…' ? 'var(--muted)' : '#2fbf71') }}>{pcMsg}</span>}
                   <span style={{ fontSize: 12, color: 'var(--muted)' }}>{Object.values(photoEdits.photos).filter((x) => x && x.removed).length} removed</span>
+                  {(() => {
+                    const albums = [...new Set(projPhotos.map((p) => albumKey(p.album)))];
+                    if (albums.length < 2) return null;
+                    const anyOpen = albums.some((a) => !collapsedAlbums[a]);
+                    return (
+                      <button type="button" className="linklike" style={{ fontSize: 12 }}
+                        onClick={() => { if (anyOpen) setSelKey(null); setCollapsedAlbums(anyOpen ? Object.fromEntries(albums.map((a) => [a, true])) : {}); }}>
+                        {anyOpen ? 'Collapse all' : 'Expand all'}
+                      </button>
+                    );
+                  })()}
                 </span>
               </div>
               {hasAlbums ? (
                 groups.map((g, gi) => {
                   const isAlbum = !!g.album;
+                  const ak = albumKey(g.album);
+                  const collapsed = !!collapsedAlbums[ak];
+                  const toggleCollapsed = () => {
+                    // Closing an album whose photo editor is open would leave that
+                    // editor mounted but invisible, so let the photo go.
+                    if (!collapsed && g.photos.some((ph) => ph.key === selKey)) setSelKey(null);
+                    setCollapsedAlbums((cs) => ({ ...cs, [ak]: !cs[ak] }));
+                  };
                   return (
                     <section key={`g:${gi}:${g.album}`} style={{
                       marginBottom: 12, borderRadius: 12, padding: '10px 12px',
                       border: isAlbum ? '1.5px solid #4a3d6b' : '1px solid var(--line)',
                       background: isAlbum ? 'linear-gradient(160deg, rgba(124,92,255,0.07), rgba(124,92,255,0.02))' : 'rgba(127,127,127,0.03)',
                     }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        {isAlbum && <span style={{ width: 10, height: 10, borderRadius: 3, background: '#7c5cff', flex: '0 0 auto' }} />}
-                        <strong style={{ fontSize: 13 }}>{isAlbum ? g.album : 'Loose photos'}</strong>
-                        <span style={{ color: 'var(--muted)', fontSize: 12 }}>{g.photos.length} photo{g.photos.length === 1 ? '' : 's'}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: collapsed ? 0 : 8 }}>
+                        <button type="button" onClick={toggleCollapsed}
+                          title={collapsed ? 'Show these photos' : 'Hide these photos'}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', color: 'var(--text)', minWidth: 0 }}>
+                          <span aria-hidden="true" style={{ fontSize: 11, color: 'var(--muted)', width: 10, display: 'inline-block' }}>{collapsed ? '\u25b8' : '\u25be'}</span>
+                          {isAlbum && <span style={{ width: 10, height: 10, borderRadius: 3, background: '#7c5cff', flex: '0 0 auto' }} />}
+                          <strong style={{ fontSize: 13 }}>{isAlbum ? g.album : 'Loose photos'}</strong>
+                          <span style={{ color: 'var(--muted)', fontSize: 12, fontWeight: 400 }}>{g.photos.length} photo{g.photos.length === 1 ? '' : 's'}</span>
+                        </button>
                         {albumBorderPanel(g.album)}
                       </div>
+                      {/* Shown even when collapsed: the Border button sits in the
+                          header and stays clickable there, so hiding its panel
+                          would make that button do nothing visible. Setting a
+                          border on a closed album is a reasonable thing to do. */}
                       {albumBorderBody(g.album)}
-                      <div style={gridStyle}
-                        onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
-                        onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); commitDrop(c.id, g.album || null); } }}
-                      >{renderCells(g.photos)}</div>
+                      {!collapsed && (
+                        <div style={gridStyle}
+                          onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
+                          onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); commitDrop(c.id, g.album || null); } }}
+                        >{renderCells(g.photos)}</div>
+                      )}
                     </section>
                   );
                 })
@@ -3715,14 +3751,69 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             rows.map((m) => (
               <div key={m.id} style={{
                 border: '1px solid var(--line)',
-                borderLeft: m.watermarked ? '1px solid var(--line)' : '4px solid #2f6bff',
+                borderLeft: m.watermarked ? '1px solid var(--line)' : '4px solid #22c55e',
                 borderRadius: 10, padding: 14, marginBottom: 12,
-                background: m.watermarked ? 'rgba(255,255,255,0.02)' : 'rgba(47,107,255,0.06)',
+                background: m.watermarked ? 'rgba(255,255,255,0.02)' : 'rgba(34,197,94,0.08)',
                 opacity: m.hidden ? 0.5 : 1,
               }}>
                 {/* Header: title + status badge + remove (X) */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                  <strong style={{ fontSize: 15 }}>{m.title}</strong>
+                  {renamingId === m.id ? (
+                    // Renaming only touches the LIST name. The title burned into the
+                    // finished video cannot change without re-rendering it, so this
+                    // deliberately leaves it alone rather than implying otherwise.
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                      <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, fontWeight: 800, padding: '2px 7px', borderRadius: 6, background: 'rgba(127,127,127,0.16)', color: 'var(--muted)', flex: '0 0 auto' }}>{m.seq}</span>
+                      <input
+                        autoFocus
+                        value={renameText}
+                        placeholder={m.title}
+                        maxLength={80}
+                        onChange={(ev) => setRenameText(ev.target.value)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === 'Enter') { reviewMontage(m.id, { label: renameText }); setRenamingId(null); }
+                          if (ev.key === 'Escape') setRenamingId(null);
+                        }}
+                        style={{ fontSize: 15, fontWeight: 700, padding: '3px 8px', flex: 1, minWidth: 120, maxWidth: 380 }}
+                      />
+                      <button type="button" className="linklike" style={{ fontSize: 12 }}
+                        onClick={() => { reviewMontage(m.id, { label: renameText }); setRenamingId(null); }}>Save</button>
+                      <button type="button" className="linklike" style={{ fontSize: 12 }}
+                        onClick={() => setRenamingId(null)}>Cancel</button>
+                      {/* What the exported file will actually be called. Mirrors
+                          safeName()/renderName() on the server so the name you
+                          type and the file you get cannot disagree silently. */}
+                      <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {(() => {
+                          const safe = String(renameText || '').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+                          return safe ? `${m.seq}_${safe}.mp4` : m.name;
+                        })()}
+                      </span>
+                      {m.label && (
+                        <button type="button" className="linklike" style={{ fontSize: 12, color: 'var(--muted)' }}
+                          title="Go back to showing the montage title"
+                          onClick={() => { reviewMontage(m.id, { label: '' }); setRenamingId(null); }}>Clear</button>
+                      )}
+                    </span>
+                  ) : (
+                    <strong style={{ fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                      {/* The permanent studio number. Stamped when the render is
+                          made and never reused; a full-rez export carries its
+                          draft's number with HR on the end. It is not editable,
+                          which is the point of it. */}
+                      <span title="Studio render number — permanent, matches the export file name"
+                        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, fontWeight: 800,
+                          padding: '2px 7px', borderRadius: 6, flex: '0 0 auto',
+                          background: m.watermarked ? 'rgba(127,127,127,0.16)' : '#22c55e',
+                          color: m.watermarked ? 'var(--muted)' : '#05230f' }}>{m.seq}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.label || m.title}</span>
+                      <button type="button" title="Rename this render (list only — the video's title card is unchanged)"
+                        onClick={() => { setRenameText(m.label || ''); setRenamingId(m.id); }}
+                        style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, padding: 2, lineHeight: 1 }}>
+                        {'\u270e'}
+                      </button>
+                    </strong>
+                  )}
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
                     {(() => {
                       const st = m.status === 'rendering' || m.status === 'queued'
@@ -3754,7 +3845,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--muted)' }}>
                   {m.watermarked
                     ? <span className="pill">low rez</span>
-                    : <span className="pill" style={{ background: '#2f6bff', color: '#fff', borderColor: '#2f6bff', fontWeight: 700, letterSpacing: '.03em' }}>HIGH REZ</span>}
+                    : <span className="pill" style={{ background: '#22c55e', color: '#05230f', borderColor: '#22c55e', fontWeight: 800, letterSpacing: '.03em' }}>HIGH REZ</span>}
                   {m.starred && <span className="pill" style={{ color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
                   {m.includeCards === false && <span className="pill">no cards</span>}
                   {m.hidden && <span className="pill">hidden</span>}

@@ -396,13 +396,47 @@ export async function GET(request) {
       verMap.set(r.id, perVariant[vk]);
     }
   }
+  // A render's NAME follows through a re-render chain rather than being copied
+  // into it. An Export Full Rez is the same piece of work as the draft it came
+  // from — same number, plus "HR" — so renaming the draft has to rename its
+  // exports too. Copying the label at export time would freeze it and the two
+  // files would drift apart the first time the name was corrected. An export
+  // that was renamed on its own still wins, because its own label is checked
+  // first.
+  const paramsById = new Map((data || []).map((r) => [r.id, r.params || {}]));
+  const labelFor = (m) => {
+    let cur = m.params || {}, hops = 0;
+    while (hops < 8) {
+      if (typeof cur.label === 'string' && cur.label.trim()) return cur.label.trim();
+      const src = cur.rerenderOf && paramsById.get(cur.rerenderOf);
+      if (!src) return null;
+      cur = src; hops++;
+    }
+    return null;
+  };
+
   const STYLE_LABELS = { hollywood: 'Hollywood', timeless: 'Timeless', party: 'Party', party2: 'Party2', duotone: 'Duotone', duotone_pastel: 'DuotonePastel', duotone2: 'Duotone2', polaroid: 'PolaroidDrop', photo_drop: 'PhotoDrop', collage_classic: 'CollageClassic', collage_featured: 'CollageFeatured', gallery150: 'Gallery', epic_vintage: 'EpicVintage', story_builder: 'StoryBuilder', trendy: 'Trendy', multi_page: 'MultiPage', multi_page_record: 'MultiPageRecord', two_panel: 'TwoPanel', photo_slide: 'PhotoSlide', sliding_images: 'SlidingImages', photo_ribbon: 'PhotoRibbon', neon_frame: 'NeonFrame', comic_book: 'ComicBook', party3: 'Party3' };
   const cp = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '');
   // The number prefix: ### for a low-rez/draft, ###HR for a full-rez export — same
   // number, so a high-rez file sorts right next to the draft it came from.
   const seqLabel = (m) => String(seqMap.get(m.id) || 1).padStart(3, '0') + (m.watermarked ? '' : 'HR');
+  // Strip only what a filesystem actually objects to, and collapse runs of
+  // whitespace. Spaces are kept: the studio names these things in plain English
+  // ("001HR_The New Taylors Name") and mangling that into TheNewTaylorsName
+  // would defeat the point of being able to name them.
+  const safeName = (v) => String(v || '')
+    // Whitespace is collapsed FIRST: tabs and newlines are control characters,
+    // so stripping those first would turn "A<tab>B" into "AB" rather than "A B".
+    .replace(/\s+/g, ' ')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '')
+    .trim()
+    .slice(0, 60);
   const renderName = (m) => {
     const num = seqLabel(m);
+    // A named render is called by its name. Only an unnamed one falls back to the
+    // descriptive form, which is what every render used to get.
+    const named = safeName(labelFor(m));
+    if (named) return `${num}_${named}.mp4`;
     const last = cp(m.studio_clients?.last_name || m.studio_clients?.display_name) || 'Client';
     const style = STYLE_LABELS[m.style] || cp(m.style) || 'Montage';
     const album = cp(m.params?.album);
@@ -422,6 +456,9 @@ export async function GET(request) {
       client: m.studio_clients?.display_name || '—',
       style: m.style,
       title: m.title,
+      // A nickname the admin typed for this render; the list shows it instead of
+      // the title card text so repeat attempts are tellable apart.
+      label: labelFor(m),
       subtitle: m.subtitle,
       photoSeconds: m.params?.photoSeconds || null,
       adjustments: m.params?.adjustments || {},
