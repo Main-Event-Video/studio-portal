@@ -1687,6 +1687,86 @@ export default function AdminPage() {
     });
   }
 
+  // The Duotone colour panel, rendered INSIDE the style grid directly
+  // under the tile that was just clicked — at the bottom of the page it was
+  // too far from the thing it belongs to. `gridColumn: 1 / -1` makes it span
+  // the full row, the same trick the photo editor uses to open under a
+  // thumbnail.
+  const duotoneStylePanel = (st) => {
+      // ---- Duotone background colour ---------------------------------
+      // The background halves are a tinted copy of the photo. Which colours
+      // they use was baked into the style until now (which is why a softer
+      // look shipped as a whole separate style); this makes it a choice.
+      if (st !== 'duotone' && st !== 'duotone2' && st !== 'duotone_pastel') return null;
+      const seg = segments[0] || {};
+      const set = (patch) => setSegments((arr) => arr.map((x) => ({ ...x, ...patch })));
+      const palKey = seg.duoPalette || (st === 'duotone_pastel' ? 'pastel' : 'neon');
+      const pal = DUO_PALETTES[palKey] || DUO_PALETTES.neon;
+      const trKey = seg.duoTreatment || 'bw';
+      const tr = DUO_TREATMENTS[trKey] || DUO_TREATMENTS.bw;
+      // Preview on one of THIS client's photos, not an abstract swatch —
+      // a duotone reads completely differently on a face than on a colour
+      // chip, and picking from chips means picking blind.
+      const shot = projPhotos.find((x) => x && x.url);
+      const cssFilter = trKey === 'bw' ? 'grayscale(1)' : trKey === 'sepia' ? 'sepia(.8)' : 'none';
+      const halfPreview = (pair, side) => (
+        <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+          {shot && <img src={shot.url} alt="" style={{ position: 'absolute', inset: 0, width: '200%', height: '100%', objectFit: 'cover', objectPosition: side === 'l' ? 'left center' : 'right center', left: side === 'l' ? 0 : '-100%', filter: cssFilter }} />}
+          <span style={{ position: 'absolute', inset: 0, background: pair[0], mixBlendMode: 'multiply', opacity: tr.mul ? parseFloat(tr.mul) / 100 : 1 }} />
+          <span style={{ position: 'absolute', inset: 0, background: pair[1], mixBlendMode: 'screen', opacity: parseFloat(tr.scr) / 100 }} />
+        </div>
+      );
+      return (
+        <div style={{ gridColumn: '1 / -1', marginTop: 2, marginBottom: 6, border: '1px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'rgba(61,123,255,0.06)' }}>
+          <strong style={{ fontSize: 13 }}>Duotone background</strong>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10, alignItems: 'flex-end' }}>
+            <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+              Background colours
+              <select value={seg.duoPalette || ''} onChange={(e) => set({ duoPalette: e.target.value })}
+                style={{ display: 'block', marginTop: 4, minWidth: 200 }}>
+                <option value="">Style default ({st === 'duotone_pastel' ? 'Pastel' : 'Neon'})</option>
+                {Object.entries(DUO_PALETTES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </label>
+            <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+              Background image
+              <select value={seg.duoTreatment || ''} onChange={(e) => set({ duoTreatment: e.target.value })}
+                style={{ display: 'block', marginTop: 4, minWidth: 200 }}>
+                <option value="">Black &amp; white (default)</option>
+                <option value="sepia">Sepia</option>
+                <option value="color">Full colour (softer tint)</option>
+              </select>
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', width: 300, aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--line)', background: '#000', flex: '0 0 auto' }}>
+              {halfPreview(pal.pairs[0], 'l')}
+              {halfPreview(pal.pairs[2 % pal.pairs.length], 'r')}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', flex: 1, minWidth: 220 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                {pal.pairs.slice(0, 8).map((pr, i) => (
+                  <span key={i} title={`${pr[0]} / ${pr[1]}`} style={{ width: 22, height: 14, borderRadius: 3, border: '1px solid var(--line)', background: `linear-gradient(90deg, ${pr[0]}, ${pr[1]})` }} />
+                ))}
+              </div>
+              <p style={{ margin: 0 }}>
+                The montage cycles through this palette, a different pair each
+                shot, so the swatches show the whole run — the preview is the
+                first and third pair on {shot ? 'one of this client\u2019s photos' : 'a photo (add photos to see it)'}.
+              </p>
+              <p style={{ margin: '7px 0 0', color: '#d8b56b' }}>
+                The preview uses the same multiply and screen blending the render
+                does, so it should be close — but no duotone render has been made
+                with these palettes yet, and previews have historically come out
+                darker than the finished render. Treat it as a good guide, not a
+                proof.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+  };
+
   function editPhoto(clientId, key, patch) {
     setPhotoEdits((prev) => {
       const cur = prev.photos[key] || { anchor: 'top', fit: null, size: 100, removed: false, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null };
@@ -3207,7 +3287,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
               {MONTAGE_STYLES.map((o) => {
                 const sel = segments.length > 0 && segments[0].style === o.value;
                 return (
-                  <button key={o.value} type="button" onClick={() => setSegments((arr) => arr.map((x) => ({ ...x, style: o.value })))}
+                  <Fragment key={o.value}>
+                  <button type="button" onClick={() => setSegments((arr) => arr.map((x) => ({ ...x, style: o.value })))}
                     style={{ textAlign: 'left', border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 12, padding: 12, cursor: 'pointer', background: sel ? 'rgba(47,107,255,0.08)' : 'transparent', color: 'var(--text)' }}>
                     <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', marginBottom: 8, background: '#000' }}>
                       <video src={`/style-previews/${o.preview || o.value}.mp4`} muted loop autoPlay playsInline preload="auto"
@@ -3218,6 +3299,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{o.label.split(' \u2014 ')[1] || ''}</div>
                     {sel && <div style={{ color: '#2f6bff', fontSize: 12, marginTop: 4 }}>{'\u2713 selected'}</div>}
                   </button>
+                  {sel && duotoneStylePanel(o.value)}
+                  </Fragment>
                 );
               })}
             </div>
@@ -3259,81 +3342,6 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
               )}
             </details>
 
-            {(() => {
-              // ---- Duotone background colour ---------------------------------
-              // The background halves are a tinted copy of the photo. Which colours
-              // they use was baked into the style until now (which is why a softer
-              // look shipped as a whole separate style); this makes it a choice.
-              const st = segments[0]?.style;
-              if (st !== 'duotone' && st !== 'duotone2' && st !== 'duotone_pastel') return null;
-              const seg = segments[0] || {};
-              const set = (patch) => setSegments((arr) => arr.map((x) => ({ ...x, ...patch })));
-              const palKey = seg.duoPalette || (st === 'duotone_pastel' ? 'pastel' : 'neon');
-              const pal = DUO_PALETTES[palKey] || DUO_PALETTES.neon;
-              const trKey = seg.duoTreatment || 'bw';
-              const tr = DUO_TREATMENTS[trKey] || DUO_TREATMENTS.bw;
-              // Preview on one of THIS client's photos, not an abstract swatch —
-              // a duotone reads completely differently on a face than on a colour
-              // chip, and picking from chips means picking blind.
-              const shot = projPhotos.find((x) => x && x.url);
-              const cssFilter = trKey === 'bw' ? 'grayscale(1)' : trKey === 'sepia' ? 'sepia(.8)' : 'none';
-              const halfPreview = (pair, side) => (
-                <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-                  {shot && <img src={shot.url} alt="" style={{ position: 'absolute', inset: 0, width: '200%', height: '100%', objectFit: 'cover', objectPosition: side === 'l' ? 'left center' : 'right center', left: side === 'l' ? 0 : '-100%', filter: cssFilter }} />}
-                  <span style={{ position: 'absolute', inset: 0, background: pair[0], mixBlendMode: 'multiply', opacity: tr.mul ? parseFloat(tr.mul) / 100 : 1 }} />
-                  <span style={{ position: 'absolute', inset: 0, background: pair[1], mixBlendMode: 'screen', opacity: parseFloat(tr.scr) / 100 }} />
-                </div>
-              );
-              return (
-                <div style={{ marginTop: 16, border: '1px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'rgba(61,123,255,0.06)' }}>
-                  <strong style={{ fontSize: 13 }}>Duotone background</strong>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10, alignItems: 'flex-end' }}>
-                    <label style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      Background colours
-                      <select value={seg.duoPalette || ''} onChange={(e) => set({ duoPalette: e.target.value })}
-                        style={{ display: 'block', marginTop: 4, minWidth: 200 }}>
-                        <option value="">Style default ({st === 'duotone_pastel' ? 'Pastel' : 'Neon'})</option>
-                        {Object.entries(DUO_PALETTES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                      </select>
-                    </label>
-                    <label style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      Background image
-                      <select value={seg.duoTreatment || ''} onChange={(e) => set({ duoTreatment: e.target.value })}
-                        style={{ display: 'block', marginTop: 4, minWidth: 200 }}>
-                        <option value="">Black &amp; white (default)</option>
-                        <option value="sepia">Sepia</option>
-                        <option value="color">Full colour (softer tint)</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', width: 300, aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--line)', background: '#000', flex: '0 0 auto' }}>
-                      {halfPreview(pal.pairs[0], 'l')}
-                      {halfPreview(pal.pairs[2 % pal.pairs.length], 'r')}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', flex: 1, minWidth: 220 }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
-                        {pal.pairs.slice(0, 8).map((pr, i) => (
-                          <span key={i} title={`${pr[0]} / ${pr[1]}`} style={{ width: 22, height: 14, borderRadius: 3, border: '1px solid var(--line)', background: `linear-gradient(90deg, ${pr[0]}, ${pr[1]})` }} />
-                        ))}
-                      </div>
-                      <p style={{ margin: 0 }}>
-                        The montage cycles through this palette, a different pair each
-                        shot, so the swatches show the whole run — the preview is the
-                        first and third pair on {shot ? 'one of this client\u2019s photos' : 'a photo (add photos to see it)'}.
-                      </p>
-                      <p style={{ margin: '7px 0 0', color: '#d8b56b' }}>
-                        The preview uses the same multiply and screen blending the render
-                        does, so it should be close — but no duotone render has been made
-                        with these palettes yet, and previews have historically come out
-                        darker than the finished render. Treat it as a good guide, not a
-                        proof.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
 
             {(() => {
               const st = segments[0]?.style;
