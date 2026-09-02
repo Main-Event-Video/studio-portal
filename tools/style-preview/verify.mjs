@@ -1,11 +1,12 @@
 // House verification (HANDOFF-11 §9): build EVERY style with cards + green
 // bookends and a mixed-aspect photo set, then assert the JSON is sane.
 import fs from 'node:fs';
-import { buildMontageSource, STYLES, styleNeedsDims } from './montage.mjs';
+import { buildMontageSource, STYLES, styleNeedsDims, DUO_PALETTES, DUO_TREATMENTS } from './montage.mjs';
 
 const manifest = JSON.parse(fs.readFileSync('/home/claude/samples/manifest.json', 'utf8')).slice(0, 9);
 let fail = 0;
 const warn = [];
+const borderCounts = {};
 for (const style of Object.keys(STYLES)) {
   const needs = styleNeedsDims(STYLES[style]);
   const photos = manifest.map((m) => ({
@@ -14,13 +15,26 @@ for (const style of Object.keys(STYLES)) {
     w: needs ? m.w : null, h: needs ? m.h : null,
   }));
   const green = { type: 'photo', green: true, url: 'https://x/green.png', fit: 'fill', w: 1920, h: 1080 };
-  for (const mode of ['cards+green', 'bare', 'length60', 'nodims', 'imagebg', 'videobg', 'texturebg']) {
+  // 'border' exercises the photo-border path: a border forces the dimension probe
+  // in the real route, so it is verified WITH dims. 'border-nodims' is the
+  // degraded path where the probe failed and the engine must frame the slot
+  // rather than emit a broken rect.
+  for (const mode of ['cards+green', 'bare', 'length60', 'nodims', 'imagebg', 'videobg', 'texturebg', 'border', 'border-nodims']) {
     const items = mode === 'bare' ? photos : [green, ...photos, green];
     const bg = mode === 'imagebg' ? { url: 'https://r2/wall.jpg', tint: '#102040', opacity: '45%' }
       : mode === 'videobg' ? { videoUrl: 'https://r2/loop.mp4', kind: 'video', tint: '#102040', opacity: '45%' }
         : mode === 'texturebg' ? { texture: 'linen', animated: true, textureUrl: 'https://x/backgrounds/linen.jpg', tint: '#102040', opacity: '35%' }
           : null;
-    const its = mode === 'nodims' ? items.map((i) => ({ ...i, w: i.green ? i.w : null, h: i.green ? i.h : null })) : items;
+    let its = mode === 'nodims' ? items.map((i) => ({ ...i, w: i.green ? i.w : null, h: i.green ? i.h : null })) : items;
+    if (mode === 'border' || mode === 'border-nodims') {
+      // A deliberately FAT border (near the slider maximum) — a thin one can hide
+      // an inverted or negative rect that a heavy one exposes immediately.
+      const b = { on: true, w: 5.5, color: '#FFDD55', at: 1 };
+      its = items.map((i) => (i.green ? i : {
+        ...i, border: b,
+        ...(mode === 'border-nodims' ? { w: null, h: null } : {}),
+      }));
+    }
     let src;
     try {
       src = buildMontageSource({
@@ -141,6 +155,32 @@ for (const style of Object.keys(STYLES)) {
       (e.elements || []).forEach(videoDur);
     })({ elements: src.elements });
 
+    // A border must never produce a degenerate rect. Percentages at or below zero
+    // mean the inset ate the box; above 100 means it escaped it. Either renders as
+    // a block of colour over the photo rather than a frame around it, and neither
+    // shows up as invalid JSON.
+    if (mode === 'border' || mode === 'border-nodims') {
+      let seen = 0;
+      (function borderWalk(e) {
+        if (!e || typeof e !== 'object') return;
+        if (e.name === 'PhotoBorder') {
+          seen++;
+          for (const k of ['width', 'height']) {
+            const v = parseFloat(String(e[k]));
+            if (!Number.isFinite(v)) bad.push(`PhotoBorder ${k} not numeric (${e[k]})`);
+            else if (v <= 0) bad.push(`PhotoBorder ${k} collapsed to ${v}%`);
+            else if (v > 100.001) bad.push(`PhotoBorder ${k} overflows its box at ${v}%`);
+          }
+          if (!/^\d+ px$/.test(String(e.stroke_width))) bad.push(`PhotoBorder stroke_width not px (${e.stroke_width})`);
+          if (!/^#[0-9A-F]{6}$/i.test(String(e.stroke_color))) bad.push(`PhotoBorder bad colour ${e.stroke_color}`);
+        }
+        (e.elements || []).forEach(borderWalk);
+      })({ elements: src.elements });
+      // Not every style draws borders yet; the point of the count is to notice
+      // when a style that DID draw them silently stops.
+      borderCounts[style] = Math.max(borderCounts[style] || 0, seen);
+    }
+
     if (mode === 'length60' && Math.abs(dur - 60) > 0.05 && !STYLES[style].multipage) {
       bad.push(`length mode did not snap to 60s (got ${dur.toFixed(2)})`);
     }
@@ -152,4 +192,28 @@ if (warn.length) {
   [...new Set(warn.map((w) => w.replace(/\/[a-z0-9+]+ /, ' ')))].forEach((w) => console.log('  WARN', w));
   console.log('');
 }
-console.log(fail === 0 ? `ALL ${Object.keys(STYLES).length} STYLES OK (7 modes each)` : `${fail} failures`);
+// Which styles actually draw a border, so coverage is a fact on the record
+// rather than an assumption. A style at 0 is not broken — it just has not been
+// wired yet, and this is the list of what is left.
+const withB = Object.keys(STYLES).filter((k) => (borderCounts[k] || 0) > 0);
+const withoutB = Object.keys(STYLES).filter((k) => !(borderCounts[k] || 0));
+console.log(`\nBORDERS drawn in ${withB.length}/${Object.keys(STYLES).length} styles.`);
+if (withoutB.length) console.log('  no border yet: ' + withoutB.join(', '));
+
+// The duotone options must not break the two styles they apply to.
+for (const style of ['duotone', 'duotone2', 'duotone_pastel']) {
+  for (const pal of [null, ...Object.keys(DUO_PALETTES)]) {
+    for (const tr of [null, ...Object.keys(DUO_TREATMENTS)]) {
+      const photos = manifest.map((m) => ({ type: 'photo', url: `https://x/${m.file}`, framing: 'top', fit: null, size: 100, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null, w: m.w, h: m.h }));
+      try {
+        const src = buildMontageSource({ items: photos, style, title: 'D', subtitle: 'B', watermarkUrl: null, includeCards: false, greenBookends: false, photoSeconds: 2, duoPalette: pal, duoTreatment: tr });
+        const j = JSON.stringify(src);
+        if (/undefined|NaN|null%/.test(j)) { console.log(`FAIL ${style} pal=${pal} tr=${tr}: bad value in JSON`); fail++; }
+        if (!src.elements || !src.elements.length) { console.log(`FAIL ${style} pal=${pal} tr=${tr}: no elements`); fail++; }
+      } catch (e) { console.log(`FAIL ${style} pal=${pal} tr=${tr}: threw ${e.message}`); fail++; }
+    }
+  }
+}
+console.log(`Duotone: ${Object.keys(DUO_PALETTES).length} palettes x ${Object.keys(DUO_TREATMENTS).length} treatments checked on 3 styles.`);
+
+console.log(fail === 0 ? `\nALL ${Object.keys(STYLES).length} STYLES OK (9 modes each)` : `\n${fail} failures`);

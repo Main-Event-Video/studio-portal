@@ -10,6 +10,7 @@ import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl, resolveBackground } from '@/lib/r2';
 import { buildMontageSource, STYLES, styleNeedsDims } from '@/lib/montage';
+import { borderIsOn } from '@/lib/photoBorder';
 import { createRender } from '@/lib/creatomate';
 
 export const runtime = 'nodejs';
@@ -89,7 +90,12 @@ export async function POST(request) {
     const st = STYLES[src.style] || {};
     // MUST match the draft route or exports won't match the draft (stretched /
     // heads cropped). Shared helper = one source of truth.
-    const needsDims = styleNeedsDims(st);
+    // A border must hug the picture's edge, which needs the photo's real shape —
+    // so a bordered snapshot forces the probe here exactly as the draft did.
+    // Without this the export would quietly come back with the borders in the
+    // wrong place (or gone) on any style that skips the probe, which is the
+    // "exports won't match the draft" failure this helper exists to prevent.
+    const needsDims = styleNeedsDims(st) || seq.some((s) => s && s.type === 'photo' && borderIsOn(s.border));
 
     // Rebuild the photo items from the snapshot — re-presign fresh URLs from the
     // stored r2_keys; carry each photo's snapshotted edits verbatim.
@@ -102,6 +108,7 @@ export async function POST(request) {
           type: 'photo', url,
           framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect,
           mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY,
+          border: s.border || null,
           w: dims?.w || null, h: dims?.h || null,
         };
       }),
@@ -136,6 +143,8 @@ export async function POST(request) {
       mpStagger: params.mpStagger ?? null,
       mpHold: params.mpHold ?? null,
       mpSpeed: params.mpSpeed ?? null,
+      duoPalette: params.duoPalette ?? null,
+      duoTreatment: params.duoTreatment ?? null,
     });
 
     const render = await createRender({

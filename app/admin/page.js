@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
 import { parsePhotoSpec } from '@/lib/montage';
+import { resolveBorder, borderSource, borderIsOn, albumKey, BORDER_MIN, BORDER_MAX, BORDER_DEFAULT } from '@/lib/photoBorder';
+import { DUO_PALETTES, DUO_TREATMENTS } from '@/lib/montage';
 import { buildTimeline } from '@/lib/timelineOrder';
 
 // Clients move unwanted / duplicate files into this folder; only the admin
@@ -698,7 +700,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '' });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -711,7 +713,13 @@ export default function AdminPage() {
 
   // Photo Editor (per-client): per-photo framing/fit/size/removed + global
   // colorCorrect. Persisted on the client row and applied to EVERY style render.
-  const [photoEdits, setPhotoEdits] = useState({ photos: {}, colorCorrect: false });
+  const [photoEdits, setPhotoEdits] = useState({ photos: {}, colorCorrect: false, albumBorders: {} });
+  // Which album's border panel is expanded in Edit Photos ('' = the loose photos).
+  const [borderPanel, setBorderPanel] = useState(null);
+  // Each photo's true pixel shape, learned from the <img> as it loads. The border
+  // preview needs it to place the frame on a Fit photo's real edge rather than the
+  // slot's, and the browser already knows it — no extra server round-trip.
+  const [photoDims, setPhotoDims] = useState({});
   const [editsClientId, setEditsClientId] = useState(null);
   const [showEditor, setShowEditor] = useState(false);
   const [editsSaving, setEditsSaving] = useState(false);
@@ -1383,9 +1391,9 @@ export default function AdminPage() {
     if (editsClientId === clientId) return;
     try {
       const { edits } = await api(`/api/admin/montage/photo-edits?clientId=${clientId}`);
-      setPhotoEdits(edits && edits.photos ? edits : { photos: {}, colorCorrect: false });
+      setPhotoEdits(edits && edits.photos ? { albumBorders: {}, ...edits } : { photos: {}, colorCorrect: false, albumBorders: {} });
     } catch {
-      setPhotoEdits({ photos: {}, colorCorrect: false });
+      setPhotoEdits({ photos: {}, colorCorrect: false, albumBorders: {} });
     }
     setEditsClientId(clientId);
     setEditsSaved(false);
@@ -1639,6 +1647,46 @@ export default function AdminPage() {
     );
   }
 
+  // Set an ALBUM's border — every photo in it, unless that photo has been given
+  // its own border more recently. Stamping with Date.now() is what makes Josh's
+  // "most recent choice prevails" work in both directions; see lib/photoBorder.js.
+  function setAlbumBorder(clientId, album, patch) {
+    setPhotoEdits((prev) => {
+      const k = album || '';
+      const cur = (prev.albumBorders || {})[k] || { ...BORDER_DEFAULT };
+      const next = {
+        ...prev,
+        albumBorders: { ...(prev.albumBorders || {}), [k]: { ...cur, ...patch, at: Date.now() } },
+      };
+      persistEdits(clientId, next);
+      return next;
+    });
+  }
+
+  // Set ONE photo's border. Same stamp, so this now outranks the album's setting
+  // for this photo — until the album is set again.
+  function setPhotoBorder(clientId, key, patch) {
+    setPhotoEdits((prev) => {
+      const cur = (prev.photos[key] || {}).border || { ...BORDER_DEFAULT };
+      const nextPhoto = { ...(prev.photos[key] || {}), border: { ...cur, ...patch, at: Date.now() } };
+      const next = { ...prev, photos: { ...prev.photos, [key]: nextPhoto } };
+      persistEdits(clientId, next);
+      return next;
+    });
+  }
+
+  // Hand this photo back to its album's border by forgetting its own entry.
+  function clearPhotoBorder(clientId, key) {
+    setPhotoEdits((prev) => {
+      const cur = prev.photos[key];
+      if (!cur || !cur.border) return prev;
+      const nextPhoto = { ...cur, border: null };
+      const next = { ...prev, photos: { ...prev.photos, [key]: nextPhoto } };
+      persistEdits(clientId, next);
+      return next;
+    });
+  }
+
   function editPhoto(clientId, key, patch) {
     setPhotoEdits((prev) => {
       const cur = prev.photos[key] || { anchor: 'top', fit: null, size: 100, removed: false, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null };
@@ -1873,6 +1921,9 @@ export default function AdminPage() {
             mpTransition: s.mpTransition || 'record-fwd',
             mpStagger: s.mpStagger ? Number(s.mpStagger) : null,
             mpHold: s.mpHold ? Number(s.mpHold) : null,
+            // Duotone background colour (only meaningful for the duotone styles)
+            duoPalette: s.duoPalette || null,
+            duoTreatment: s.duoTreatment || null,
           }),
         });
         ok++;
@@ -2788,6 +2839,41 @@ export default function AdminPage() {
             f += `brightness(${cc.b}) contrast(${contrast.toFixed(3)}) saturate(${sat.toFixed(3)})`;
             return { objectFit: e.fit === 'fill' ? 'cover' : 'contain', objectPosition: pos, transform: `scale(${(e.size || 100) / 100})`, filter: f };
           };
+          // Learn a photo's real shape once, the first time its <img> decodes.
+          const noteDims = (key) => (ev) => {
+            const t = ev.currentTarget;
+            if (!t || !t.naturalWidth || !t.naturalHeight) return;
+            setPhotoDims((d) => (d[key] ? d : { ...d, [key]: { w: t.naturalWidth, h: t.naturalHeight } }));
+          };
+          // The border, drawn where the RENDER will put it.
+          //
+          // Thickness is in cqh — 1% of the container's height — because the render
+          // measures it as a share of the frame's short side, and these preview boxes
+          // are the same 16:9 shape as the frame. So the slider value means the same
+          // thing in both places instead of being eyeballed twice.
+          //
+          // On a Fit photo the frame hugs the picture, not the box, which is the
+          // whole point of Josh's choice: a 9x16 gets a tall narrow border with
+          // backdrop either side. That needs the photo's real shape, so until the
+          // image has loaded the frame falls back to the box.
+          const borderOverlay = (pp, e) => {
+            const b = resolveBorder(photoEdits, pp.key, pp.album);
+            if (!borderIsOn(b)) return null;
+            let W = 100, H = 100;
+            const d = photoDims[pp.key];
+            if (e.fit !== 'fill' && d && d.w > 0 && d.h > 0) {
+              const ar = d.w / d.h, boxAR = 16 / 9;
+              if (ar >= boxAR) H = (boxAR / ar) * 100; else W = (ar / boxAR) * 100;
+            }
+            return (
+              <span aria-hidden="true" style={{
+                position: 'absolute', left: `${((100 - W) / 2).toFixed(3)}%`, top: `${((100 - H) / 2).toFixed(3)}%`,
+                width: `${W.toFixed(3)}%`, height: `${H.toFixed(3)}%`,
+                border: `${b.w}cqh solid ${b.color}`, boxSizing: 'border-box',
+                pointerEvents: 'none', zIndex: 3,
+              }} />
+            );
+          };
           // The inline editor for ONE photo — opens directly under its
           // thumbnail on double-click. ‹ › move to the previous/next photo.
           const editorPanel = (selP) => {
@@ -2825,9 +2911,10 @@ export default function AdminPage() {
                 </div>
                 <div
                   onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag}
-                  style={{ position: 'relative', width: '100%', maxWidth: 720, margin: '0 auto', aspectRatio: '16 / 9', background: '#000', borderRadius: 10, overflow: 'hidden', cursor: e.fit === 'fill' ? 'grab' : 'default' }}
+                  style={{ position: 'relative', width: '100%', maxWidth: 720, margin: '0 auto', aspectRatio: '16 / 9', background: '#000', borderRadius: 10, overflow: 'hidden', containerType: 'size', cursor: e.fit === 'fill' ? 'grab' : 'default' }}
                 >
-                  <img src={selP.url} alt={selP.filename} draggable={false} style={{ width: '100%', height: '100%', userSelect: 'none', ...styleFor(e) }} />
+                  <img src={selP.url} alt={selP.filename} draggable={false} onLoad={noteDims(selP.key)} style={{ width: '100%', height: '100%', userSelect: 'none', ...styleFor(e) }} />
+                  {borderOverlay(selP, e)}
                   {arrow(-1, idx <= 0)}
                   {arrow(1, idx >= projPhotos.length - 1)}
                   <span style={{ position: 'absolute', top: 8, left: 8, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '2px 8px', borderRadius: 6 }}>Photo {selP.index} of {projPhotos.length}</span>
@@ -2867,6 +2954,32 @@ export default function AdminPage() {
                     <button type="button" className={!e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { colorCorrect: false })}>Off</button>
                     <button type="button" className={e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { colorCorrect: true })}>On</button>
                   </div>
+                  {(() => {
+                    // This photo's own border. Setting anything here stamps it as the
+                    // most recent choice, so it overrides the album for this photo —
+                    // and the album can take it back by being set again afterwards.
+                    const eff = resolveBorder(photoEdits, selP.key, selP.album);
+                    const src = borderSource(photoEdits, selP.key, selP.album);
+                    return (
+                      <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', width: '100%' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                          <strong style={{ fontSize: 12, color: 'var(--text)' }}>Border</strong>
+                          <span style={{ fontSize: 11 }}>
+                            {src === 'album'
+                              ? `following ${selP.album ? `“${selP.album}”` : 'the album setting'}`
+                              : src === 'photo' ? 'set on this photo' : 'none'}
+                          </span>
+                          {src === 'photo' && (
+                            <button type="button" className="linklike" style={{ fontSize: 11, marginLeft: 'auto' }}
+                              onClick={() => clearPhotoBorder(c.id, selP.key)}>
+                              Use the album&rsquo;s border
+                            </button>
+                          )}
+                        </div>
+                        {borderControls(eff, (patch) => setPhotoBorder(c.id, selP.key, patch))}
+                      </div>
+                    );
+                  })()}
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
                     <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={rotatingKey === selP.key} title="Rotate this photo 90°" onClick={() => rotateProjPhoto(c.id, selP.key)}>{rotatingKey === selP.key ? 'Rotating…' : 'Rotate ↻'}</button>
                     <a href={selP.downloadUrl || selP.url} download={selP.filename} className="linklike" style={{ fontSize: 12 }}>Download</a>
@@ -2892,8 +3005,9 @@ export default function AdminPage() {
                 onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); e.stopPropagation(); commitDrop(c.id, p.album || null); } }}
                 onDoubleClick={() => setSelKey(isSel ? null : p.key)} title="Drag to reorder · double-click to edit"
                 style={{ border: isSel ? '2px solid #d8b56b' : '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', cursor: 'grab', opacity: pe.removed ? 0.4 : 1, position: 'relative', outline: over ? '2px solid rgba(56,182,255,.5)' : 'none', outlineOffset: '-2px' }}>
-                <div style={{ aspectRatio: '16 / 9', background: '#000', overflow: 'hidden' }}>
-                  <img src={p.url} alt={p.filename} draggable={false} style={{ width: '100%', height: '100%', ...styleFor(pe) }} />
+                <div style={{ position: 'relative', aspectRatio: '16 / 9', background: '#000', overflow: 'hidden', containerType: 'size' }}>
+                  <img src={p.url} alt={p.filename} draggable={false} onLoad={noteDims(p.key)} style={{ width: '100%', height: '100%', ...styleFor(pe) }} />
+                  {borderOverlay(p, pe)}
                 </div>
                 {over && <span style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 7, borderRadius: '8px 0 0 8px', background: over === 'before' ? '#22c55e' : '#38b6ff', boxShadow: over === 'before' ? '0 0 8px #22c55e' : 'none', zIndex: 7 }} />}
                 {over && <span style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: 7, borderRadius: '0 8px 8px 0', background: over === 'after' ? '#22c55e' : '#38b6ff', boxShadow: over === 'after' ? '0 0 8px #22c55e' : 'none', zIndex: 7 }} />}
@@ -2914,6 +3028,110 @@ export default function AdminPage() {
           });
           const hasAlbums = groups.some((g) => g.album);
           const gridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(122px, 1fr))', gap: 10 };
+
+          // A handful of borders that actually suit a montage, so the common case
+          // is one click and the colour wheel is there for everything else.
+          const BORDER_SWATCHES = ['#FFFFFF', '#000000', '#F5E6C8', '#D8B56B', '#C0C0C0', '#FF4D88'];
+
+          // The border control block. Used unchanged by an ALBUM and by a SINGLE
+          // photo — they set the same shape of value, and which one wins is decided
+          // by whichever was touched last (lib/photoBorder.js), not by the widget.
+          const borderControls = (b, onChange, extra) => {
+            const on = !!(b && b.on);
+            const w = b && Number.isFinite(Number(b.w)) ? Number(b.w) : BORDER_DEFAULT.w;
+            const color = (b && b.color) || BORDER_DEFAULT.color;
+            return (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--muted)' }}>
+                <span style={{ display: 'inline-flex', gap: 4 }}>
+                  <button type="button" className={!on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 9px', fontSize: 11 }}
+                    onClick={() => onChange({ on: false })}>Off</button>
+                  <button type="button" className={on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 9px', fontSize: 11 }}
+                    onClick={() => onChange({ on: true, w, color })}>On</button>
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: on ? 1 : 0.45 }}>
+                  Thickness
+                  <input type="range" min={BORDER_MIN} max={BORDER_MAX} step="0.1" value={w} disabled={!on} style={{ width: 110 }}
+                    onChange={(ev) => onChange({ on: true, w: Number(ev.target.value), color })} />
+                  <span style={{ display: 'inline-block', minWidth: 30 }}>{w.toFixed(1)}</span>
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: on ? 1 : 0.45 }}>
+                  Colour
+                  <input type="color" value={color} disabled={!on} aria-label="Border colour"
+                    style={{ width: 34, height: 26, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'transparent', cursor: on ? 'pointer' : 'default' }}
+                    onChange={(ev) => onChange({ on: true, w, color: ev.target.value.toUpperCase() })} />
+                  {BORDER_SWATCHES.map((sw) => (
+                    <button key={sw} type="button" title={sw} disabled={!on}
+                      onClick={() => onChange({ on: true, w, color: sw })}
+                      style={{ width: 18, height: 18, borderRadius: 4, cursor: on ? 'pointer' : 'default',
+                        border: color === sw ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw, padding: 0 }} />
+                  ))}
+                </span>
+                {extra}
+              </div>
+            );
+          };
+
+          // The album-level panel that sits in each group's header.
+          const albumBorderPanel = (albumName) => {
+            const k = albumKey(albumName);
+            const b = (photoEdits.albumBorders || {})[k] || null;
+            const open = borderPanel === k;
+            const on = borderIsOn(b);
+            // Sits immediately after the photo count, not pushed to the far right —
+            // a control flush against the panel edge reads as chrome and gets
+            // scanned past, which is exactly what happened the first time.
+            return (
+              <button type="button" onClick={() => setBorderPanel(open ? null : k)}
+                title="Give every photo in this album the same border"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer',
+                  border: `1px solid ${open || on ? '#d8b56b' : 'var(--line)'}`,
+                  background: open ? 'rgba(216,181,107,0.16)' : 'transparent',
+                  color: open || on ? '#d8b56b' : 'var(--muted)',
+                }}>
+                <span aria-hidden="true" style={{
+                  width: 13, height: 13, borderRadius: 3, flex: '0 0 auto',
+                  border: `2px solid ${on ? b.color : 'currentColor'}`,
+                  opacity: on ? 1 : 0.7,
+                }} />
+                {open ? 'Done' : (on ? `Border ${b.w.toFixed(1)}` : 'Border')}
+              </button>
+            );
+          };
+
+          // The expanded album panel, rendered under the group header.
+          const albumBorderBody = (albumName) => {
+            const k = albumKey(albumName);
+            if (borderPanel !== k) return null;
+            const b = (photoEdits.albumBorders || {})[k] || null;
+            const overridden = groups
+              .filter((g) => albumKey(g.album) === k)
+              .flatMap((g) => g.photos)
+              .filter((ph) => borderSource(photoEdits, ph.key, ph.album) === 'photo').length;
+            return (
+              <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '9px 11px', margin: '0 0 10px', background: 'rgba(127,127,127,0.05)' }}>
+                <div style={{ fontSize: 12, marginBottom: 8 }}>
+                  <strong>Border for every photo {albumName ? `in “${albumName}”` : 'not in an album'}</strong>
+                </div>
+                {borderControls(b, (patch) => setAlbumBorder(c.id, albumName, patch))}
+                <p style={{ fontSize: 11, color: 'var(--muted)', margin: '8px 0 0' }}>
+                  Carries through to the montage on every style. Thickness is a share of
+                  the frame height, so it looks the same weight on a full-screen photo and
+                  on a tiled one.
+                  {overridden > 0 && (
+                    <>
+                      {' '}<span style={{ color: '#d8b56b' }}>
+                        {overridden} photo{overridden === 1 ? ' has' : 's have'} their own border set more
+                        recently and will keep it — changing anything here takes them all back.
+                      </span>
+                    </>
+                  )}
+                </p>
+              </div>
+            );
+          };
           const renderCells = (photos) => photos.map((p) => (
             <Fragment key={`c:${p.key || p.index}`}>
               {photoCell(p)}
@@ -2948,7 +3166,9 @@ export default function AdminPage() {
                         {isAlbum && <span style={{ width: 10, height: 10, borderRadius: 3, background: '#7c5cff', flex: '0 0 auto' }} />}
                         <strong style={{ fontSize: 13 }}>{isAlbum ? g.album : 'Loose photos'}</strong>
                         <span style={{ color: 'var(--muted)', fontSize: 12 }}>{g.photos.length} photo{g.photos.length === 1 ? '' : 's'}</span>
+                        {albumBorderPanel(g.album)}
                       </div>
+                      {albumBorderBody(g.album)}
                       <div style={gridStyle}
                         onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
                         onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); commitDrop(c.id, g.album || null); } }}
@@ -2957,13 +3177,21 @@ export default function AdminPage() {
                   );
                 })
               ) : (
-                <div style={gridStyle}
-                  onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
-                  onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); commitDrop(c.id, null); } }}
-                >{renderCells(groups[0] ? groups[0].photos : [])}</div>
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <strong style={{ fontSize: 13 }}>All photos</strong>
+                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>{projPhotos.length} photo{projPhotos.length === 1 ? '' : 's'}</span>
+                    {albumBorderPanel('')}
+                  </div>
+                  {albumBorderBody('')}
+                  <div style={gridStyle}
+                    onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
+                    onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); commitDrop(c.id, null); } }}
+                  >{renderCells(groups[0] ? groups[0].photos : [])}</div>
+                </>
               )}
               <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-Drag any photo to a new spot to reorder it — the order saves automatically and syncs to the client’s portal. Double-click a photo to open its editor right below it; use ‹ › to move between photos. Photos are grouped into their albums. Default is Fit (nothing cropped); Fill crops — then drag the big photo to position it. B&amp;W / Sepia and Auto-color render in the montage; contrast &amp; saturation preview in the editor (render tuning pending a test render). Removed photos are skipped.
+Drag any photo to a new spot to reorder it — the order saves automatically and syncs to the client’s portal. Double-click a photo to open its editor right below it; use ‹ › to move between photos. Photos are grouped into their albums. Default is Fit (nothing cropped); Fill crops — then drag the big photo to position it. B&amp;W / Sepia and Auto-color render in the montage; contrast &amp; saturation preview in the editor (render tuning pending a test render). Removed photos are skipped. Give a whole album the same border with “Add a border” in its header, or set one on a single photo in its editor — whichever you changed most recently is the one that renders.
               </p>
               <input ref={replaceInputRef} type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; const key = replaceKeyRef.current; if (f && key) replacePhoto(c.id, key, f); }} />
@@ -3030,6 +3258,82 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                   onClick={loadCmTemplates}>Refresh</button>
               )}
             </details>
+
+            {(() => {
+              // ---- Duotone background colour ---------------------------------
+              // The background halves are a tinted copy of the photo. Which colours
+              // they use was baked into the style until now (which is why a softer
+              // look shipped as a whole separate style); this makes it a choice.
+              const st = segments[0]?.style;
+              if (st !== 'duotone' && st !== 'duotone2' && st !== 'duotone_pastel') return null;
+              const seg = segments[0] || {};
+              const set = (patch) => setSegments((arr) => arr.map((x) => ({ ...x, ...patch })));
+              const palKey = seg.duoPalette || (st === 'duotone_pastel' ? 'pastel' : 'neon');
+              const pal = DUO_PALETTES[palKey] || DUO_PALETTES.neon;
+              const trKey = seg.duoTreatment || 'bw';
+              const tr = DUO_TREATMENTS[trKey] || DUO_TREATMENTS.bw;
+              // Preview on one of THIS client's photos, not an abstract swatch —
+              // a duotone reads completely differently on a face than on a colour
+              // chip, and picking from chips means picking blind.
+              const shot = projPhotos.find((x) => x && x.url);
+              const cssFilter = trKey === 'bw' ? 'grayscale(1)' : trKey === 'sepia' ? 'sepia(.8)' : 'none';
+              const halfPreview = (pair, side) => (
+                <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+                  {shot && <img src={shot.url} alt="" style={{ position: 'absolute', inset: 0, width: '200%', height: '100%', objectFit: 'cover', objectPosition: side === 'l' ? 'left center' : 'right center', left: side === 'l' ? 0 : '-100%', filter: cssFilter }} />}
+                  <span style={{ position: 'absolute', inset: 0, background: pair[0], mixBlendMode: 'multiply', opacity: tr.mul ? parseFloat(tr.mul) / 100 : 1 }} />
+                  <span style={{ position: 'absolute', inset: 0, background: pair[1], mixBlendMode: 'screen', opacity: parseFloat(tr.scr) / 100 }} />
+                </div>
+              );
+              return (
+                <div style={{ marginTop: 16, border: '1px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'rgba(61,123,255,0.06)' }}>
+                  <strong style={{ fontSize: 13 }}>Duotone background</strong>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10, alignItems: 'flex-end' }}>
+                    <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      Background colours
+                      <select value={seg.duoPalette || ''} onChange={(e) => set({ duoPalette: e.target.value })}
+                        style={{ display: 'block', marginTop: 4, minWidth: 200 }}>
+                        <option value="">Style default ({st === 'duotone_pastel' ? 'Pastel' : 'Neon'})</option>
+                        {Object.entries(DUO_PALETTES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                      </select>
+                    </label>
+                    <label style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      Background image
+                      <select value={seg.duoTreatment || ''} onChange={(e) => set({ duoTreatment: e.target.value })}
+                        style={{ display: 'block', marginTop: 4, minWidth: 200 }}>
+                        <option value="">Black &amp; white (default)</option>
+                        <option value="sepia">Sepia</option>
+                        <option value="color">Full colour (softer tint)</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', width: 300, aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--line)', background: '#000', flex: '0 0 auto' }}>
+                      {halfPreview(pal.pairs[0], 'l')}
+                      {halfPreview(pal.pairs[2 % pal.pairs.length], 'r')}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', flex: 1, minWidth: 220 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                        {pal.pairs.slice(0, 8).map((pr, i) => (
+                          <span key={i} title={`${pr[0]} / ${pr[1]}`} style={{ width: 22, height: 14, borderRadius: 3, border: '1px solid var(--line)', background: `linear-gradient(90deg, ${pr[0]}, ${pr[1]})` }} />
+                        ))}
+                      </div>
+                      <p style={{ margin: 0 }}>
+                        The montage cycles through this palette, a different pair each
+                        shot, so the swatches show the whole run — the preview is the
+                        first and third pair on {shot ? 'one of this client\u2019s photos' : 'a photo (add photos to see it)'}.
+                      </p>
+                      <p style={{ margin: '7px 0 0', color: '#d8b56b' }}>
+                        The preview uses the same multiply and screen blending the render
+                        does, so it should be close — but no duotone render has been made
+                        with these palettes yet, and previews have historically come out
+                        darker than the finished render. Treat it as a good guide, not a
+                        proof.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {(() => {
               const st = segments[0]?.style;
