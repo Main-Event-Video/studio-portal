@@ -173,6 +173,25 @@ def sb_headers(key):
     return {'apikey': key, 'Authorization': f'Bearer {key}', 'Content-Type': 'application/json'}
 
 
+def preflight(url, key):
+    """Say what is wrong in words, before the first real query throws a traceback.
+
+    The two things that actually go wrong here are a missing migration and a
+    missing secret, and both used to surface as a raw stack trace in the Actions
+    log — which tells whoever is looking nothing about what to do next.
+    """
+    r = requests.get(f'{url}/rest/v1/studio_media?select=id&limit=1', headers=sb_headers(key), timeout=30)
+    if r.status_code in (401, 403):
+        sys.exit('Supabase rejected the key. Check the SUPABASE_SERVICE_ROLE_KEY repo secret '
+                 '(it must be the SERVICE ROLE key, not the anon key).')
+    r.raise_for_status()
+    r = requests.get(f'{url}/rest/v1/studio_media?select=faces&limit=1', headers=sb_headers(key), timeout=30)
+    if r.status_code >= 400:
+        sys.exit('The studio_media.faces column does not exist yet. Run '
+                 'supabase/migrations/001_faces.sql in the Supabase SQL editor, then re-run '
+                 f'this workflow.\n(Supabase said: {r.text[:300]})')
+
+
 def fetch_pending(url, key, limit, redo, client_id):
     q = [
         'select=id,r2_key,filename,client_id',
@@ -206,14 +225,54 @@ def main():
     ap.add_argument('--dry-run', action='store_true')
     a = ap.parse_args()
 
-    sb_url = os.environ['SUPABASE_URL'].rstrip('/')
-    sb_key = os.environ['SUPABASE_SERVICE_ROLE_KEY']
-    bucket = os.environ['R2_BUCKET']
+    # R2 IS CONFIGURED UNDER TWO DIFFERENT SETS OF NAMES in this project — the
+    # app reads CLOUDFLARE_R2_*, the nightly backup workflow reads R2_*. The
+    # first run of this job died on `Invalid endpoint: https://.r2...` because it
+    # insisted on R2_ACCOUNT_ID and that one is not actually set. So take either,
+    # and prefer a full endpoint URL over an account id, since the app already
+    # stores the endpoint that way.
+    def env(*names):
+        for n in names:
+            v = os.environ.get(n)
+            if v and v.strip():
+                return v.strip()
+        return None
+
+    sb_url = env('SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL')
+    sb_key = env('SUPABASE_SERVICE_ROLE_KEY')
+    bucket = env('R2_BUCKET', 'CLOUDFLARE_R2_BUCKET')
+    endpoint = env('R2_ENDPOINT', 'CLOUDFLARE_R2_ENDPOINT')
+    account = env('R2_ACCOUNT_ID', 'CLOUDFLARE_R2_ACCOUNT_ID')
+    akey = env('R2_ACCESS_KEY_ID', 'CLOUDFLARE_R2_ACCESS_KEY_ID')
+    asec = env('R2_SECRET_ACCESS_KEY', 'CLOUDFLARE_R2_SECRET_ACCESS_KEY')
+    if endpoint and not endpoint.startswith('http'):
+        endpoint = 'https://' + endpoint
+    if not endpoint and account:
+        endpoint = f'https://{account}.r2.cloudflarestorage.com'
+
+    problems = []
+    if not sb_url:
+        problems.append('SUPABASE_URL')
+    if not sb_key:
+        problems.append('SUPABASE_SERVICE_ROLE_KEY (the SERVICE ROLE key, not the anon key)')
+    if not bucket:
+        problems.append('R2_BUCKET  (or CLOUDFLARE_R2_BUCKET)')
+    if not endpoint:
+        problems.append('R2_ENDPOINT  (or CLOUDFLARE_R2_ENDPOINT, or R2_ACCOUNT_ID)')
+    if not akey:
+        problems.append('R2_ACCESS_KEY_ID  (or CLOUDFLARE_R2_ACCESS_KEY_ID)')
+    if not asec:
+        problems.append('R2_SECRET_ACCESS_KEY  (or CLOUDFLARE_R2_SECRET_ACCESS_KEY)')
+    if problems:
+        sys.exit('Missing repo secret(s):\n  - ' + '\n  - '.join(problems) +
+                 '\n\nAdd them under Settings -> Secrets and variables -> Actions. '
+                 'Each is the same value the portal already uses in Vercel.')
+
+    sb_url = sb_url.rstrip('/')
+    print(f'R2 endpoint {endpoint}  bucket {bucket}', flush=True)
     s3 = boto3.client(
-        's3',
-        endpoint_url=f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
-        aws_access_key_id=os.environ['R2_ACCESS_KEY_ID'],
-        aws_secret_access_key=os.environ['R2_SECRET_ACCESS_KEY'],
+        's3', endpoint_url=endpoint,
+        aws_access_key_id=akey, aws_secret_access_key=asec,
         region_name='auto',
     )
 
@@ -221,6 +280,7 @@ def main():
         sys.exit(f'model missing: {MODEL}')
     cascades = haar_cascades()
 
+    preflight(sb_url, sb_key)
     rows = fetch_pending(sb_url, sb_key, a.limit, a.redo, a.client_id)
     print(f'{len(rows)} photo(s) to look at', flush=True)
     n_face = n_none = n_bad = 0
@@ -249,7 +309,11 @@ def main():
         else:
             n_none += 1
         if not a.dry_run:
-            write_faces(sb_url, sb_key, row['id'], faces)
+            try:
+                write_faces(sb_url, sb_key, row['id'], faces)
+            except Exception as e:                  # noqa: BLE001
+                print(f'      write failed: {e}', flush=True)
+                n_bad += 1
 
     print(f'\ndone: {n_face} with faces, {n_none} with none, {n_bad} skipped', flush=True)
 
