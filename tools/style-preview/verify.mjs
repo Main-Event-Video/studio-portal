@@ -62,6 +62,33 @@ for (const style of Object.keys(STYLES)) {
       if (typeof e.duration === 'number' && e.duration <= 0) bad.push(`non-positive duration ${e.duration}`);
       (e.elements || []).forEach(walk);
     })({ elements: src.elements });
+    // A STROKED SHAPE MUST NEVER CARRY blur_radius.
+    //
+    // This one cost three renders. Glass's pane rim was a stroked shape with
+    // `fill_color: 'rgba(0,0,0,0)'` plus blur_radius and blend_mode 'screen',
+    // and it rendered GREY — about 150/255 — instead of white. On Glass's light
+    // wall that reads as a black edge, which is exactly what Josh reported three
+    // times ("All the edges look wrong. They Look Black not White"). Measured on
+    // render V4: background 241, "white" edge 157.
+    //
+    // The cause is that a stroked shape's fill is transparent BLACK, and a
+    // non-premultiplied blur drags that black through the stroke. The same three
+    // properties on a FILLED shape are fine — render 005's beams are white fill
+    // + blur + screen and measured 86 -> 178 over a dark photo.
+    //
+    // It is invisible in the DOM simulator, because browsers blur with
+    // premultiplied alpha and get it right. So it cannot be caught by previewing;
+    // it can only be caught here, by refusing the construct.
+    (function blurWalk(e) {
+      if (!e || typeof e !== 'object') return;
+      if (e.type === 'shape' && e.stroke_color && e.blur_radius) {
+        const filled = e.fill_color
+          && !(typeof e.fill_color === 'string' && /rgba\([^)]*,\s*0\s*\)/.test(e.fill_color));
+        if (!filled) bad.push(`${e.name || 'shape'} is a stroked shape with blur_radius — renders grey, not ${e.stroke_color}`);
+      }
+      (e.elements || []).forEach(blurWalk);
+    })({ elements: src.elements });
+
     // Keyframe arrays must be strictly ordered in time and must not run past the
     // element's own duration — Creatomate interpolates between consecutive
     // keyframes, so an out-of-order pair silently produces garbage motion and a
