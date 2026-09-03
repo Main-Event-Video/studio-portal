@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl, resolveBackground } from '@/lib/r2';
-import { buildMontageSource, STYLES, styleNeedsDims } from '@/lib/montage';
+import { buildMontageSource, STYLES, styleNeedsDims, styleNeedsFaces } from '@/lib/montage';
 import { borderIsOn } from '@/lib/photoBorder';
 import { createRender } from '@/lib/creatomate';
 
@@ -104,6 +104,18 @@ export async function POST(request) {
     // wrong place (or gone) on any style that skips the probe, which is the
     // "exports won't match the draft" failure this helper exists to prevent.
     const needsDims = styleNeedsDims(st) || seq.some((s) => s && s.type === 'photo' && borderIsOn(s.border));
+    // Same face lookup the draft did, so a high-rez export crops identically to
+    // the draft it came from. Snapshots store r2_keys, and faces live on the
+    // media row rather than in the snapshot, so this re-reads them.
+    const facesByKey = new Map();
+    if (styleNeedsFaces(st)) {
+      const fkeys = seq.filter((s) => s && s.type === 'photo' && s.r2_key).map((s) => s.r2_key);
+      if (fkeys.length) {
+        const { data: fr } = await db.from('studio_media')
+          .select('r2_key, faces').eq('client_id', src.client_id).in('r2_key', fkeys);
+        for (const r of (fr || [])) if (Array.isArray(r.faces)) facesByKey.set(r.r2_key, r.faces);
+      }
+    }
 
     // Rebuild the photo items from the snapshot — re-presign fresh URLs from the
     // stored r2_keys; carry each photo's snapshotted edits verbatim.
@@ -118,6 +130,7 @@ export async function POST(request) {
           mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY,
           border: s.border || null,
           w: dims?.w || null, h: dims?.h || null,
+          faces: facesByKey.get(s.r2_key) || null,
         };
       }),
     );

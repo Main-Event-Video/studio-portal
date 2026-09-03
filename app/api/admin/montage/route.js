@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl, resolveBackground, BACKGROUND_PREFIX } from '@/lib/r2';
-import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims } from '@/lib/montage';
+import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims, styleNeedsFaces } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
 import { isHeic } from '@/lib/heic';
@@ -283,6 +283,20 @@ export async function POST(request) {
     // range-fetch per photo and only when a border is actually switched on.
     const anyBorder = sequence.some((s) => s.type === 'photo' && borderIsOn(s.border));
     const needsDims = styleNeedsDims(st) || anyBorder;
+    // FACE DATA for Glass's accent crops. One query for the whole sequence, not
+    // one per photo, and only for the style that uses it. A photo with no row —
+    // or one the detection job has not reached yet — simply has no faces, and
+    // every accent pane on it becomes plain glass. That is the intended
+    // degradation, so a missing backfill is a look, never a bad crop.
+    const facesByKey = new Map();
+    if (styleNeedsFaces(st)) {
+      const keys = sequence.filter((s) => s.type === 'photo' && s.r2_key).map((s) => s.r2_key);
+      if (keys.length) {
+        const { data: fr } = await db.from('studio_media')
+          .select('r2_key, faces').eq('client_id', client.id).in('r2_key', keys);
+        for (const r of (fr || [])) if (Array.isArray(r.faces)) facesByKey.set(r.r2_key, r.faces);
+      }
+    }
     // Long-lived presigned URLs — Creatomate fetches these while rendering.
     // Placeholders carry only a name (a green gap the editor keys their clip into).
     const photoItemsBuilt = await Promise.all(
@@ -290,7 +304,7 @@ export async function POST(request) {
         if (s.type !== 'photo') return { type: 'placeholder', name: s.name };
         const url = await getViewUrl(s.r2_key, 21600);
         const dims = needsDims ? await probeDims(url) : null;
-        return { type: 'photo', url, framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY, border: s.border || null, w: dims?.w || null, h: dims?.h || null };
+        return { type: 'photo', url, framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY, border: s.border || null, w: dims?.w || null, h: dims?.h || null, faces: facesByKey.get(s.r2_key) || null };
       })
     );
 
