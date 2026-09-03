@@ -97,9 +97,13 @@ export async function GET(request) {
     }
     // For single-photo cover styles, the framer preview box must match the shape the
     // photo is actually cropped into so the preview lines up with the export.
-    //   • Duotone  → the 58%×84% hero box.
+    //   • Duotone  → the 68%×90% hero box.
     //   • other cover-fill styles → the full 16:9 frame (preview default handles it).
-    const focalAspect = st.duotone ? (0.58 * 1920) / (0.84 * 1080) : null;
+    // MUST TRACK DUO_HERO in lib/montage.js. The hero grew from 58%x84% to
+    // 68%x90% ("the main image needs to be large"), and if this number does not
+    // move with it the framer shows the user a crop box that is not the crop
+    // they will get.
+    const focalAspect = st.duotone ? (0.68 * 1920) / (0.90 * 1080) : null;
 
     const photos = await Promise.all(photoItems.map(async (it, i) => ({
       index: i + 1,
