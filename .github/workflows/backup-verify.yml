@@ -1,0 +1,209 @@
+# =============================================================
+# Main Event Studio — BACKUP VERIFICATION (R2 vs Backblaze B2)
+#
+# WHY THIS EXISTS SEPARATELY FROM THE NIGHTLY JOB: the nightly job proves the
+# copy RAN. It does not prove the copy is INTACT. A truncated upload, a bad
+# byte, a file that silently never made it — none of those turn the nightly
+# run red. This job re-reads both sides and compares them, so a bad backup is
+# found by us on the 1st of the month rather than by a client asking for a
+# video we can no longer produce.
+#
+# WHAT THE MONTHLY RUN COMPARES: every object's SIZE, plus its CHECKSUM
+# wherever both providers expose a usable one. R2 and B2 both return the MD5
+# as the S3 ETag for an object uploaded in a single part — which is most of
+# the library — so those get a real content comparison. An object uploaded in
+# MULTIPLE parts has an ETag that is not an MD5, and for those the comparison
+# falls back to size alone. That is a real limitation and it is the reason the
+# deep mode below exists.
+#
+# WHAT THE DEEP RUN COMPARES (workflow_dispatch → deep = true): the actual
+# bytes. It downloads both copies and compares them, so there is no hash
+# caveat at all. It reads ~37 GB out of each provider and takes hours, which
+# is why it is not the monthly default. Run it by hand when you want proof
+# rather than strong evidence.
+#
+# ONE-WAY ON PURPOSE: the nightly job uses `rclone copy`, which never deletes
+# on the destination. So B2 legitimately holds files R2 no longer has. With
+# `--one-way`, an extra file in B2 is not a problem; only a file MISSING from
+# B2, or one that DIFFERS, is.
+#
+# THIS JOB IS READ-ONLY. It lists and reads. It cannot write, overwrite or
+# delete anything on either side.
+#
+# SECRETS: exactly the ones the nightly backup already uses. No new ones.
+# =============================================================
+name: Verify backup (R2 vs B2)
+
+on:
+  schedule:
+    - cron: '0 11 1 * *'      # 11:00 UTC on the 1st — after the nightly copy
+  workflow_dispatch:
+    inputs:
+      deep:
+        description: 'Byte-for-byte: download and compare both copies (slow — hours)'
+        type: boolean
+        required: false
+        default: false
+
+# Shares the nightly job's concurrency group so a verify can never run while a
+# copy is in flight — comparing against a half-written destination would report
+# failures that are not real.
+concurrency:
+  group: media-backup
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Install rclone
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version
+
+      - name: Write rclone config
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
+          B2_S3_ENDPOINT: ${{ secrets.B2_S3_ENDPOINT }}
+        run: |
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf <<CONF
+          [r2]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${R2_ACCESS_KEY_ID}
+          secret_access_key = ${R2_SECRET_ACCESS_KEY}
+          endpoint = https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+          acl = private
+
+          [b2]
+          type = s3
+          provider = Other
+          access_key_id = ${B2_KEY_ID}
+          secret_access_key = ${B2_APP_KEY}
+          endpoint = ${B2_S3_ENDPOINT}
+          acl = private
+          CONF
+
+      - name: Compare R2 against B2
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+          DEEP: ${{ github.event.inputs.deep }}
+        run: |
+          MODE="metadata — size, plus checksum where both providers expose one"
+          EXTRA=""
+          if [ "$DEEP" = "true" ]; then
+            MODE="byte-for-byte — full download and compare of both copies"
+            EXTRA="--download"
+          fi
+          echo "Verification mode: ${MODE}"
+
+          : > missing.txt
+          : > differ.txt
+          : > error.txt
+
+          # rclone exits non-zero on any difference. We want to read the reports
+          # and write our own message, so the exit code is handled below rather
+          # than by failing the step here.
+          set +e
+          rclone check "r2:${R2_BUCKET}" "b2:${B2_BUCKET}/media" \
+            --one-way ${EXTRA} \
+            --checkers=16 --fast-list --s3-no-check-bucket \
+            --missing-on-dst missing.txt \
+            --differ differ.txt \
+            --error error.txt \
+            --stats=60s --stats-one-line -v
+          RC=$?
+          set -e
+
+          MISSING=$(wc -l < missing.txt | tr -d ' ')
+          DIFFER=$(wc -l < differ.txt | tr -d ' ')
+          ERRORS=$(wc -l < error.txt | tr -d ' ')
+
+          {
+            echo "## Backup verification"
+            echo ""
+            echo "Compared every object in the R2 bucket against \`${B2_BUCKET}/media\`."
+            echo ""
+            echo "**Mode:** ${MODE}"
+            echo ""
+            echo "| Result | Count |"
+            echo "| --- | --- |"
+            echo "| Missing from the backup | ${MISSING} |"
+            echo "| Present but different | ${DIFFER} |"
+            echo "| Could not be read | ${ERRORS} |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$MISSING" -gt 0 ] || [ "$DIFFER" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+            {
+              echo "### The backup is NOT a faithful copy of R2"
+              echo ""
+              echo "Re-run the nightly backup workflow by hand — it will re-copy anything"
+              echo "missing. If files show as *different* rather than missing, do not"
+              echo "assume the R2 side is the good one; check the file in the portal first."
+              echo ""
+              if [ "$MISSING" -gt 0 ]; then
+                echo "<details><summary>Missing from the backup (first 50)</summary>"
+                echo ""
+                echo '```'
+                head -50 missing.txt
+                echo '```'
+                echo ""
+                echo "</details>"
+                echo ""
+              fi
+              if [ "$DIFFER" -gt 0 ]; then
+                echo "<details><summary>Present but different (first 50)</summary>"
+                echo ""
+                echo '```'
+                head -50 differ.txt
+                echo '```'
+                echo ""
+                echo "</details>"
+                echo ""
+              fi
+              if [ "$ERRORS" -gt 0 ]; then
+                echo "<details><summary>Could not be read (first 50)</summary>"
+                echo ""
+                echo '```'
+                head -50 error.txt
+                echo '```'
+                echo ""
+                echo "</details>"
+                echo ""
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Backup verification failed — ${MISSING} missing, ${DIFFER} different, ${ERRORS} unreadable. Full lists are in the run's report artifact."
+            exit 1
+          fi
+
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::rclone exited ${RC} but reported no missing or differing files. Read the log above before trusting this backup."
+            exit 1
+          fi
+
+          echo "### Backup verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Every object in R2 is present in the backup and matches." >> "$GITHUB_STEP_SUMMARY"
+          echo "Backup verified — every object in R2 is present in B2 and matches."
+
+      # Kept even on failure: the step summary shows the first 50 of each, the
+      # artifact has the complete lists.
+      - name: Upload the comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-verify-report
+          path: |
+            missing.txt
+            differ.txt
+            error.txt
+          retention-days: 90
+          if-no-files-found: ignore
