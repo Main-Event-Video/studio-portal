@@ -11,11 +11,23 @@
 | Monthly verify | 11:00 UTC on the 1st |
 | Cost | roughly $0.22/month of B2 storage at this size; R2 egress to B2 is free |
 
-**Known gap:** R2 object versioning is *not* enabled — the option was not present
-in the bucket's Settings when this was set up (step A below). That means there is
-no undo layer *inside* R2. The B2 copy is currently the only safety net, and
-because `rclone copy` never deletes, a file removed from R2 does survive in B2.
-Worth revisiting if Cloudflare exposes versioning on this bucket.
+**Known gap:** R2 object versioning is *not* available on this bucket — it is
+absent from the Settings list entirely, not merely switched off. So there is no
+undo layer *inside* R2. The B2 copy is the only safety net, and because
+`rclone copy` never deletes, a file removed from R2 does survive in B2. Worth
+revisiting if Cloudflare ever exposes versioning here.
+
+R2's **Bucket Lock** is the nearest substitute, and it is deliberately NOT used:
+`rotateStoredImage()` in `lib/r2.js` rotates a photo by overwriting the same
+key, and a lock rule would break the rotate button in the admin editor.
+
+**Public access:** disabled 3 Sep 2026. The bucket had its Public Development
+URL enabled, exposing every object to the internet with no expiry. Nothing in
+the app used it — every read path (client portal, share links, admin editor,
+and the sources Creatomate fetches) goes through `getViewUrl()`, which signs a
+URL that expires in 1–12 hours. The unused `getPublicUrl()` in `lib/r2.js` is
+dead code inherited from MEvid and now points at a disabled URL; it is a
+candidate for deletion.
 
 ---
 
@@ -120,8 +132,8 @@ the good side — check the file in the portal first.
 ## G. Things still worth doing
 
 - **R2 object versioning** — see the note at the top.
-- **The R2 bucket has Public Access enabled** with a live `r2.dev` URL. Worth
-  confirming that is intentional and that nothing private is reachable through it.
+- **Delete `getPublicUrl()` from `lib/r2.js`.** Unused, and now returns a URL
+  that cannot resolve. Leaving it invites someone to call it later.
 - **B2 grows forever.** `rclone copy` never deletes, which is the safe
   direction, but it means files removed from R2 accumulate in B2 indefinitely.
   At current size that costs almost nothing. Revisit with a lifecycle rule if
