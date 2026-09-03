@@ -556,6 +556,7 @@ export default function AdminPage() {
     { value: 'photo_slide', label: 'Photo Slide — bordered prints slide across, each cut to its own shape' },
     { value: 'sliding_images', label: 'Sliding Images — native-shape photos push in; the next photo sets the direction' },
     { value: 'multi_slide', label: 'Multi Slide — several photos at once; one swaps at a time, left to right' },
+    { value: 'basic_cut', label: 'Basic cut — green screen; whole photo, hard cuts, no movement' },
     { value: 'photo_ribbon', label: 'Photo Ribbon — one strip of native-shape photos, the next one always in view' },
     { value: 'comic_book', label: 'Comic Book — moves happen in comic, the real photo is the reveal' },
     { value: 'glass', label: 'Glass — lit panes in a bright room; the room reflows to each photo’s shape' },
@@ -569,7 +570,7 @@ export default function AdminPage() {
   // Styles that have never been through a real Creatomate render. The "Try the
   // new styles" button in Finish fires one short cheap draft of each. Prune this
   // list once a style has been seen and signed off.
-  const NEW_STYLES = ['photo_slide', 'sliding_images', 'multi_slide', 'photo_ribbon', 'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel'];
+  const NEW_STYLES = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'photo_ribbon', 'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel'];
 
   // ---- Studio background library -------------------------------------------
   // Imported backdrops — images AND videos — shared across every client, so a
