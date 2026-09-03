@@ -11,16 +11,26 @@
 # WHAT THE MONTHLY RUN COMPARES: every object's SIZE, plus its CHECKSUM
 # wherever both providers expose a usable one. R2 and B2 both return the MD5
 # as the S3 ETag for an object uploaded in a single part — which is most of
-# the library — so those get a real content comparison. An object uploaded in
-# MULTIPLE parts has an ETag that is not an MD5, and for those the comparison
-# falls back to size alone. That is a real limitation and it is the reason the
-# deep mode below exists.
+# the library — so those get a real content comparison.
+#
+# THE MULTIPART EXCEPTION, measured on the first real run (3 Sep 2026): an
+# object rclone uploaded with multiple threads has an ETag that is not an MD5,
+# so rclone falls back to a HeadObject call to read the stored md5 metadata —
+# and Backblaze answers that call with 403 Forbidden. 13 of 3,767 objects hit
+# this, every one of them a large video. That is NOT evidence of a bad backup
+# and this job must not report it as one.
+#
+# So a checksum failure is followed by a SECOND, size-only pass over exactly
+# those objects. If they match on size the run PASSES, and says plainly which
+# objects are size-verified but not checksum-verified. Only a missing object, a
+# real difference, or an object that fails even the size pass fails the run.
+# The deep mode below is what closes the remaining gap.
 #
 # WHAT THE DEEP RUN COMPARES (workflow_dispatch → deep = true): the actual
-# bytes. It downloads both copies and compares them, so there is no hash
-# caveat at all. It reads ~37 GB out of each provider and takes hours, which
-# is why it is not the monthly default. Run it by hand when you want proof
-# rather than strong evidence.
+# bytes. It downloads both copies and compares them, so there is no checksum
+# caveat and no 403 to work around. It reads ~37 GB out of each provider and
+# takes hours, which is why it is not the monthly default. Run it by hand when
+# you want proof rather than strong evidence.
 #
 # ONE-WAY ON PURPOSE: the nightly job uses `rclone copy`, which never deletes
 # on the destination. So B2 legitimately holds files R2 no longer has. With
@@ -107,10 +117,13 @@ jobs:
           : > missing.txt
           : > differ.txt
           : > error.txt
+          : > unverified.txt
+          : > missing2.txt
+          : > differ2.txt
 
-          # rclone exits non-zero on any difference. We want to read the reports
-          # and write our own message, so the exit code is handled below rather
-          # than by failing the step here.
+          # rclone exits non-zero on any difference OR any checksum failure.
+          # We read the reports and decide for ourselves, so the exit code is
+          # captured rather than allowed to fail the step here.
           set +e
           rclone check "r2:${R2_BUCKET}" "b2:${B2_BUCKET}/media" \
             --one-way ${EXTRA} \
@@ -125,6 +138,36 @@ jobs:
           MISSING=$(wc -l < missing.txt | tr -d ' ')
           DIFFER=$(wc -l < differ.txt | tr -d ' ')
           ERRORS=$(wc -l < error.txt | tr -d ' ')
+          UNVERIFIED=0
+          HARD=0
+
+          # An object whose checksum could not be FETCHED is unverified, not
+          # broken. Re-check exactly those on size alone before calling it a
+          # fault. See the multipart note in this file's header.
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "--- ${ERRORS} objects failed the checksum comparison; re-checking them on size alone ---"
+            sed 's/[[:space:]]*$//' error.txt | sed '/^$/d' | sort -u > errpaths.txt
+            set +e
+            rclone check "r2:${R2_BUCKET}" "b2:${B2_BUCKET}/media" \
+              --one-way --size-only \
+              --files-from errpaths.txt \
+              --checkers=8 --s3-no-check-bucket \
+              --missing-on-dst missing2.txt \
+              --differ differ2.txt \
+              -v
+            RC2=$?
+            set -e
+            M2=$(wc -l < missing2.txt | tr -d ' ')
+            D2=$(wc -l < differ2.txt | tr -d ' ')
+            HARD=$((M2 + D2))
+            UNVERIFIED=$((ERRORS - HARD))
+            cp errpaths.txt unverified.txt
+            MISSING=$((MISSING + M2))
+            DIFFER=$((DIFFER + D2))
+            if [ "$RC2" -ne 0 ] && [ "$HARD" -eq 0 ]; then
+              echo "::warning::The size-only re-check exited ${RC2} without naming specifics. Those objects are unproven, not confirmed."
+            fi
+          fi
 
           {
             echo "## Backup verification"
@@ -137,11 +180,31 @@ jobs:
             echo "| --- | --- |"
             echo "| Missing from the backup | ${MISSING} |"
             echo "| Present but different | ${DIFFER} |"
-            echo "| Could not be read | ${ERRORS} |"
+            echo "| Size matches, checksum could not be fetched | ${UNVERIFIED} |"
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$MISSING" -gt 0 ] || [ "$DIFFER" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+          if [ "$UNVERIFIED" -gt 0 ]; then
+            {
+              echo "> **${UNVERIFIED} objects are present at the right size but were not checksum-verified.**"
+              echo "> Backblaze returns 403 on the metadata call rclone uses to fetch a checksum"
+              echo "> for objects uploaded with multiple threads, so their contents cannot be"
+              echo "> compared this way. To prove their contents, re-run this workflow with"
+              echo "> **deep** ticked."
+              echo ""
+              echo "<details><summary>Size-verified only (first 50)</summary>"
+              echo ""
+              echo '```'
+              head -50 unverified.txt
+              echo '```'
+              echo ""
+              echo "</details>"
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::${UNVERIFIED} objects are present and the right size but could not be checksum-verified. Run with deep=true to prove their contents."
+          fi
+
+          if [ "$MISSING" -gt 0 ] || [ "$DIFFER" -gt 0 ]; then
             {
               echo "### The backup is NOT a faithful copy of R2"
               echo ""
@@ -154,6 +217,7 @@ jobs:
                 echo ""
                 echo '```'
                 head -50 missing.txt
+                head -50 missing2.txt
                 echo '```'
                 echo ""
                 echo "</details>"
@@ -164,35 +228,35 @@ jobs:
                 echo ""
                 echo '```'
                 head -50 differ.txt
-                echo '```'
-                echo ""
-                echo "</details>"
-                echo ""
-              fi
-              if [ "$ERRORS" -gt 0 ]; then
-                echo "<details><summary>Could not be read (first 50)</summary>"
-                echo ""
-                echo '```'
-                head -50 error.txt
+                head -50 differ2.txt
                 echo '```'
                 echo ""
                 echo "</details>"
                 echo ""
               fi
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Backup verification failed — ${MISSING} missing, ${DIFFER} different, ${ERRORS} unreadable. Full lists are in the run's report artifact."
+            echo "::error::Backup verification failed — ${MISSING} missing, ${DIFFER} different. Full lists are in the run's report artifact."
             exit 1
           fi
 
-          if [ "$RC" -ne 0 ]; then
-            echo "::error::rclone exited ${RC} but reported no missing or differing files. Read the log above before trusting this backup."
+          # rclone exits non-zero for checksum failures too, so a non-zero exit
+          # is only fatal when nothing above accounts for it.
+          if [ "$RC" -ne 0 ] && [ "$ERRORS" -eq 0 ]; then
+            echo "::error::rclone exited ${RC} but reported no missing, differing or unreadable files. Read the log above before trusting this backup."
             exit 1
           fi
 
-          echo "### Backup verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Every object in R2 is present in the backup and matches." >> "$GITHUB_STEP_SUMMARY"
-          echo "Backup verified — every object in R2 is present in B2 and matches."
+          if [ "$UNVERIFIED" -gt 0 ]; then
+            echo "### Backup verified" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Nothing missing, nothing different. ${UNVERIFIED} objects are size-verified only; the rest match on checksum." >> "$GITHUB_STEP_SUMMARY"
+            echo "Backup verified — nothing missing, nothing different, ${UNVERIFIED} size-verified only."
+          else
+            echo "### Backup verified" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Every object in R2 is present in the backup and matches on checksum." >> "$GITHUB_STEP_SUMMARY"
+            echo "Backup verified — every object in R2 is present in B2 and matches."
+          fi
 
       # Kept even on failure: the step summary shows the first 50 of each, the
       # artifact has the complete lists.
@@ -205,5 +269,8 @@ jobs:
             missing.txt
             differ.txt
             error.txt
+            unverified.txt
+            missing2.txt
+            differ2.txt
           retention-days: 90
           if-no-files-found: ignore

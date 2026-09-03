@@ -111,9 +111,18 @@ A green nightly run proves the copy *ran*. It does not prove the copy is
 **Monthly (automatic, 1st at 11:00 UTC).** Re-lists both sides and compares
 every object's size, plus its checksum wherever both providers expose one. R2
 and B2 both return the MD5 as the S3 ETag for an object uploaded in a single
-part, so most of the library gets a real content comparison. Objects uploaded in
-multiple parts — the larger videos — have an ETag that is not an MD5, and those
-fall back to a size comparison. Costs listing calls only: pennies, minutes.
+part, so most of the library gets a real content comparison. Costs listing
+calls only: pennies, and it finished in 32 seconds on 3,767 objects.
+
+*The multipart exception, measured on the first run (3 Sep 2026):* an object
+rclone uploaded with multiple threads has an ETag that is not an MD5, so rclone
+falls back to a HeadObject call to read the stored md5 — and **Backblaze answers
+that call with 403**. 13 of 3,767 objects hit this, all large videos. The job
+re-checks exactly those on size alone; if they match it passes and names them as
+*size-verified only*. A missing object, a real difference, or an object that
+fails even the size pass still fails the run. Root cause of the 403 is not
+established — it is confined to multipart uploads, and it is not evidence of a
+bad copy.
 
 **On demand (byte-for-byte).** Actions → **Verify backup (R2 vs B2)** → *Run
 workflow* → tick **deep**. This downloads both copies and compares the actual
@@ -122,8 +131,11 @@ takes hours. Run it when you want proof rather than strong evidence — say,
 before relying on the backup for a real restore.
 
 Either way the run's **Summary** page shows a table of missing / different /
-unreadable counts, and a `backup-verify-report` artifact holds the complete
-lists for 90 days. The job is read-only and cannot alter either bucket.
+size-verified-only counts, and a `backup-verify-report` artifact holds the
+complete lists for 90 days. The job is read-only and cannot alter either bucket.
+
+*First real result, 3 Sep 2026:* 0 missing, 0 different, 3,754 checksum-matched,
+13 size-verified only.
 
 If it fails: re-run the nightly backup by hand, which re-copies anything
 missing. If files show as *different* rather than missing, don't assume R2 is
