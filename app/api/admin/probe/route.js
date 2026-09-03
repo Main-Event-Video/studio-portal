@@ -106,6 +106,51 @@ function probeSource() {
         })) },
       { ...label('4 stepped solids', 86, 82), track: 5 },
 
+      // ---- 6. y_scale '-100%' — the MIRROR the new .refl reflection is built
+      //         on. Two swatches: an upright reference bar with a bright top
+      //         and dark bottom, and the same thing flipped. If the flip works
+      //         the second swatch is dark on top.
+      { type: 'composition', track: 7,
+        x: '20%', y: '78%', x_anchor: '50%', y_anchor: '50%', width: '14%', height: '18%',
+        elements: [
+          { type: 'shape', path: RECT, x: '50%', y: '25%', x_anchor: '50%', y_anchor: '50%',
+            width: '100%', height: '50%', fill_color: '#FFFFFF' },
+          { type: 'shape', path: RECT, x: '50%', y: '75%', x_anchor: '50%', y_anchor: '50%',
+            width: '100%', height: '50%', fill_color: '#101010' },
+        ] },
+      { type: 'composition', track: 8, y_scale: '-100%',
+        x: '38%', y: '78%', x_anchor: '50%', y_anchor: '50%', width: '14%', height: '18%',
+        elements: [
+          { type: 'shape', path: RECT, x: '50%', y: '25%', x_anchor: '50%', y_anchor: '50%',
+            width: '100%', height: '50%', fill_color: '#FFFFFF' },
+          { type: 'shape', path: RECT, x: '50%', y: '75%', x_anchor: '50%', y_anchor: '50%',
+            width: '100%', height: '50%', fill_color: '#101010' },
+        ] },
+
+      // ---- 7. mask_mode 'alpha' with a GRADIENT mask — the fade on the
+      //         reflection. A white block masked by a top-to-bottom alpha ramp.
+      //         Expect: white at the top, gone by the bottom.
+      { type: 'composition', track: 9,
+        x: '62%', y: '78%', x_anchor: '50%', y_anchor: '50%', width: '14%', height: '18%',
+        elements: [
+          { type: 'shape', path: RECT, track: 1, x: '50%', y: '50%', x_anchor: '50%', y_anchor: '50%',
+            width: '100%', height: '100%', fill_color: '#FFFFFF' },
+          { type: 'shape', path: RECT, track: 2, x: '50%', y: '50%', x_anchor: '50%', y_anchor: '50%',
+            width: '100%', height: '100%', mask_mode: 'alpha',
+            fill_mode: 'linear', fill_x0: '50%', fill_y0: '0%', fill_x1: '50%', fill_y1: '100%',
+            fill_color: [
+              { offset: '0%', color: 'rgba(0,0,0,0.85)' },
+              { offset: '58%', color: 'rgba(0,0,0,0)' },
+              { offset: '100%', color: 'rgba(0,0,0,0)' },
+            ] },
+        ] },
+
+      // ---- 8. a FILLED dark shape with blur — the drop shadow. Expect a soft
+      //         dark smudge, clearly darker than the wall.
+      { type: 'shape', path: RECT, track: 10,
+        x: '86%', y: '78%', x_anchor: '50%', y_anchor: '50%', width: '12%', height: '15%',
+        fill_color: '#2D3C50', blur_radius: 18, blur_mode: 'stack', opacity: '26%' },
+
       // ---- 5. THE KNOWN-BAD ONE, kept as a positive control so the probe can
       //         prove itself honest. A stroked shape with blur_radius. If this
       //         comes back GREY on a grey wall while 1 comes back white, the
