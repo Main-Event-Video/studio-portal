@@ -557,6 +557,7 @@ export default function AdminPage() {
     { value: 'sliding_images', label: 'Sliding Images — native-shape photos push in; the next photo sets the direction' },
     { value: 'photo_ribbon', label: 'Photo Ribbon — one strip of native-shape photos, the next one always in view' },
     { value: 'comic_book', label: 'Comic Book — moves happen in comic, the real photo is the reveal' },
+    { value: 'glass', label: 'Glass — lit panes in a bright room; the room reflows to each photo’s shape' },
     { value: 'neon_frame', label: 'Neon Frame — a light runs around each photo\u2019s own edge, dark backdrop' },
     // Reuses Party 2's real render clip on purpose: Party 3 IS Party 2's look —
     // the difference is only what happens mid-transition, which a thumbnail
