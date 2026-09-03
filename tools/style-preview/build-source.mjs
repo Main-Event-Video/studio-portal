@@ -25,6 +25,15 @@ const needsDims = styleNeedsDims(STYLES[style]);
 // styles must survive. Deterministic: no shuffling.
 const pick = manifest.slice(0, count);
 
+// FACE DATA for the styles that anchor a crop on one (Glass's accent panes).
+// In production this comes from studio_media.faces, filled in by the scheduled
+// GitHub Action; here it is the same detector's output over the sample photos,
+// so the harness exercises the real anchoring path rather than the "no faces ->
+// plain glass" fallback. Without it every accent pane previews empty and the
+// preview quietly disagrees with what a client would actually see.
+let FACES = {};
+try { FACES = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'faces.json'), 'utf8')); } catch { /* optional */ }
+
 const photoItems = pick.map((m) => ({
   type: 'photo',
   url: `/samples/${m.file}`,
@@ -45,6 +54,7 @@ const photoItems = pick.map((m) => ({
   ...(flag('--border') ? { border: { on: true, w: Number(val('--border-w', 2.2)), color: val('--border-c', '#FFFFFF'), at: 1 } } : {}),
   w: (needsDims || flag('--border')) ? m.w : null,
   h: (needsDims || flag('--border')) ? m.h : null,
+  ...(FACES[m.file] ? { faces: FACES[m.file] } : {}),
 }));
 
 const greenItem = { type: 'photo', green: true, url: '/public/green.png', fit: 'fill', w: 1920, h: 1080 };
