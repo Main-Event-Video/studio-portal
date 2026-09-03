@@ -49,7 +49,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -252,6 +252,7 @@ export async function POST(request) {
         // Duotone background colour, snapshotted so Export Final matches the draft.
         duoPalette: duoPalette || null,
         duoTreatment: duoTreatment || null,
+        glassLight: glassLight !== false,   // Glass: light beams on/off
 
         // Fully-resolved play sequence (r2_keys + each photo's edits AT THIS
         // MOMENT, placeholder names) — the snapshot the "Export Final" re-render
@@ -324,6 +325,7 @@ export async function POST(request) {
         : bgResolved,               // green / texture / pasted url / imported library image or video
       mpTransition, mpStagger, mpHold, mpSpeed,   // Multi Page motion options
       duoPalette, duoTreatment,                   // Duotone background colour
+      glassLight: glassLight !== false,           // Glass: the spotlight beams
     });
 
     const render = await createRender({

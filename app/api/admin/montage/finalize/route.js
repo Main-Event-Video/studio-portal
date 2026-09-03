@@ -153,6 +153,7 @@ export async function POST(request) {
       mpSpeed: params.mpSpeed ?? null,
       duoPalette: params.duoPalette ?? null,
       duoTreatment: params.duoTreatment ?? null,
+      glassLight: params.glassLight !== false,
     });
 
     const render = await createRender({

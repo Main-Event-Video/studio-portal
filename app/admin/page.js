@@ -701,7 +701,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '' });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -1699,6 +1699,33 @@ export default function AdminPage() {
   // too far from the thing it belongs to. `gridColumn: 1 / -1` makes it span
   // the full row, the same trick the photo editor uses to open under a
   // thumbnail.
+  // Glass options, rendered inline under the Glass tile in the style grid.
+  const glassStylePanel = (st) => {
+      if (st !== 'glass') return null;
+      const seg = segments[0] || {};
+      const on = seg.glassLight !== false;
+      const set = (patch) => setSegments((arr) => arr.map((x) => ({ ...x, ...patch })));
+      return (
+        <div style={{ gridColumn: '1 / -1', marginTop: 2, marginBottom: 6, border: '1px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'rgba(61,123,255,0.06)' }}>
+          <strong style={{ fontSize: 13 }}>Glass options</strong>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 10, alignItems: 'center', fontSize: 12, color: 'var(--muted)' }}>
+            <span>Spotlight</span>
+            <span style={{ display: 'inline-flex', gap: 4 }}>
+              <button type="button" className={!on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
+                onClick={() => set({ glassLight: false })}>Off</button>
+              <button type="button" className={on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
+                onClick={() => set({ glassLight: true })}>On</button>
+            </span>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--muted)', margin: '9px 0 0', maxWidth: 640 }}>
+            The beams of light raking behind the panes. They are the loudest thing in
+            the room — worth turning off over a busy imported background, or when the
+            montage wants to be quiet. The glass keeps its lit edges either way.
+          </p>
+        </div>
+      );
+  };
+
   const duotoneStylePanel = (st) => {
       // ---- Duotone background colour ---------------------------------
       // The background halves are a tinted copy of the photo. Which colours
@@ -2032,6 +2059,8 @@ export default function AdminPage() {
             // Duotone background colour (only meaningful for the duotone styles)
             duoPalette: s.duoPalette || null,
             duoTreatment: s.duoTreatment || null,
+            // Glass: the spotlight beams
+            glassLight: s.glassLight !== false,
           }),
         });
         ok++;
@@ -3363,6 +3392,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     {sel && <div style={{ color: '#2f6bff', fontSize: 12, marginTop: 4 }}>{'\u2713 selected'}</div>}
                   </button>
                   {sel && duotoneStylePanel(o.value)}
+                  {sel && glassStylePanel(o.value)}
                   </Fragment>
                 );
               })}
