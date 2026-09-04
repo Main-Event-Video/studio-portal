@@ -189,6 +189,33 @@ function probeSource() {
             ] },
         ] },
 
+      // ---- 10. DOES A COMPOSITION CLIP ITS CHILDREN BY DEFAULT?
+      //          Glass's .refl reflection sits BELOW its pane, outside the pane
+      //          composition's own bounds. If compositions clip by default it is
+      //          being cut away entirely, which would explain Josh on render
+      //          018: "no refelections of the images in other pannels".
+      //
+      //          Left: a composition with a white child hanging out the bottom.
+      //          Right: the same with clip:false stated explicitly.
+      //          If the left shows no tab below its box and the right does, the
+      //          default is to clip and every reflection is being discarded.
+      { type: 'composition', track: 13,
+        x: '30%', y: '62%', x_anchor: '50%', y_anchor: '50%', width: '8%', height: '8%',
+        elements: [
+          { type: 'shape', path: RECT, x: '50%', y: '50%', x_anchor: '50%', y_anchor: '50%',
+            width: '100%', height: '100%', fill_color: '#FFFFFF' },
+          { type: 'shape', path: RECT, x: '50%', y: '150%', x_anchor: '50%', y_anchor: '50%',
+            width: '60%', height: '100%', fill_color: '#101010' },
+        ] },
+      { type: 'composition', track: 14, clip: false,
+        x: '46%', y: '62%', x_anchor: '50%', y_anchor: '50%', width: '8%', height: '8%',
+        elements: [
+          { type: 'shape', path: RECT, x: '50%', y: '50%', x_anchor: '50%', y_anchor: '50%',
+            width: '100%', height: '100%', fill_color: '#FFFFFF' },
+          { type: 'shape', path: RECT, x: '50%', y: '150%', x_anchor: '50%', y_anchor: '50%',
+            width: '60%', height: '100%', fill_color: '#101010' },
+        ] },
+
       // ---- 5. THE KNOWN-BAD ONE, kept as a positive control so the probe can
       //         prove itself honest. A stroked shape with blur_radius. If this
       //         comes back GREY on a grey wall while 1 comes back white, the
