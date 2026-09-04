@@ -253,7 +253,7 @@ export async function POST(request) {
         duoPalette: duoPalette || null,
         duoTreatment: duoTreatment || null,
         glassLight: glassLight !== false,   // Glass: light beams on/off
-        glassRefl,                          // Glass: reflections (null = auto by draft/export)
+        glassRefl,                          // Glass: reflections (null = on; false only to speed a motion-only draft)
 
         // Fully-resolved play sequence (r2_keys + each photo's edits AT THIS
         // MOMENT, placeholder names) — the snapshot the "Export Final" re-render
@@ -342,12 +342,19 @@ export async function POST(request) {
       duoPalette, duoTreatment,                   // Duotone background colour
       glassLight: glassLight !== false,           // Glass: the spotlight beams
       // GLASS REFLECTIONS are the expensive layer — they duplicate every pane's
-      // body, and they are most of why a 48s Glass draft takes Creatomate 20+
-      // minutes. A DRAFT (watermarked) skips them so the look can be judged
-      // quickly; Export Full Rez always renders them. An explicit glassRefl in
-      // the request overrides that, so a draft WITH reflections is still
-      // possible when the reflections themselves are what needs checking.
-      glassRefl: glassRefl == null ? !watermark : glassRefl !== false,
+      // body — but skipping them on drafts was the wrong default and I should
+      // not have shipped it. Josh on render V7: "there is no reflection in the
+      // panels. need to get those back." A draft you cannot judge is not a
+      // faster draft, it is a wasted one: measured against the v6 reference the
+      // reflection-free build has 2,587 detectable pane edges against 12,472,
+      // so nearly all of the glass structure was missing from the thing he was
+      // being asked to approve.
+      //
+      // Reflections are ON everywhere now. The switch stays, because there IS a
+      // case for it — iterating purely on motion or timing, where the panes'
+      // material does not matter and the render time does — but it has to be
+      // asked for explicitly rather than being the quiet default.
+      glassRefl: glassRefl !== false,
     });
 
     const render = await createRender({
