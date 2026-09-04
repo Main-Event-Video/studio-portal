@@ -281,7 +281,40 @@
       svg.style.overflow = 'visible';
       const path = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', el.path || 'M 0 0 L 100 0 L 100 100 L 0 100 Z');
-      path.setAttribute('fill', el.fill_color || (el.stroke_color ? 'none' : '#000'));
+      // GRADIENT FILLS. Creatomate writes fill_color as an ARRAY of {offset,color}
+      // stops when fill_mode is 'linear' or 'radial', with fill_x0/y0/x1/y1 giving
+      // the axis in percentages. This simulator used to pass the array straight to
+      // setAttribute, which stringifies to nonsense and paints the shape BLACK —
+      // so every gradient-built style previewed as black rectangles. That is the
+      // whole Glass room, every pane body and the light sweep, i.e. the tool was
+      // useless for precisely the style it was most needed on.
+      if (Array.isArray(el.fill_color) && el.fill_color.length) {
+        const gid = 'g' + Math.random().toString(36).slice(2, 9);
+        const ns = 'http://www.w3.org/2000/svg';
+        const defs = doc.createElementNS(ns, 'defs');
+        const radial = el.fill_mode === 'radial';
+        const grad = doc.createElementNS(ns, radial ? 'radialGradient' : 'linearGradient');
+        grad.setAttribute('id', gid);
+        grad.setAttribute('gradientUnits', 'objectBoundingBox');
+        const num = (v, d) => (v == null ? d : parseFloat(v) / 100);
+        if (radial) {
+          grad.setAttribute('cx', num(el.fill_x0, 0.5)); grad.setAttribute('cy', num(el.fill_y0, 0.5));
+          grad.setAttribute('r', num(el.fill_radius, 0.5));
+        } else {
+          grad.setAttribute('x1', num(el.fill_x0, 0)); grad.setAttribute('y1', num(el.fill_y0, 0));
+          grad.setAttribute('x2', num(el.fill_x1, 1)); grad.setAttribute('y2', num(el.fill_y1, 1));
+        }
+        for (const stop of el.fill_color) {
+          const st = doc.createElementNS(ns, 'stop');
+          st.setAttribute('offset', stop.offset == null ? '0%' : stop.offset);
+          st.setAttribute('stop-color', stop.color || '#000');
+          grad.appendChild(st);
+        }
+        defs.appendChild(grad); svg.appendChild(defs);
+        path.setAttribute('fill', `url(#${gid})`);
+      } else {
+        path.setAttribute('fill', el.fill_color || (el.stroke_color ? 'none' : '#000'));
+      }
       if (el.stroke_color) {
         // Creatomate: stroke_width in the element's own 0..100 path space; and
         // stroke_start / stroke_end / stroke_offset are "relative to its total
