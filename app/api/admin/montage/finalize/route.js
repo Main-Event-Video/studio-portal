@@ -167,6 +167,8 @@ export async function POST(request) {
       duoPalette: params.duoPalette ?? null,
       duoTreatment: params.duoTreatment ?? null,
       glassLight: params.glassLight !== false,
+      // The full export always pays for the reflections, whatever the draft did.
+      glassRefl: true,
     });
 
     const render = await createRender({

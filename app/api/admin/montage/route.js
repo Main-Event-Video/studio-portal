@@ -49,7 +49,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -253,6 +253,7 @@ export async function POST(request) {
         duoPalette: duoPalette || null,
         duoTreatment: duoTreatment || null,
         glassLight: glassLight !== false,   // Glass: light beams on/off
+        glassRefl,                          // Glass: reflections (null = auto by draft/export)
 
         // Fully-resolved play sequence (r2_keys + each photo's edits AT THIS
         // MOMENT, placeholder names) — the snapshot the "Export Final" re-render
@@ -340,6 +341,13 @@ export async function POST(request) {
       mpTransition, mpStagger, mpHold, mpSpeed,   // Multi Page motion options
       duoPalette, duoTreatment,                   // Duotone background colour
       glassLight: glassLight !== false,           // Glass: the spotlight beams
+      // GLASS REFLECTIONS are the expensive layer — they duplicate every pane's
+      // body, and they are most of why a 48s Glass draft takes Creatomate 20+
+      // minutes. A DRAFT (watermarked) skips them so the look can be judged
+      // quickly; Export Full Rez always renders them. An explicit glassRefl in
+      // the request overrides that, so a draft WITH reflections is still
+      // possible when the reflections themselves are what needs checking.
+      glassRefl: glassRefl == null ? !watermark : glassRefl !== false,
     });
 
     const render = await createRender({

@@ -506,6 +506,7 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   // create form
   const [form, setForm] = useState({
@@ -4083,7 +4084,46 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
           <label htmlFor="email">Email</label>
           <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <label htmlFor="password">Password</label>
-          <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          {/* Reveal toggle. The button is type="button" so it never submits the
+              form, and it is skipped in the tab order so tabbing still runs
+              email -> password -> Sign in. */}
+          <div style={{ position: 'relative' }}>
+            <input
+              id="password"
+              type={showPw ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              style={{ paddingRight: 44, width: '100%' }}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setShowPw((v) => !v)}
+              aria-label={showPw ? 'Hide password' : 'Show password'}
+              aria-pressed={showPw}
+              title={showPw ? 'Hide password' : 'Show password'}
+              style={{
+                position: 'absolute', top: 0, bottom: 0, right: 6, width: 34,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'none', border: 0, padding: 0, cursor: 'pointer',
+                color: 'var(--muted, #8b93a7)', lineHeight: 0,
+              }}
+            >
+              {showPw ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 3l18 18" />
+                  <path d="M10.6 10.6a2 2 0 002.8 2.8" />
+                  <path d="M9.4 5.2A9.8 9.8 0 0112 5c5 0 9 4.5 9 7a12 12 0 01-2.4 3.4M6.2 6.7A12.6 12.6 0 003 12c0 2.5 4 7 9 7a9.6 9.6 0 004.2-1" />
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 12s3.6-7 9-7 9 7 9 7-3.6 7-9 7-9-7-9-7z" />
+                  <circle cx="12" cy="12" r="2.6" />
+                </svg>
+              )}
+            </button>
+          </div>
           {loginError && <p className="msg-error">{loginError}</p>}
           <button className="btn-primary" disabled={loggingIn}>
             {loggingIn ? 'Signing in…' : 'Sign in'}
