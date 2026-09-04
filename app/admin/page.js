@@ -570,6 +570,15 @@ export default function AdminPage() {
   // Styles that have never been through a real Creatomate render. The "Try the
   // new styles" button in Finish fires one short cheap draft of each. Prune this
   // list once a style has been seen and signed off.
+  // REFERENCE STILLS. `/style-previews/<style>.mp4` shows what the engine
+  // currently PRODUCES; a reference shows what it is AIMING AT. For most styles
+  // those are the same thing — the reference is a frame of a render Josh signed
+  // off. For Glass they are deliberately different: its reference is a frame of
+  // the prototype (glass_progression_v6), which is the look being built toward
+  // and which the engine does not yet match. A style with no file here simply
+  // shows no ref button.
+  const STYLE_REFS = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'photo_ribbon',
+    'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel', 'glass'];
   const NEW_STYLES = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'photo_ribbon', 'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel'];
 
   // ---- Studio background library -------------------------------------------
@@ -713,6 +722,7 @@ export default function AdminPage() {
   const [showHidden, setShowHidden] = useState(false); // reveal hidden renders
   const [montageSort, setMontageSort] = useState('new'); // new|old|high|low|style
   const [montageStep, setMontageStep] = useState(1); // 1 edit · 2 style · 3 finish
+  const [refOpen, setRefOpen] = useState(null); // style key whose reference still is open
 
   // Photo Editor (per-client): per-photo framing/fit/size/removed + global
   // colorCorrect. Persisted on the client row and applied to EVERY style render.
@@ -3502,6 +3512,26 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
         })()}
         </>)}
 
+        {refOpen && (
+          <div onClick={() => setRefOpen(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(6,8,12,0.86)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out' }}>
+            <div onClick={(ev) => ev.stopPropagation()} style={{ maxWidth: 1100, width: '100%', cursor: 'default' }}>
+              <img src={`/style-refs/${refOpen}.jpg`} alt={`${refOpen} reference`}
+                style={{ width: '100%', height: 'auto', borderRadius: 10, display: 'block' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, color: '#cbd5e1', fontSize: 13 }}>
+                <span>
+                  Reference — {refOpen}
+                  {refOpen === 'glass' && ' (the prototype; the engine does not match this yet)'}
+                </span>
+                <button type="button" onClick={() => setRefOpen(null)}
+                  style={{ background: 'transparent', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 7, padding: '5px 12px', cursor: 'pointer' }}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {montageStep === 2 && (
           <div style={{ marginBottom: 16 }}>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>Click a look to use it. For multiple styles in one pass, add segments in Finish.</p>
@@ -3516,6 +3546,17 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                       <video src={`/style-previews/${o.preview || o.value}.mp4`} muted loop autoPlay playsInline preload="auto"
                         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                         onError={(ev) => { const w = ev.currentTarget.parentElement; if (w) w.style.display = 'none'; }} />
+                      {STYLE_REFS.includes(o.value) && (
+                        <span role="button" tabIndex={0}
+                          title="Show the reference this style is aiming at"
+                          onClick={(ev) => { ev.stopPropagation(); setRefOpen(o.value); }}
+                          onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.stopPropagation(); ev.preventDefault(); setRefOpen(o.value); } }}
+                          style={{ position: 'absolute', right: 6, bottom: 6, fontSize: 10, letterSpacing: '0.08em',
+                            padding: '3px 7px', borderRadius: 5, cursor: 'pointer',
+                            background: 'rgba(8,10,14,0.78)', color: '#fff', border: '1px solid rgba(255,255,255,0.35)' }}>
+                          REF
+                        </span>
+                      )}
                     </div>
                     <strong style={{ fontSize: 13 }}>{o.label.split(' \u2014 ')[0]}</strong>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{o.label.split(' \u2014 ')[1] || ''}</div>
