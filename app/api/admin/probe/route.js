@@ -151,6 +151,44 @@ function probeSource() {
         x: '86%', y: '78%', x_anchor: '50%', y_anchor: '50%', width: '12%', height: '15%',
         fill_color: '#2D3C50', blur_radius: 18, blur_mode: 'stack', opacity: '26%' },
 
+      // ---- 9. PINNED time+duration WITH KEYFRAMED OPACITY. The construction
+      //         that made every Glass transition a hard cut. Two identical
+      //         white blocks fading 0 -> 100% across the 2s render. The LEFT
+      //         one pins time and duration on the same composition that carries
+      //         the keyframes; the RIGHT one pins them on an outer composition
+      //         and keyframes an inner one that pins nothing.
+      //
+      //         At t=1s (half way) both should read about half way up from the
+      //         wall. If the left one is at FULL white while the right one is
+      //         mid-fade, the hypothesis is confirmed: Creatomate drops
+      //         animation on a composition with both time and duration pinned.
+      { type: 'composition', track: 11,
+        x: '30%', y: '95%', x_anchor: '50%', y_anchor: '100%', width: '10%', height: '10%',
+        time: 0, duration: 2,
+        opacity: [
+          { time: 0, value: '0%', easing: 'linear' },
+          { time: 2, value: '100%' },
+        ],
+        elements: [
+          { type: 'shape', path: RECT, x: '50%', y: '50%', x_anchor: '50%', y_anchor: '50%',
+            width: '100%', height: '100%', fill_color: '#FFFFFF' },
+        ] },
+      { type: 'composition', track: 12,
+        x: '46%', y: '95%', x_anchor: '50%', y_anchor: '100%', width: '10%', height: '10%',
+        time: 0, duration: 2,
+        elements: [
+          { type: 'composition',
+            x: '50%', y: '50%', x_anchor: '50%', y_anchor: '50%', width: '100%', height: '100%',
+            opacity: [
+              { time: 0, value: '0%', easing: 'linear' },
+              { time: 2, value: '100%' },
+            ],
+            elements: [
+              { type: 'shape', path: RECT, x: '50%', y: '50%', x_anchor: '50%', y_anchor: '50%',
+                width: '100%', height: '100%', fill_color: '#FFFFFF' },
+            ] },
+        ] },
+
       // ---- 5. THE KNOWN-BAD ONE, kept as a positive control so the probe can
       //         prove itself honest. A stroked shape with blur_radius. If this
       //         comes back GREY on a grey wall while 1 comes back white, the
