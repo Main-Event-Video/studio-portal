@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl, resolveBackground, BACKGROUND_PREFIX } from '@/lib/r2';
-import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims, styleNeedsFaces } from '@/lib/montage';
+import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims, styleNeedsFaces, draftScaleFor } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
 import { isHeic } from '@/lib/heic';
@@ -49,7 +49,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -364,7 +364,11 @@ export async function POST(request) {
       // Watermarked = a DRAFT (checking motion/framing), so render at half
       // resolution → ~1/4 the Creatomate credits. Un-watermarked finals stay
       // full-res. Big saver while iterating (see credit formula in creatomate.js).
-      renderScale: watermark ? 0.5 : null,
+      // Drafts render small; the full export never does. Per style, because
+      // Glass is far heavier than the rest — see draftScaleFor. An explicit
+      // draftScale in the request overrides, for the case where the fine
+      // material is what needs judging and the wait is worth it.
+      renderScale: watermark ? (Number(draftScale) > 0 ? Math.min(1, Number(draftScale)) : draftScaleFor(style)) : null,
     });
 
     await db
