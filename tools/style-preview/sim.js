@@ -180,8 +180,31 @@
     st.position = 'absolute';
     st.transformStyle = 'flat';
 
-    const w = pct(prop(el, 'width', localT, 100), 100);
-    const h = pct(prop(el, 'height', localT, 100), 100);
+    // ABSOLUTE UNITS. Creatomate accepts '535 px' for width/height, in the
+    // SOURCE's pixel space (1920x1080). num() strips the unit, so this used to
+    // write `width: 535%` — 535 percent of the parent — and any element sized
+    // in px previewed as nonsense. Framed Box pins its picture at an explicit
+    // pixel size precisely so it does not scale with its animating parent, and
+    // it previewed as garbage while the JSON was correct. Same class of bug the
+    // README already records for stroke_width.
+    const absLen = (v) => {
+      if (typeof v !== 'string') return null;
+      const m = v.match(/^\s*(-?\d*\.?\d+)\s*(px|vmin|vmax|vw|vh)\s*$/);
+      if (!m) return null;
+      const n = parseFloat(m[1]);
+      const u = m[2];
+      const src = u === 'px' ? n
+        : u === 'vmin' ? n / 100 * Math.min(ctx.srcW || 1920, ctx.srcH || 1080)
+        : u === 'vmax' ? n / 100 * Math.max(ctx.srcW || 1920, ctx.srcH || 1080)
+        : u === 'vw' ? n / 100 * (ctx.srcW || 1920)
+        : n / 100 * (ctx.srcH || 1080);
+      return src * (ctx.scale || 1);
+    };
+    const rawW = prop(el, 'width', localT, 100);
+    const rawH = prop(el, 'height', localT, 100);
+    const absW = absLen(rawW), absH = absLen(rawH);
+    const w = pct(rawW, 100);
+    const h = pct(rawH, 100);
     const x = pct(prop(el, 'x', localT, 50), 50);
     const y = pct(prop(el, 'y', localT, 50), 50);
     const ax = pct(el.x_anchor, 50);
@@ -201,8 +224,8 @@
       }
     }
 
-    st.width = w + '%';
-    st.height = h + '%';
+    st.width = absW != null ? absW.toFixed(2) + 'px' : w + '%';
+    st.height = absH != null ? absH.toFixed(2) + 'px' : h + '%';
     st.left = x + '%';
     st.top = y + '%';
     st.transformOrigin = `${ax}% ${ay}%`;
@@ -283,11 +306,11 @@
       path.setAttribute('d', el.path || 'M 0 0 L 100 0 L 100 100 L 0 100 Z');
       // GRADIENT FILLS. Creatomate writes fill_color as an ARRAY of {offset,color}
       // stops when fill_mode is 'linear' or 'radial', with fill_x0/y0/x1/y1 giving
-      // the axis in percentages. This simulator used to pass the array straight to
-      // setAttribute, which stringifies to nonsense and paints the shape BLACK —
-      // so every gradient-built style previewed as black rectangles. That is the
-      // whole Glass room, every pane body and the light sweep, i.e. the tool was
-      // useless for precisely the style it was most needed on.
+      // the axis in percentages. The first version of this simulator passed the
+      // array straight to setAttribute, which stringifies to nonsense and paints
+      // the shape BLACK — so every gradient-built style (the whole Glass room,
+      // every pane body, the light sweep) previewed as black rectangles and the
+      // tool was useless for exactly the style it was most needed on.
       if (Array.isArray(el.fill_color) && el.fill_color.length) {
         const gid = 'g' + Math.random().toString(36).slice(2, 9);
         const ns = 'http://www.w3.org/2000/svg';
@@ -385,7 +408,7 @@
 
     const total = sourceDuration(source);
     const sch = schedule(source.elements || [], total);
-    const ctx = { doc, vmin: Math.min(stage.offsetWidth, stage.offsetHeight), baseH: H, scale: stage.offsetWidth / W };
+    const ctx = { doc, vmin: Math.min(stage.offsetWidth, stage.offsetHeight), baseH: H, scale: stage.offsetWidth / W, srcW: W, srcH: H };
 
     function seek(t) {
       stage.textContent = '';
