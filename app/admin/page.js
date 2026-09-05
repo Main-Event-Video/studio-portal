@@ -558,6 +558,7 @@ export default function AdminPage() {
     { value: 'sliding_images', label: 'Sliding Images — native-shape photos push in; the next photo sets the direction' },
     { value: 'multi_slide', label: 'Multi Slide — several photos at once; one swaps at a time, left to right' },
     { value: 'basic_cut', label: 'Basic cut — green screen; whole photo, hard cuts, no movement' },
+    { value: 'framed_box', label: 'Framed Box — a white-framed sharp print drifting over a blurred blow-up of the same photo; dust and light leaks' },
     { value: 'photo_ribbon', label: 'Photo Ribbon — one strip of native-shape photos, the next one always in view' },
     { value: 'comic_book', label: 'Comic Book — moves happen in comic, the real photo is the reveal' },
     { value: 'glass', label: 'Glass — lit panes in a bright room; the room reflows to each photo’s shape' },
@@ -580,7 +581,7 @@ export default function AdminPage() {
   // shows no ref button.
   const STYLE_REFS = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'photo_ribbon',
     'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel', 'glass'];
-  const NEW_STYLES = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'photo_ribbon', 'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel'];
+  const NEW_STYLES = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'framed_box', 'photo_ribbon', 'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel'];
 
   // ---- Studio background library -------------------------------------------
   // Imported backdrops — images AND videos — shared across every client, so a
