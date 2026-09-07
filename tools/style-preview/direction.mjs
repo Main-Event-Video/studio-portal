@@ -7,11 +7,27 @@
 // every waypoint) and once here, where the shot slid one way while the box
 // inside it slid the other.
 //
-// Every one of those was a SIGN, invisible in a build and obvious on screen. So
-// this checks the thing directly: for each shot, gather every animated x (and
-// every animated y) at every nesting depth, convert each to the direction it
-// travels, and assert they all agree. A shot whose scene goes left while its box
-// goes right fails here instead of in a twenty-minute render.
+// WHAT THIS USED TO CHECK, AND WHY THAT WAS WRONG
+// The first version compared a child's direction against its parent's and failed
+// any child that moved the other way. That caught the real bug, but it is not
+// the rule Josh stated. His rule is about what ends up ON SCREEN, and a child
+// moving against its parent is the ordinary way to make a foreground travel
+// more slowly than the background carrying it. Framed Box needs exactly that:
+// the card must cross a whole frame to wipe, the hero crosses 60% of one, so
+// the hero's own keyframes necessarily run back against the card. The old rule
+// called that a failure and would have forced the hero to out-travel its own
+// wipe — which is how I ended up with a hero that covered 87% of its distance
+// in the first 40% of the shot and then sat still.
+//
+// So it now checks the composite: sum each element's animated position with
+// every animated position it inherits, sample that over the shot, and assert
+// the result never reverses. A scene sliding one way while its box slides the
+// other still fails — the sum changes sign — while legitimate parallax passes.
+//
+// Caveat worth stating: the sum treats a nested composition's percentage as if
+// it were frame-relative. That is exact for Framed Box, where every composition
+// is full-frame, and approximate for a style whose panes sit in smaller boxes.
+// It is a sign check, so the approximation does not change the verdict.
 //
 // Usage: node direction.mjs   (montage.mjs must be a fresh copy of lib/montage.js)
 import { buildMontageSource, STYLES } from './montage.mjs';
@@ -20,22 +36,31 @@ const faces = [{ x: 0.44, y: 0.24, w: 0.14, h: 0.18 }];
 const dims = [[1080, 1440], [1440, 1080], [1600, 900], [1080, 1350], [1080, 1080], [1600, 1067]];
 const items = dims.map((d, i) => ({ type: 'photo', url: `https://example.invalid/${i}.jpg`, w: d[0], h: d[1], faces }));
 
-// Net travel of one keyframed property, ignoring anything that barely moves.
-const travel = (v) => {
-  if (!Array.isArray(v) || v.length < 2) return 0;
-  const nums = v.map((k) => parseFloat(k.value)).filter(Number.isFinite);
-  if (nums.length < 2) return 0;
-  const d = nums[nums.length - 1] - nums[0];
-  return Math.abs(d) < 0.5 ? 0 : Math.sign(d);
+const SAMPLES = 60;
+const EPS = 0.35;          // % of frame — below this it is rounding, not a move
+
+// A property as a function of time. Easings are all monotone between waypoints,
+// so linear interpolation cannot invent or hide a reversal.
+const fn = (v) => {
+  if (!Array.isArray(v) || v.length < 2) return null;
+  const ks = v.map((k) => [Number(k.time) || 0, parseFloat(k.value)]).filter((k) => Number.isFinite(k[1]));
+  if (ks.length < 2) return null;
+  if (Math.abs(ks[ks.length - 1][1] - ks[0][1]) < EPS) return null;
+  return (t) => {
+    if (t <= ks[0][0]) return ks[0][1];
+    for (let i = 1; i < ks.length; i += 1) {
+      if (t <= ks[i][0]) {
+        const [t0, a] = ks[i - 1]; const [t1, b] = ks[i];
+        return t1 === t0 ? b : a + ((b - a) * ((t - t0) / (t1 - t0)));
+      }
+    }
+    return ks[ks.length - 1][1];
+  };
 };
 
-// Styles this check GATES. Glass is reported but tolerated: its panes drift a
-// few pixels a second against a stage that moves ~240 px/sec during a
-// transition and is stationary the rest of the time, so the opposition is real
-// on paper and invisible on screen — and Josh has signed that look off. Add a
-// style here once its movement is meant to be strictly one-directional.
 const GATED = new Set(['framed_box']);
-let bad = 0, gatedBad = 0, shots = 0;
+let bad = 0; let gatedBad = 0; let shots = 0; let moving = 0;
+
 for (const st of Object.keys(STYLES)) {
   for (const [W, H] of [[1920, 1080], [1080, 1920]]) {
     let src;
@@ -43,28 +68,39 @@ for (const st of Object.keys(STYLES)) {
     catch { continue; }
     for (const shot of src.elements) {
       if (!shot.elements || !/^(Framed|Glass)-/.test(shot.name || '')) continue;
-      shots++;
-      // The invariant is ANCESTRY, not siblinghood. Two panes in the same shot
-      // may legitimately drift opposite ways — that is Glass's unsynchronised
-      // drift and it looks right. What must never happen is a child moving
-      // against a parent that is carrying it, because the two compose and the
-      // thing on screen visibly changes its mind. So each element is compared
-      // only with the signs it inherits.
-      const walk = (e, ax, ay, path) => {
-        const tx = travel(e.x), ty = travel(e.y);
-        for (const [axis, t, inherited] of [['x', tx, ax], ['y', ty, ay]]) {
-          if (t && inherited && t !== inherited) {
-            bad++;
-            if (GATED.has(st)) gatedBad++;
-            if (bad <= 12) console.log(`  ${GATED.has(st) ? 'FAIL' : 'note'}  OPPOSES PARENT  ${st} ${W}x${H}  ${path}/${e.name || e.type}  ${axis}: child ${t} vs ancestor ${inherited}`);
+      shots += 1;
+      const dur = Number(shot.duration) || 1;
+      const walk = (e, chainX, chainY, path) => {
+        const cx = [...chainX, fn(e.x)].filter(Boolean);
+        const cy = [...chainY, fn(e.y)].filter(Boolean);
+        const here = `${path}/${e.name || e.type}`;
+        for (const [axis, chain] of [['x', cx], ['y', cy]]) {
+          if (!chain.length) continue;
+          moving += 1;
+          const at = (t) => chain.reduce((sum, f) => sum + f(t), 0);
+          let sign = 0; let flips = 0; let worst = 0;
+          let prev = at(0);
+          for (let k = 1; k <= SAMPLES; k += 1) {
+            const cur = at((k / SAMPLES) * dur);
+            const dv = cur - prev;
+            if (Math.abs(dv) > 0.02) {
+              const sg = Math.sign(dv);
+              if (sign && sg !== sign) { flips += 1; worst = Math.max(worst, Math.abs(dv)); }
+              sign = sg;
+            }
+            prev = cur;
+          }
+          if (flips && worst >= EPS) {
+            bad += 1;
+            if (GATED.has(st)) gatedBad += 1;
+            if (GATED.has(st) ? gatedBad <= 12 : bad <= 4) console.log(`  ${GATED.has(st) ? 'FAIL' : 'note'}  REVERSES  ${st} ${W}x${H}  ${here}  ${axis}: ${flips} change(s) of direction, largest ${worst.toFixed(2)}% of frame`);
           }
         }
-        const nx = tx || ax, ny = ty || ay;
-        for (const c of e.elements || []) walk(c, nx, ny, `${path}/${e.name || e.type}`);
+        for (const c of e.elements || []) walk(c, cx, cy, here);
       };
-      walk(shot, 0, 0, st);
+      walk(shot, [], [], st);
     }
   }
 }
-console.log(`\n${shots} shots checked — ${bad} elements moving against a parent (${gatedBad} in gated styles).`);
+console.log(`\n${shots} shots, ${moving} composite paths checked — ${bad} reverse direction (${gatedBad} in gated styles).`);
 process.exit(gatedBad ? 1 : 0);
