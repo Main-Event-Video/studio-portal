@@ -1905,6 +1905,30 @@ export default function AdminPage() {
                       </div>
                     );
                   })()}
+                  {/* DOES THIS STYLE EVEN USE IT? Josh chose a gradient, got a
+                      magenta screen and concluded "the background pulldown didn't
+                      work". On Two Panel it genuinely did not — that style painted
+                      its own backdrop and never read the control, and once the key
+                      colour became a setting its default green came back as
+                      magenta. Two Panel and Multi Page are fixed; nine styles still
+                      supply their own backdrop, and a control that silently does
+                      nothing is worse than one that says so. Measured by building
+                      every style with a texture and checking whether it survives —
+                      re-measure if a builder changes. */}
+                  {(() => {
+                    const IGNORES = ['duotone2', 'polaroid', 'photo_drop', 'story_builder',
+                      'collage_classic', 'collage_featured', 'gallery150', 'epic_vintage', 'trendy'];
+                    const st = (segments[0] || {}).style;
+                    if (!IGNORES.includes(st)) return null;
+                    return (
+                      <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 8, fontSize: 10.5, lineHeight: 1.45,
+                        border: '1px solid rgba(245,166,35,0.55)', background: 'rgba(245,166,35,0.10)', color: '#f5a623' }}>
+                        <strong>This style ignores the Background setting.</strong>{' '}
+                        It builds its own backdrop — a pile, a wall or a grade that has to cover the frame — so
+                        whatever you choose here will not show. Every other style uses it.
+                      </div>
+                    );
+                  })()}
                   {seg.bgMode === 'photoblur' && (
                     <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted)' }}>
                       <span>Blur</span>
@@ -1963,13 +1987,8 @@ export default function AdminPage() {
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                     Default keeps the style’s own backdrop. Green screen is keyable. Blurred blow-up puts a
                     soft, enlarged copy of each photo behind itself, changing on every cut — it is Framed Box’s
-                    bed, and it works on Hollywood, Timeless, the Party family, Basic cut, Photo Slide, Sliding
-                    Images, Multi Slide, Neon Frame and the Duotones. The wall styles cover the frame with their
-                    own beds, so it renders but is never seen there. An imported image or video
-                    sits behind everything, tinted. Backgrounds apply to the one-at-a-time styles, Story Builder,
-                    Polaroid/Photo Drop and the slide family — the wall styles (Collage, Epic, Trendy, Gallery,
-                    Multi Page) supply their own backdrop and ignore this.
-                  </div>
+                    bed. An imported image or video sits behind everything, tinted.
+                    </div>
                 </div>
   );
 
