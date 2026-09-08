@@ -714,7 +714,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140' });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -1825,6 +1825,9 @@ export default function AdminPage() {
                         <span>Opacity</span>
                         <input type="range" min="0" max="100" value={parseInt(seg.bgOpacity || '50', 10)} onChange={(e) => apply({ bgOpacity: e.target.value })} />
                         <span>{parseInt(seg.bgOpacity || '50', 10)}%</span>
+                        <span style={{ marginLeft: 6 }}>Blur</span>
+                        <input type="range" min="0" max="60" value={parseInt(seg.bgBlur || '0', 10)} onChange={(e) => apply({ bgBlur: e.target.value })} />
+                        <span>{parseInt(seg.bgBlur || '0', 10)}</span>
                       </div>
                     );
                     return (
@@ -1901,6 +1904,9 @@ export default function AdminPage() {
                         <span>Opacity</span>
                         <input type="range" min="0" max="100" value={parseInt(seg.bgOpacity || '50', 10)} onChange={(e) => apply({ bgOpacity: e.target.value })} />
                         <span>{parseInt(seg.bgOpacity || '50', 10)}%</span>
+                        <span style={{ marginLeft: 6 }}>Blur</span>
+                        <input type="range" min="0" max="60" value={parseInt(seg.bgBlur || '0', 10)} onChange={(e) => apply({ bgBlur: e.target.value })} />
+                        <span>{parseInt(seg.bgBlur || '0', 10)}</span>
                       </div>
                     </div>
                   )}
@@ -1958,6 +1964,14 @@ export default function AdminPage() {
   // Mirrors KEY_COLORS in lib/montage.js. Duplicated rather than imported
   // because this file is a client component and the engine is a big server-side
   // module — keep the two in step by hand if a colour is ever added.
+  // Blur is sent in PIXELS at 1920x1080, which is what the engine expects. 0
+  // means leave the backdrop sharp — an imported picture is already a finished
+  // image, unlike Framed Box's blow-up, which has to be soft to sit behind a
+  // sharp print.
+  const bgBlurOf = (s) => {
+    const n = parseInt(s.bgBlur ?? '0', 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
   const KEY_COLOR_OPTS = [
     { value: '#00B140', label: 'Green', note: 'Cleanest key. Wrong when the photos contain foliage, grass or green clothing.' },
     { value: '#FF00FF', label: 'Magenta', note: 'Use when the photos contain green. Almost never occurs in a real photograph; edges key a little softer.' },
@@ -2044,6 +2058,22 @@ export default function AdminPage() {
           Thickness is a share of frame width, so it looks the same at 1080p or 4K.
           0.70% is the reference measurement. Drag to 0 for no frame.
         </p>
+        {/* THE BED. Josh 2026-09-08: "can the framed box have it's background
+            swapped out?" — yes, because the wipe is the CLIPPING CARD, not the
+            picture inside it. The card travels and its clip edge is the hard
+            transition line; whatever rides inside just goes along, so the motion
+            is identical either way. Same control as everywhere else. */}
+        <div style={fld}>
+          <span style={lbl}>Background — what wipes in behind the print</span>
+          <div style={{ marginTop: -4 }}>{backgroundControl(seg, set)}</div>
+          <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>
+            Style default is a blown-up, blurred copy of <em>each shot&rsquo;s own photo</em> — that
+            is what makes the move read as one picture resolving into itself. Any other
+            choice wipes in the same backdrop on every shot instead, which still moves
+            correctly but is no longer that effect. Video backdrops are not accepted
+            here and fall back to the blow-up.
+          </p>
+        </div>
       </div>
     );
   };
@@ -2409,9 +2439,9 @@ export default function AdminPage() {
                 : (s.bgMode === 'library' && s.bgKey)
                   // r2_key, not a URL — the route presigns it at render time so
                   // Export Full Rez still works days later.
-                  ? { r2_key: s.bgKey, kind: s.bgKind || 'image', clipS: s.bgClipS || null, tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
+                  ? { r2_key: s.bgKey, kind: s.bgKind || 'image', clipS: s.bgClipS || null, tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%`, blur: bgBlurOf(s) }
                   : (s.bgMode === 'image' && s.bgUrl?.trim())
-                    ? { url: s.bgUrl.trim(), tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%` }
+                    ? { url: s.bgUrl.trim(), tint: s.bgTint || null, opacity: `${parseInt(s.bgOpacity || '50', 10)}%`, blur: bgBlurOf(s) }
                     : null,
             // Multi Page motion options (only meaningful for the multi_page styles)
             mpTransition: s.mpTransition || 'record-fwd',
