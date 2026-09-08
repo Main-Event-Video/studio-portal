@@ -714,7 +714,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF' });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -1904,6 +1904,38 @@ export default function AdminPage() {
                       </div>
                     </div>
                   )}
+                  {/* KEY COLOUR. Josh, 2026-09-08, on a Photo Slide render: "images
+                      that have green in them is keying through the pic". A key cannot
+                      tell backdrop green from green inside a photograph — his frame of
+                      trees and a hedge came back with ZERO pixels where green dominates,
+                      the foliage keyed out and left grey. There is no render-side fix
+                      (Creatomate outputs jpg/png/gif/mp4 only, so no alpha export), so
+                      the colour itself is the setting. It applies to EVERY style. */}
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+                    <label style={{ color: 'var(--text)', display: 'block', marginBottom: 6 }}>Key colour</label>
+                    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                      {KEY_COLOR_OPTS.map((k) => {
+                        const on = (seg.keyColor || '#00B140') === k.value;
+                        return (
+                          <button key={k.value} type="button" onClick={() => apply({ keyColor: k.value })}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 7,
+                              padding: '5px 11px', borderRadius: 8, cursor: 'pointer',
+                              fontSize: 12, fontWeight: on ? 700 : 400,
+                              border: `${on ? 2 : 1}px solid ${on ? 'var(--blue)' : 'var(--line)'}`,
+                              background: on ? 'rgba(61,123,255,0.14)' : 'transparent',
+                              color: on ? 'var(--text)' : 'var(--muted)',
+                            }}>
+                            <span aria-hidden="true" style={{ width: 13, height: 13, borderRadius: 3, background: k.value, flex: '0 0 auto' }} />
+                            {k.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+                      {(KEY_COLOR_OPTS.find((k) => k.value === (seg.keyColor || '#00B140')) || KEY_COLOR_OPTS[0]).note}
+                    </div>
+                  </div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                     Default keeps the style’s own backdrop. Green screen is keyable. An imported image or video
                     sits behind everything, tinted. Backgrounds apply to the one-at-a-time styles, Story Builder,
@@ -1923,6 +1955,14 @@ export default function AdminPage() {
   // control that already exists in this page (album headers and the per-photo
   // editor), including its six swatches — a third instance of a control he has
   // already approved twice, not a new one.
+  // Mirrors KEY_COLORS in lib/montage.js. Duplicated rather than imported
+  // because this file is a client component and the engine is a big server-side
+  // module — keep the two in step by hand if a colour is ever added.
+  const KEY_COLOR_OPTS = [
+    { value: '#00B140', label: 'Green', note: 'Cleanest key. Wrong when the photos contain foliage, grass or green clothing.' },
+    { value: '#FF00FF', label: 'Magenta', note: 'Use when the photos contain green. Almost never occurs in a real photograph; edges key a little softer.' },
+    { value: '#0047BB', label: 'Blue', note: 'The classic alternative — but sky, water, denim and eyes are blue, so it trades one collision for another.' },
+  ];
   const FB_SWATCHES = ['#FFFFFF', '#000000', '#F5E6C8', '#D8B56B', '#C0C0C0', '#FF4D88'];
   const framedBoxStylePanel = (st) => {
     if (st !== 'framed_box') return null;
@@ -2388,6 +2428,8 @@ export default function AdminPage() {
             fbAtmosphere: s.fbAtmosphere !== false,
             fbFrameW: (s.fbFrameW === null || s.fbFrameW === undefined) ? null : Number(s.fbFrameW),
             fbFrameColor: s.fbFrameColor || null,
+            // The backdrop colour the montage is meant to be keyed against.
+            keyColor: s.keyColor || '#00B140',
           }),
         });
         ok++;

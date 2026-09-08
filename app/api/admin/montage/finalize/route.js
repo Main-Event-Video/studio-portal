@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl, resolveBackground } from '@/lib/r2';
-import { buildMontageSource, STYLES, styleNeedsDims, styleNeedsFaces } from '@/lib/montage';
+import { buildMontageSource, STYLES, styleNeedsDims, styleNeedsFaces, normalizeKeyColor, keyAssetFor } from '@/lib/montage';
 import { borderIsOn } from '@/lib/photoBorder';
 import { createRender } from '@/lib/creatomate';
 
@@ -136,7 +136,11 @@ export async function POST(request) {
     );
 
     // Same green-bookend injection as the draft used.
-    const greenItem = { type: 'photo', green: true, url: `${siteUrl}/green.png`, fit: 'fill', w: 1920, h: 1080 };
+    // Same key colour the draft used (green for anything rendered before the
+    // setting existed). applyKeyColor would rewrite this URL anyway, but naming
+    // it here keeps the two routes reading the same.
+    const KEY = normalizeKeyColor(params.keyColor);
+    const greenItem = { type: 'photo', green: true, url: `${siteUrl}${keyAssetFor(KEY)}`, fit: 'fill', w: 1920, h: 1080 };
     const items = (params.greenScreen !== false)
       ? [greenItem, ...photoItemsBuilt, greenItem]
       : photoItemsBuilt;
@@ -160,6 +164,9 @@ export async function POST(request) {
       background: (params.background && params.background.texture)
         ? { ...params.background, textureUrl: `${siteUrl}/backgrounds/${params.background.texture}.jpg` }
         : bgResolved,
+      // Reuse the draft's key colour. An older render has no params.keyColor and
+      // normalizeKeyColor sends it back to green, which is what it was made in.
+      keyColor: KEY,
       mpTransition: params.mpTransition || null,   // reuse Multi Page motion options
       mpStagger: params.mpStagger ?? null,
       mpHold: params.mpHold ?? null,

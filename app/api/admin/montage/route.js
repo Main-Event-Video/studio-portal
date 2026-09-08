@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl, resolveBackground, BACKGROUND_PREFIX } from '@/lib/r2';
-import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims, styleNeedsFaces, draftScaleFor } from '@/lib/montage';
+import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims, styleNeedsFaces, draftScaleFor, normalizeKeyColor, keyAssetFor } from '@/lib/montage';
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
 import { isHeic } from '@/lib/heic';
@@ -49,7 +49,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -255,6 +255,9 @@ export async function POST(request) {
         includeCards: includeCards !== false,
         videoPlaceholders: videoPlaceholders !== false,
         greenScreen: greenScreen !== false,
+        // SNAPSHOTTED so Export Full Rez re-renders in the same colour, and so a
+        // montage keyed green last month stays green when it is re-exported.
+        keyColor: KEY,
         videoGaps: gapCount,
         colorCorrect: !!pe.colorCorrect,
         background: bgControl,   // "Add background" control, so Export Final reuses it
@@ -339,7 +342,11 @@ export async function POST(request) {
     // green cell in the walls. It drops in like any photo (no overlay covering the
     // opening), and the editor `green` flag keeps it keyable (duotone renders it
     // pure, not tinted). public/green.png is the asset.
-    const greenItem = { type: 'photo', green: true, url: `${siteUrl}/green.png`, fit: 'fill', w: 1920, h: 1080 };
+    // The backdrop colour is a per-montage setting now (a key cannot tell
+    // backdrop green from green inside a photograph). The bookend is a real
+    // photo item, so it needs the matching solid asset, not just the hex.
+    const KEY = normalizeKeyColor(keyColor);
+    const greenItem = { type: 'photo', green: true, url: `${siteUrl}${keyAssetFor(KEY)}`, fit: 'fill', w: 1920, h: 1080 };
     const items = (greenScreen !== false)
       ? [greenItem, ...photoItemsBuilt, greenItem]
       : photoItemsBuilt;
@@ -362,6 +369,7 @@ export async function POST(request) {
       background: (bgControl && bgControl.texture)
         ? { ...bgControl, textureUrl: `${siteUrl}/backgrounds/${bgControl.texture}.jpg` }
         : bgResolved,               // green / texture / pasted url / imported library image or video
+      keyColor: KEY,                              // backdrop colour to key against
       mpTransition, mpStagger, mpHold, mpSpeed,   // Multi Page motion options
       duoPalette, duoTreatment,                   // Duotone background colour
       glassLight: glassLight !== false,           // Glass: the spotlight beams
