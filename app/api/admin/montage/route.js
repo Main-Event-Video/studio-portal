@@ -11,7 +11,7 @@ import { buildMontageSource, STYLES, parsePhotoSpec, styleNeedsDims, styleNeedsF
 import { createRender } from '@/lib/creatomate';
 import { orderedClientTimeline } from '@/lib/clientTimeline';
 import { isHeic } from '@/lib/heic';
-import { resolveBorder, borderIsOn } from '@/lib/photoBorder';
+import { resolveBorder, borderIsOn, normalizeStyleBorder } from '@/lib/photoBorder';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,7 +49,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null, styleBorder = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -114,6 +114,9 @@ export async function POST(request) {
   // A photo's album decides which global border applies to it, so the r2_key ->
   // album map has to be built before any photo object is made.
   const albumByKey = new Map();
+  // The montage-wide border override. null means "use the Edit Photos borders",
+  // which is the default and leaves every existing render behaving as before.
+  const SB = normalizeStyleBorder(styleBorder);
   const editFor = (k) => {
     const e = pePhotos[k] || {};
     return {
@@ -136,7 +139,13 @@ export async function POST(request) {
       // here (not in the engine) so the stored render snapshot carries the border
       // that was actually chosen at this moment — an Export Final months later
       // reproduces THIS draft even if the album's border has changed since.
-      border: resolveBorder(pe, k, albumByKey.get(k) || null),
+      // Album border vs per-photo border, most recently set one wins — UNLESS
+      // the style panel set one, which outranks both (Josh: "i want the Choose
+      // Style to override the Edit photos border"). Resolved here, not in the
+      // engine, so the stored render snapshot carries the border that was
+      // actually chosen at this moment: an Export Final months later reproduces
+      // THIS draft even if the album's border has changed since.
+      border: resolveBorder(pe, k, albumByKey.get(k) || null, SB),
     };
   };
   const photoObj = (k) => {
@@ -262,6 +271,9 @@ export async function POST(request) {
         // SNAPSHOTTED so Export Full Rez re-renders in the same colour, and so a
         // montage keyed green last month stays green when it is re-exported.
         keyColor: KEY,
+        // Kept for display only — the resolved border is already baked into
+        // renderSequence, so finalize needs nothing from this.
+        styleBorder: (styleBorder && typeof styleBorder === 'object') ? styleBorder : null,
         videoGaps: gapCount,
         colorCorrect: !!pe.colorCorrect,
         background: bgControl,   // "Add background" control, so Export Final reuses it

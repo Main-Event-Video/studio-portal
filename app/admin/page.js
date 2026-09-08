@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import Image from 'next/image';
 import { createClient } from '@supabase/supabase-js';
 import { parsePhotoSpec } from '@/lib/montage';
-import { resolveBorder, borderSource, borderIsOn, albumKey, BORDER_MIN, BORDER_MAX, BORDER_DEFAULT } from '@/lib/photoBorder';
+import { resolveBorder, borderSource, borderIsOn, albumKey, normalizeStyleBorder, NO_BORDER_STYLES, BORDER_MIN, BORDER_MAX, BORDER_DEFAULT } from '@/lib/photoBorder';
 import { DUO_PALETTES, DUO_TREATMENTS } from '@/lib/montage';
 import { buildTimeline } from '@/lib/timelineOrder';
 
@@ -714,7 +714,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0' });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -1990,6 +1990,96 @@ export default function AdminPage() {
     { value: '#FF00FF', label: 'Magenta', note: 'Use when the photos contain green. Almost never occurs in a real photograph; edges key a little softer.' },
     { value: '#0047BB', label: 'Blue', note: 'The classic alternative — but sky, water, denim and eyes are blue, so it trades one collision for another.' },
   ];
+  // THE MONTAGE-WIDE BORDER OVERRIDE. Josh 2026-09-08: "i want the Choose Style
+  // to override the Edit photos border."
+  //
+  // THREE states, not two, and the reason matters: "not set" has to mean "use
+  // whatever Edit Photos says" while "no border" has to mean "force none on this
+  // montage, ignore Edit Photos". On/Off cannot carry both.
+  //
+  // The live counts under each option are not decoration. An override is
+  // otherwise SILENT — set a border here, forget it a week later, and the album
+  // borders in Edit Photos quietly stop mattering with nothing on screen saying
+  // why. The album panel already solves the same problem with its "N photos have
+  // their own border set more recently" line.
+  const styleBorderPanel = (st, seg, set) => {
+    const mode = seg.sbMode || 'edits';
+    const w = Number.isFinite(Number(seg.sbW)) ? Number(seg.sbW) : BORDER_DEFAULT.w;
+    const color = seg.sbColor || BORDER_DEFAULT.color;
+    const dead = NO_BORDER_STYLES.has(st);
+    // What this override is actually displacing, counted off the real edits.
+    const albs = Object.entries((photoEdits.albumBorders) || {}).filter(([, b]) => b && b.on).length;
+    const phs = Object.values((photoEdits.photos) || {}).filter((p) => p && p.border && p.border.on).length;
+    const covered = albs || phs
+      ? `${albs ? `${albs} album${albs === 1 ? '' : 's'}` : ''}${albs && phs ? ' and ' : ''}${phs ? `${phs} photo${phs === 1 ? '' : 's'}` : ''}`
+      : null;
+    const opt = (val, label, tone) => {
+      const on = mode === val;
+      return (
+        <button key={val} type="button" disabled={dead} onClick={() => set({ sbMode: val })}
+          style={{
+            display: 'block', width: '100%', textAlign: 'left', marginTop: 6,
+            padding: on ? '7px 12px' : '6px 12px', borderRadius: 8,
+            cursor: dead ? 'not-allowed' : 'pointer', opacity: dead ? 0.45 : 1,
+            fontSize: 11.5, fontWeight: on ? 700 : 400,
+            border: `${on ? 2 : 1}px solid ${on ? (tone || 'var(--blue)') : 'var(--line)'}`,
+            background: on ? (tone ? 'rgba(230,41,92,0.14)' : 'rgba(47,107,255,0.14)') : 'transparent',
+            color: on ? (tone ? '#ff8fab' : 'var(--text)') : 'var(--muted)',
+          }}>{label}</button>
+      );
+    };
+    return (
+      <div style={{ marginTop: 11 }}>
+        <span style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 1 }}>Border</span>
+        {opt('edits', 'Use Edit Photos borders')}
+        {opt('none', 'No border', '#e6295c')}
+        {opt('custom', 'Custom border')}
+        {mode === 'custom' && !dead && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 8, fontSize: 11.5, color: 'var(--muted)' }}>
+            <span>Thickness</span>
+            <input type="range" min={BORDER_MIN} max={BORDER_MAX} step="0.1" value={w} style={{ width: 100 }}
+              onChange={(ev) => set({ sbMode: 'custom', sbW: Number(ev.target.value) })} />
+            <span style={{ minWidth: 24 }}>{w.toFixed(1)}</span>
+            <input type="color" value={color} aria-label="Border colour"
+              style={{ width: 28, height: 22, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
+              onChange={(ev) => set({ sbMode: 'custom', sbColor: ev.target.value.toUpperCase() })} />
+            {FB_SWATCHES.map((sw) => (
+              <button key={sw} type="button" title={sw} onClick={() => set({ sbMode: 'custom', sbColor: sw })}
+                style={{ width: 16, height: 16, borderRadius: 4, cursor: 'pointer', padding: 0,
+                  border: color === sw ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw }} />
+            ))}
+          </div>
+        )}
+        <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '7px 0 0', lineHeight: 1.45 }}>
+          {dead ? (st === 'framed_box'
+              ? 'Framed Box draws its own frame instead — use Frame thickness and colour above.'
+              : 'This style does not draw a photo border, so the setting would do nothing here.')
+            : mode === 'edits'
+              ? <>Each album or photo keeps whatever you set in Edit Photos.{covered ? ` ${covered} carr${albs + phs === 1 ? 'ies' : 'y'} a border.` : ' Nothing has one set.'}</>
+              : mode === 'none'
+                ? <>Strips every border for this montage only. Edit Photos is left exactly as it is.{covered ? <span style={{ color: '#ff8fab' }}> Overriding {covered}.</span> : ''}</>
+                : <>One border on every photo in this montage, whatever Edit Photos says.{covered ? <span style={{ color: '#8fc0ff' }}> Overriding {covered}.</span> : ''}</>}
+        </p>
+      </div>
+    );
+  };
+
+  // The box that opens under ANY selected style. Framed Box folds the same
+  // controls into its own panel instead, so it is excluded here rather than
+  // given two boxes.
+  const commonStylePanel = (st) => {
+    if (st === 'framed_box') return null;
+    const seg = segments[0] || {};
+    const set = (patch) => setSegments((arr) => arr.map((x) => ({ ...x, ...patch })));
+    return (
+      <div style={{ border: '2px solid var(--blue)', borderTop: '1px dashed rgba(47,107,255,0.45)',
+        borderBottomLeftRadius: 12, borderBottomRightRadius: 12, marginTop: -1,
+        background: 'rgba(61,123,255,0.08)', padding: '4px 11px 12px' }}>
+        {styleBorderPanel(st, seg, set)}
+      </div>
+    );
+  };
+
   const FB_SWATCHES = ['#FFFFFF', '#000000', '#F5E6C8', '#D8B56B', '#C0C0C0', '#FF4D88'];
   const framedBoxStylePanel = (st) => {
     if (st !== 'framed_box') return null;
@@ -2076,6 +2166,7 @@ export default function AdminPage() {
             picture inside it. The card travels and its clip edge is the hard
             transition line; whatever rides inside just goes along, so the motion
             is identical either way. Same control as everywhere else. */}
+        {styleBorderPanel('framed_box', seg, set)}
         <div style={fld}>
           <span style={lbl}>Background — what wipes in behind the print</span>
           <div style={{ marginTop: -4 }}>{backgroundControl(seg, set)}</div>
@@ -2475,6 +2566,13 @@ export default function AdminPage() {
             fbFrameColor: s.fbFrameColor || null,
             // The backdrop colour the montage is meant to be keyed against.
             keyColor: s.keyColor || '#00B140',
+            // Montage-wide border override from the style panel. 'edits' (the
+            // default) sends null, so nothing changes for an untouched montage.
+            styleBorder: s.sbMode === 'none'
+              ? { mode: 'none' }
+              : s.sbMode === 'custom'
+                ? { mode: 'custom', w: Number(s.sbW ?? BORDER_DEFAULT.w), color: s.sbColor || BORDER_DEFAULT.color }
+                : null,
           }),
         });
         ok++;
@@ -3934,7 +4032,11 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 // sibling would be placed in the next cell along, not underneath.
                 // The other styles' panels stay full-width, which is why this is a
                 // per-style wrapper rather than a change to all of them.
-                const joined = sel && o.value === 'framed_box';
+                // EVERY selected style now opens a box joined to its card. Josh:
+                // "can we make this consistent on all - pick a style and a box
+                // opens". The card and the panel have to be ONE grid item — a
+                // sibling would land in the next cell along, not underneath.
+                const joined = sel;
                 const Wrap = joined ? 'div' : Fragment;
                 const wrapProps = joined
                   ? { key: o.value, style: { display: 'flex', flexDirection: 'column', minWidth: 0 } }
@@ -3967,6 +4069,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                   {sel && duotoneStylePanel(o.value)}
                   {sel && glassStylePanel(o.value)}
                   {sel && framedBoxStylePanel(o.value)}
+                  {sel && commonStylePanel(o.value)}
                   </Wrap>
                 );
               })}
