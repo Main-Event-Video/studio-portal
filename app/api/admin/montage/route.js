@@ -49,7 +49,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null, styleBorder = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null, styleBorder = null, atmo = null, neon = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -117,6 +117,16 @@ export async function POST(request) {
   // The montage-wide border override. null means "use the Edit Photos borders",
   // which is the default and leaves every existing render behaving as before.
   const SB = normalizeStyleBorder(styleBorder);
+  // Universal overlays: dust + light leaks, and neon squiggles. Percentages,
+  // clamped here so a hand-made request cannot ask for something silly.
+  const pct = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(300, Number(v))) : d);
+  const ATMO = (atmo && typeof atmo === 'object' && atmo.on)
+    ? { on: true, intensity: pct(atmo.intensity, 100), dust: pct(atmo.dust, 100), leak: pct(atmo.leak, 100) }
+    : null;
+  const NEON = (neon && typeof neon === 'object' && neon.on)
+    ? { on: true, intensity: pct(neon.intensity, 100),
+        color: (typeof neon.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(neon.color)) ? neon.color.toUpperCase() : '#00E5FF' }
+    : null;
   const editFor = (k) => {
     const e = pePhotos[k] || {};
     return {
@@ -274,6 +284,7 @@ export async function POST(request) {
         // Kept for display only — the resolved border is already baked into
         // renderSequence, so finalize needs nothing from this.
         styleBorder: (styleBorder && typeof styleBorder === 'object') ? styleBorder : null,
+        atmo: ATMO, neon: NEON,   // snapshotted so Export Full Rez matches
         videoGaps: gapCount,
         colorCorrect: !!pe.colorCorrect,
         background: bgControl,   // "Add background" control, so Export Final reuses it
@@ -386,6 +397,12 @@ export async function POST(request) {
         ? { ...bgControl, textureUrl: `${siteUrl}/backgrounds/${bgControl.texture}.jpg` }
         : bgResolved,               // green / texture / pasted url / imported library image or video
       keyColor: KEY,                              // backdrop colour to key against
+      atmosphereOpts: ATMO,                       // dust + light leaks, any style
+      // Framed Box scales its OWN married atmosphere by the same numbers, so one
+      // set of sliders drives both the flat overlay and the married version.
+      atmoOpts: (atmo && typeof atmo === 'object')
+        ? { intensity: pct(atmo.intensity, 100), dust: pct(atmo.dust, 100), leak: pct(atmo.leak, 100) } : null,
+      neonOpts: NEON,                             // neon squiggles, any style
       mpTransition, mpStagger, mpHold, mpSpeed,   // Multi Page motion options
       duoPalette, duoTreatment,                   // Duotone background colour
       glassLight: glassLight !== false,           // Glass: the spotlight beams

@@ -714,7 +714,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonColor: '#00E5FF' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -2067,6 +2067,103 @@ export default function AdminPage() {
   // The box that opens under ANY selected style. Framed Box folds the same
   // controls into its own panel instead, so it is excluded here rather than
   // given two boxes.
+  const NEON_SWATCHES = ['#00E5FF', '#FF2D95', '#7CFF3D', '#FFD23A', '#B14DFF', '#FF6A3D'];
+
+  // Dust + light leaks on any style. ONE master with a trim per layer — Josh's
+  // "option C: both together and separate". The base figures (dust 36%, leaks
+  // peaking 46%) are the ones measured off the Envato reference.
+  //
+  // SAY WHAT THIS IS. Framed Box's atmosphere is MARRIED to its layers: the
+  // hero's dust grows with the hero, the bed's drifts with the bed, which is
+  // what makes it read as atmosphere in the room. This is the flat version,
+  // laid over the finished frame. It is what stock templates do and it looks
+  // fine, but it is not the same effect — so Framed Box keeps its own and this
+  // is never added on top of it.
+  const atmoPanel = (seg, set) => {
+    const on = !!seg.atmoOn;
+    const row = (label, key, dflt, hint) => (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
+        <span style={{ minWidth: 66 }}>{label}</span>
+        <input type="range" min="0" max="200" step="5" value={parseInt(seg[key] ?? dflt, 10)} style={{ flex: 1, minWidth: 0 }}
+          onChange={(ev) => set({ [key]: Number(ev.target.value) })} />
+        <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg[key] ?? dflt, 10)}%</span>
+        {hint}
+      </div>
+    );
+    return (
+      <div style={{ marginTop: 12, paddingTop: 11, borderTop: '1px solid var(--line)' }}>
+        <span style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 5 }}>Dust &amp; light leaks</span>
+        <span style={{ display: 'inline-flex', gap: 4 }}>
+          <button type="button" className={!on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
+            onClick={() => set({ atmoOn: false })}>Off</button>
+          <button type="button" className={on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
+            onClick={() => set({ atmoOn: true })}>On</button>
+        </span>
+        {on && (
+          <>
+            {row('Intensity', 'atmoI', 100)}
+            <div style={{ borderLeft: '3px solid var(--line)', paddingLeft: 9, marginTop: 2 }}>
+              {row('Dust', 'atmoDust', 100)}
+              {row('Light leaks', 'atmoLeak', 100)}
+            </div>
+            <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>
+              Intensity moves both; leave the two under it at 100% and you never think about them.
+              Opacity cannot pass 100%, so dust stops responding past about 2.8&times; and leaks past 2.2&times;.
+              <br />
+              <span style={{ color: '#f5a623' }}>It sits over the whole frame</span>, so on a green-screen
+              montage it also crosses any green beside a photo, and that green will not key cleanly where it
+              does. It steps around whole green beats and the bookends, but not the margins inside a shot.
+            </p>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // Neon squiggles — Neon Frame's accent arcs, freed from the frame. They do not
+  // need to know where the photo is, which is why these can be universal while
+  // the tube on the picture's edge still cannot.
+  const neonPanel = (seg, set) => {
+    const on = !!seg.neonOn;
+    return (
+      <div style={{ marginTop: 12, paddingTop: 11, borderTop: '1px solid var(--line)' }}>
+        <span style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 5 }}>Neon squiggles</span>
+        <span style={{ display: 'inline-flex', gap: 4 }}>
+          <button type="button" className={!on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
+            onClick={() => set({ neonOn: false })}>Off</button>
+          <button type="button" className={on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
+            onClick={() => set({ neonOn: true })}>On</button>
+        </span>
+        {on && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
+              <span style={{ minWidth: 66 }}>Intensity</span>
+              <input type="range" min="0" max="200" step="5" value={parseInt(seg.neonI ?? 100, 10)} style={{ flex: 1, minWidth: 0 }}
+                onChange={(ev) => set({ neonI: Number(ev.target.value) })} />
+              <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg.neonI ?? 100, 10)}%</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)', minWidth: 66 }}>Colour</span>
+              <input type="color" value={seg.neonColor || '#00E5FF'} aria-label="Neon colour"
+                style={{ width: 28, height: 22, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
+                onChange={(ev) => set({ neonColor: ev.target.value.toUpperCase() })} />
+              {NEON_SWATCHES.map((sw) => (
+                <button key={sw} type="button" title={sw} onClick={() => set({ neonColor: sw })}
+                  style={{ width: 16, height: 16, borderRadius: 4, cursor: 'pointer', padding: 0,
+                    border: (seg.neonColor || '#00E5FF') === sw ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw }} />
+              ))}
+            </div>
+            <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>
+              Short arcs of light sweeping across the frame, three at a time, in the gaps between green.
+              Same path-trimming as Neon Frame&rsquo;s travelling light. <span style={{ color: '#f5a623' }}>Unproven
+              by a render</span> — the effect has never been seen, only built.
+            </p>
+          </>
+        )}
+      </div>
+    );
+  };
+
   const commonStylePanel = (st) => {
     if (st === 'framed_box') return null;
     const seg = segments[0] || {};
@@ -2076,6 +2173,8 @@ export default function AdminPage() {
         borderBottomLeftRadius: 12, borderBottomRightRadius: 12, marginTop: -1,
         background: 'rgba(61,123,255,0.08)', padding: '4px 11px 12px' }}>
         {styleBorderPanel(st, seg, set)}
+        {atmoPanel(seg, set)}
+        {neonPanel(seg, set)}
       </div>
     );
   };
@@ -2104,6 +2203,26 @@ export default function AdminPage() {
             <button type="button" className={atmo ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
               onClick={() => set({ fbAtmosphere: true })}>On</button>
           </span>
+          {/* Framed Box's atmosphere is MARRIED to its layers — the hero's dust
+              grows with the hero, the bed's drifts with the bed — so it keeps
+              its own and never gets the flat overlay on top. These are the same
+              numbers though: one master, then a trim per layer, 100% everywhere
+              reproducing the measured reference exactly. */}
+          {atmo && [['Intensity', 'atmoI'], ['Dust', 'atmoDust'], ['Light leaks', 'atmoLeak']].map(([label, key], i) => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7, fontSize: 11.5,
+              color: 'var(--muted)', paddingLeft: i ? 9 : 0, borderLeft: i ? '3px solid var(--line)' : 'none' }}>
+              <span style={{ minWidth: 62 }}>{label}</span>
+              <input type="range" min="0" max="200" step="5" value={parseInt(seg[key] ?? 100, 10)} style={{ flex: 1, minWidth: 0 }}
+                onChange={(ev) => set({ [key]: Number(ev.target.value) })} />
+              <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg[key] ?? 100, 10)}%</span>
+            </div>
+          ))}
+          {atmo && (
+            <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '7px 0 0', lineHeight: 1.45 }}>
+              100% everywhere is the measured reference (dust 36%, leaks peaking 46%). Opacity cannot pass
+              100%, so dust stops responding past about 2.8&times; and leaks past 2.2&times;.
+            </p>
+          )}
         </div>
         <div style={fld}>
           <span style={lbl}>Frame thickness</span>
@@ -2167,6 +2286,7 @@ export default function AdminPage() {
             transition line; whatever rides inside just goes along, so the motion
             is identical either way. Same control as everywhere else. */}
         {styleBorderPanel('framed_box', seg, set)}
+        {neonPanel(seg, set)}
         <div style={fld}>
           <span style={lbl}>Background — what wipes in behind the print</span>
           <div style={{ marginTop: -4 }}>{backgroundControl(seg, set)}</div>
@@ -2568,6 +2688,8 @@ export default function AdminPage() {
             keyColor: s.keyColor || '#00B140',
             // Montage-wide border override from the style panel. 'edits' (the
             // default) sends null, so nothing changes for an untouched montage.
+            atmo: s.atmoOn ? { on: true, intensity: Number(s.atmoI ?? 100), dust: Number(s.atmoDust ?? 100), leak: Number(s.atmoLeak ?? 100) } : null,
+            neon: s.neonOn ? { on: true, intensity: Number(s.neonI ?? 100), color: s.neonColor || '#00E5FF' } : null,
             styleBorder: s.sbMode === 'none'
               ? { mode: 'none' }
               : s.sbMode === 'custom'

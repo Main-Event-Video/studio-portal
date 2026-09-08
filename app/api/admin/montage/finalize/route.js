@@ -167,6 +167,10 @@ export async function POST(request) {
       // Reuse the draft's key colour. An older render has no params.keyColor and
       // normalizeKeyColor sends it back to green, which is what it was made in.
       keyColor: KEY,
+      // Same overlays the draft used. Absent on anything rendered before the
+      // setting existed, which correctly means "none".
+      atmosphereOpts: params.atmo || null,
+      neonOpts: params.neon || null,
       mpTransition: params.mpTransition || null,   // reuse Multi Page motion options
       mpStagger: params.mpStagger ?? null,
       mpHold: params.mpHold ?? null,
