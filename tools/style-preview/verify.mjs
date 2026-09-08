@@ -252,48 +252,49 @@ for (const style of ['duotone', 'duotone2', 'duotone_pastel']) {
 }
 console.log(`Duotone: ${Object.keys(DUO_PALETTES).length} palettes x ${Object.keys(DUO_TREATMENTS).length} treatments checked on 3 styles.`);
 
-// NEON ARCS MUST BE ON SCREEN. Two renders came back empty because the arcs
-// were drawn on the edge of a box LARGER than the frame: a rounded rectangle at
-// 104% (never mind 174%) has all four of its sides beyond the picture, so the
-// outline is never once inside it. Everything about those renders was correct
-// except that the drawing was happening off screen, and nothing could see it —
-// not a parse check, not a track-collision check, not the element count.
-//
-// The test is the arithmetic that was missed: the outline lives on the box
-// EDGES, so at least one edge has to fall within 0-100% of the frame.
+// NEON RINGS. Two separate ways these have already failed a real render, so
+// both are asserted here:
+//   1. VALID BUT INVISIBLE. The arcs used to be free-floating rounded rects
+//      drawn on the EDGE of a box larger than the frame, so at 104% (never mind
+//      174%) the outline sat at -2% and 102% and not one pixel was ever inside
+//      the picture. They now nest INSIDE each shot's own composition at
+//      100% x 100%, which is what puts them on the picture's edge — so the test
+//      is that they are exactly that, and never a stray size again.
+//   2. VISIBLE BUT INVALID. Creatomate requires stroke_start / stroke_end /
+//      stroke_offset in 0-100 and rejects the WHOLE render otherwise. The trim
+//      was start + length with start from the full range, so five arcs in
+//      thirty exceeded it — intermittent by construction, which is why it
+//      survived several renders before a seed happened to hit it.
 {
-  let offscreen = 0, arcs = 0;
-  for (const style of ['hollywood', 'sliding_images', 'photo_slide', 'party2', 'basic_cut']) {
+  let rings = 0, offbox = 0, ranges = 0;
+  for (const style of ['hollywood', 'sliding_images', 'photo_slide', 'party2', 'basic_cut', 'polaroid']) {
     const photos = manifest.map((m) => ({ type: 'photo', url: `https://x/${m.file}`, framing: 'top', fit: null, size: 100, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null, w: m.w, h: m.h }));
     const src = buildMontageSource({ items: photos, style, title: 'N', watermarkUrl: null, includeCards: false, greenBookends: false, photoSeconds: 2, width: 1920, height: 1080, neonOpts: { on: true, colors: ['#00E5FF'] } });
-    for (const e of src.elements.filter((x) => /^OvlNeon/.test(x.name || ''))) {
-      arcs++;
-      const w = parseFloat(e.width), x = parseFloat(e.x), y = parseFloat(e.y);
-      // Creatomate REQUIRES stroke_start/stroke_end in 0-100 and rejects the
-      // whole render otherwise. The trim used to be start + length with start
-      // drawn from the full range, so any start above ~0.72 produced an end
-      // past 100 — five arcs in thirty, so it survived several renders before
-      // a seed happened to hit it. Range-check every one.
-      for (const k2 of ['stroke_start', 'stroke_end', 'stroke_offset']) {
-        const raw = e[k2];
-        const vals = Array.isArray(raw) ? raw.map((kf) => kf.value) : [raw];
-        for (const v of vals) {
-          const num = parseFloat(v);
-          if (v !== undefined && (!Number.isFinite(num) || num < -100 || num > 100)) {
-            console.log(`FAIL ${style}: ${e.name} ${k2}=${v} is outside what Creatomate accepts`);
-            fail++;
+    const walk = (node) => {
+      for (const k of (node.elements || [])) {
+        if (k.type === 'shape' && k.stroke_start !== undefined) {
+          rings++;
+          if (k.width !== '100%' || k.height !== '100%') {
+            offbox++;
+            if (offbox < 4) console.log(`FAIL ${style}: neon ring is ${k.width} x ${k.height}, not 100% of its shot — it will not sit on the picture's edge`);
+          }
+          const vals = [k.stroke_start, k.stroke_end, ...(Array.isArray(k.stroke_offset) ? k.stroke_offset.map((f) => f.value) : [k.stroke_offset])];
+          for (const v of vals) {
+            if (v === undefined) continue;
+            const num = parseFloat(v);
+            if (!Number.isFinite(num) || num < -100 || num > 100) {
+              ranges++;
+              if (ranges < 4) console.log(`FAIL ${style}: stroke value ${v} is outside the 0-100 Creatomate accepts`);
+            }
           }
         }
+        walk(k);
       }
-      const edges = [x - w / 2, x + w / 2, y - w / 2, y + w / 2];
-      if (!edges.some((v) => v >= 0 && v <= 100)) {
-        offscreen++;
-        if (offscreen < 4) console.log(`FAIL ${style}: neon arc ${w.toFixed(0)}% at ${x.toFixed(0)},${y.toFixed(0)} is entirely off screen`);
-      }
-    }
+    };
+    (src.elements || []).forEach(walk);
   }
-  if (offscreen) fail += offscreen;
-  console.log(`Neon: ${arcs} arc elements checked across 5 styles, ${offscreen} off screen.`);
+  fail += offbox + ranges;
+  console.log(`Neon: ${rings} rings checked across 6 styles, ${offbox} off their shot box, ${ranges} out of range.`);
 }
 
 console.log(fail === 0 ? `\nALL ${Object.keys(STYLES).length} STYLES OK (9 modes each)` : `\n${fail} failures`);
