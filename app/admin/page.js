@@ -731,6 +731,13 @@ export default function AdminPage() {
   const [montageSort, setMontageSort] = useState('new'); // new|old|high|low|style
   const [montageStep, setMontageStep] = useState(1); // 1 edit · 2 style · 3 finish
   const [refOpen, setRefOpen] = useState(null); // style key whose reference still is open
+  // Which style's settings box is OPEN. Josh 2026-09-08: single click picks the
+  // style, DOUBLE click opens its settings — the same gesture the photo editor
+  // already uses ("Double click it opens"), so the picker behaves like the grid
+  // next to it. Selecting a style no longer opens anything by itself: with a
+  // panel on all 28 cards, auto-opening made choosing a look feel like being
+  // handed a form. Resets on load, and closes itself if you pick another style.
+  const [styleSettingsFor, setStyleSettingsFor] = useState(null);
 
   // Photo Editor (per-client): per-photo framing/fit/size/removed + global
   // colorCorrect. Persisted on the client row and applied to EVERY style render.
@@ -2067,6 +2074,15 @@ export default function AdminPage() {
   // The box that opens under ANY selected style. Framed Box folds the same
   // controls into its own panel instead, so it is excluded here rather than
   // given two boxes.
+  // Every settings box gets the same way out, at the bottom where the eye ends
+  // up — not an x in a corner, which is easy to miss on a box this tall.
+  const closeSettingsRow = () => (
+    <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--line)', textAlign: 'right' }}>
+      <button type="button" className="btn-ghost" style={{ padding: '4px 12px', fontSize: 11 }}
+        onClick={() => setStyleSettingsFor(null)}>Close settings</button>
+    </div>
+  );
+
   const NEON_SWATCHES = ['#00E5FF', '#FF2D95', '#7CFF3D', '#FFD23A', '#B14DFF', '#FF6A3D'];
 
   // Dust + light leaks on any style. ONE master with a trim per layer — Josh's
@@ -2175,6 +2191,7 @@ export default function AdminPage() {
         {styleBorderPanel(st, seg, set)}
         {atmoPanel(seg, set)}
         {neonPanel(seg, set)}
+        {closeSettingsRow()}
       </div>
     );
   };
@@ -2298,6 +2315,7 @@ export default function AdminPage() {
             here and fall back to the blow-up.
           </p>
         </div>
+        {closeSettingsRow()}
       </div>
     );
   };
@@ -4158,14 +4176,27 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 // "can we make this consistent on all - pick a style and a box
                 // opens". The card and the panel have to be ONE grid item — a
                 // sibling would land in the next cell along, not underneath.
-                const joined = sel;
+                const open = sel && styleSettingsFor === o.value;
+                const joined = open;
                 const Wrap = joined ? 'div' : Fragment;
                 const wrapProps = joined
                   ? { key: o.value, style: { display: 'flex', flexDirection: 'column', minWidth: 0 } }
                   : { key: o.value };
                 return (
                   <Wrap {...wrapProps}>
-                  <button type="button" onClick={() => setSegments((arr) => arr.map((x) => ({ ...x, style: o.value })))}
+                  <button type="button"
+                    onClick={() => {
+                      setSegments((arr) => arr.map((x) => ({ ...x, style: o.value })));
+                      // Picking a different style closes the box that was open —
+                      // otherwise its settings would sit under a card they no
+                      // longer belong to.
+                      if (styleSettingsFor && styleSettingsFor !== o.value) setStyleSettingsFor(null);
+                    }}
+                    onDoubleClick={() => {
+                      setSegments((arr) => arr.map((x) => ({ ...x, style: o.value })));
+                      setStyleSettingsFor((cur) => (cur === o.value ? null : o.value));
+                    }}
+                    title={sel ? 'Double-click for settings' : 'Click to choose - double-click for its settings'}
                     style={{ textAlign: 'left', border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 12, padding: 12, cursor: 'pointer', background: sel ? 'rgba(47,107,255,0.08)' : 'transparent', color: 'var(--text)',
                       ...(joined ? { borderBottom: 'none', borderBottomLeftRadius: 0, borderBottomRightRadius: 0, paddingBottom: 8 } : {}) }}>
                     <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', marginBottom: 8, background: '#000' }}>
@@ -4186,12 +4217,20 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     </div>
                     <strong style={{ fontSize: 13 }}>{o.label.split(' \u2014 ')[0]}</strong>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{o.label.split(' \u2014 ')[1] || ''}</div>
-                    {sel && <div style={{ color: '#2f6bff', fontSize: 12, marginTop: 4 }}>{'\u2713 selected'}</div>}
+                    {sel && (
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                        <span style={{ color: '#2f6bff', fontSize: 12 }}>{'\u2713 selected'}</span>
+                        {/* The gesture has to be discoverable or the settings may
+                            as well not exist. It only shows on the selected card,
+                            and only while its box is shut. */}
+                        {!open && <span style={{ color: 'var(--muted)', fontSize: 11 }}>{'\u2022 double-click for settings'}</span>}
+                      </div>
+                    )}
                   </button>
-                  {sel && duotoneStylePanel(o.value)}
-                  {sel && glassStylePanel(o.value)}
-                  {sel && framedBoxStylePanel(o.value)}
-                  {sel && commonStylePanel(o.value)}
+                  {open && duotoneStylePanel(o.value)}
+                  {open && glassStylePanel(o.value)}
+                  {open && framedBoxStylePanel(o.value)}
+                  {open && commonStylePanel(o.value)}
                   </Wrap>
                 );
               })}
