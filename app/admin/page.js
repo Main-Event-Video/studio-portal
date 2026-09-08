@@ -2757,10 +2757,15 @@ export default function AdminPage() {
     const bSum = builtAll.reduce((a2, b) => ({
       neon: a2.neon + (b.neon || 0), dust: a2.dust + (b.dust || 0), leak: a2.leak + (b.leak || 0),
     }), { neon: 0, dust: 0, leak: 0 });
-    const asked = segments.some((x) => x.neonOn || x.atmoOn);
-    const bTxt = asked
-      ? ` Built: ${bSum.neon} neon, ${bSum.dust} dust, ${bSum.leak} leak element${bSum.neon + bSum.dust + bSum.leak === 1 ? '' : 's'}.`
-      : '';
+    // ALWAYS shown, not only when an overlay was asked for. Gated, its absence
+    // was ambiguous: "no overlay requested" and "this browser is still running
+    // the pre-deploy bundle" printed the exact same sentence, character for
+    // character, so the line could not distinguish the two things it exists to
+    // distinguish. Unconditional, its mere presence proves the new code is
+    // running, and the numbers say what the engine emitted.
+    const bTxt = ` Sent neon:${segments.some((x) => x.neonOn) ? 'on' : 'off'}`
+      + ` dust:${segments.some((x) => x.atmoOn) ? 'on' : 'off'}`
+      + ` — built ${bSum.neon} neon / ${bSum.dust} dust / ${bSum.leak} leak elements.`;
     setMMsg(
       `Queued ${ok} render${ok === 1 ? '' : 's'}${errs.length ? ` — ${errs.length} failed: ${errs.join('; ')}` : ''}.${bTxt} ` +
         'They’ll appear below as Rendering, then Ready. Renders take a few minutes; use Refresh.'
