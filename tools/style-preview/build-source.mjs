@@ -7,7 +7,12 @@
 // Usage: node build-source.mjs <style> [count] [--no-green] [--no-cards] [--secs=N]
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildMontageSource, STYLES, styleNeedsDims } from './montage.mjs';
+// Imports the SHIPPING engine directly. This used to import a hand-copied
+// tools/style-preview/montage.mjs, which is gitignored and by 2026-09-08 had
+// drifted 173 lines behind lib/montage.js — so this tool was reporting on an
+// engine that does not ship. There is no copy step any more; there is nothing
+// left to keep in step.
+import { buildMontageSource, STYLES, styleNeedsDims } from '../../lib/montage.js';
 
 const args = process.argv.slice(2);
 const style = args[0] || 'hollywood';

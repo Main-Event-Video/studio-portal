@@ -13,8 +13,13 @@
 // been checked by anything. That is exactly where the bad unit was. This one
 // passes an assetBase for that reason — do not remove it.
 //
-// Usage: node units.mjs        (montage.mjs must be a fresh copy of lib/montage.js)
-import { buildMontageSource, STYLES } from './montage.mjs';
+// Usage: node units.mjs
+// Imports the SHIPPING engine directly. This used to import a hand-copied
+// tools/style-preview/montage.mjs, which is gitignored and by 2026-09-08 had
+// drifted 173 lines behind lib/montage.js — so this tool was reporting on an
+// engine that does not ship. There is no copy step any more; there is nothing
+// left to keep in step.
+import { buildMontageSource, STYLES } from '../../lib/montage.js';
 
 const faces = [{ x: 0.44, y: 0.24, w: 0.14, h: 0.18 }];
 const dims = [[1080, 1440], [1440, 1080], [1600, 900], [1080, 1350],

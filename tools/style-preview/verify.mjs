@@ -1,9 +1,18 @@
 // House verification (HANDOFF-11 §9): build EVERY style with cards + green
 // bookends and a mixed-aspect photo set, then assert the JSON is sane.
 import fs from 'node:fs';
-import { buildMontageSource, STYLES, styleNeedsDims, DUO_PALETTES, DUO_TREATMENTS } from './montage.mjs';
+// Imports the SHIPPING engine directly. This used to import a hand-copied
+// tools/style-preview/montage.mjs, which is gitignored and by 2026-09-08 had
+// drifted 173 lines behind lib/montage.js — so this tool was reporting on an
+// engine that does not ship. There is no copy step any more; there is nothing
+// left to keep in step.
+import { buildMontageSource, STYLES, styleNeedsDims, DUO_PALETTES, DUO_TREATMENTS } from '../../lib/montage.js';
 
-const manifest = JSON.parse(fs.readFileSync('/home/claude/samples/manifest.json', 'utf8')).slice(0, 9);
+// The sample set lived at a hardcoded /home/claude path, which only exists in
+// one particular sandbox — anywhere else this tool died on line 6 before it
+// checked anything. SAMPLES overrides it; the old path stays the default.
+const SAMPLES = process.env.SAMPLES || '/home/claude/samples/manifest.json';
+const manifest = JSON.parse(fs.readFileSync(SAMPLES, 'utf8')).slice(0, 9);
 let fail = 0;
 const warn = [];
 const borderCounts = {};

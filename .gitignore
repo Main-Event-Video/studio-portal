@@ -5,4 +5,3 @@ node_modules
 .creatomate-src
 
 # verify.mjs runs against a local copy of the engine; it is generated, not source.
-tools/style-preview/montage.mjs
