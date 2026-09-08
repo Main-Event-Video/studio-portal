@@ -169,6 +169,12 @@ export async function POST(request) {
       glassLight: params.glassLight !== false,
       // The full export always pays for the reflections, whatever the draft did.
       glassRefl: true,
+      // Framed Box: replayed from the draft's snapshot, so the export is the
+      // look that was approved. Unlike glassRefl these are a LOOK, not a cost,
+      // so they are not overridden here.
+      atmosphere: params.fbAtmosphere !== false,
+      frameW: params.fbFrameW ?? null,
+      frameColor: params.fbFrameColor ?? null,
     });
 
     const render = await createRender({

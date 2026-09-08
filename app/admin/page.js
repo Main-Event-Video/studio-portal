@@ -580,7 +580,7 @@ export default function AdminPage() {
   // and which the engine does not yet match. A style with no file here simply
   // shows no ref button.
   const STYLE_REFS = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'photo_ribbon',
-    'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel', 'glass'];
+    'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel', 'glass', 'framed_box'];
   const NEW_STYLES = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'framed_box', 'photo_ribbon', 'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel'];
 
   // ---- Studio background library -------------------------------------------
@@ -714,7 +714,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
@@ -1829,6 +1829,83 @@ export default function AdminPage() {
   );
 
   // Glass options, rendered inline under the Glass tile in the style grid.
+  // Framed Box options. Josh approved the mockup on 2026-09-08: it sits JOINED
+  // TO THE BOTTOM EDGE of the chosen card rather than spanning the row ("please
+  // make the options window appear directly under the chosen style box"), and
+  // it is only there while Framed Box is the selected style.
+  //
+  // Thickness and colour deliberately reuse the shape of the photo-border
+  // control that already exists in this page (album headers and the per-photo
+  // editor), including its six swatches — a third instance of a control he has
+  // already approved twice, not a new one.
+  const FB_SWATCHES = ['#FFFFFF', '#000000', '#F5E6C8', '#D8B56B', '#C0C0C0', '#FF4D88'];
+  const framedBoxStylePanel = (st) => {
+    if (st !== 'framed_box') return null;
+    const seg = segments[0] || {};
+    const atmo = seg.fbAtmosphere !== false;
+    // Thickness is a SHARE OF FRAME WIDTH so the setting means the same thing at
+    // 1080p and 4K. 0.696% is what was measured off the reference.
+    const fw = (seg.fbFrameW === null || seg.fbFrameW === undefined) ? 0.696 : Number(seg.fbFrameW);
+    const fc = seg.fbFrameColor || '#FFFFFF';
+    const set = (patch) => setSegments((arr) => arr.map((x) => ({ ...x, ...patch })));
+    const lbl = { fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 5 };
+    const fld = { marginTop: 11 };
+    return (
+      <div style={{ border: '2px solid var(--blue)', borderTop: '1px dashed rgba(47,107,255,0.45)',
+        borderBottomLeftRadius: 12, borderBottomRightRadius: 12, marginTop: -1,
+        background: 'rgba(61,123,255,0.08)', padding: '11px 11px 12px' }}>
+        <div>
+          <span style={lbl}>Dust &amp; light leaks</span>
+          <span style={{ display: 'inline-flex', gap: 4 }}>
+            <button type="button" className={!atmo ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
+              onClick={() => set({ fbAtmosphere: false })}>Off</button>
+            <button type="button" className={atmo ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
+              onClick={() => set({ fbAtmosphere: true })}>On</button>
+          </span>
+        </div>
+        <div style={fld}>
+          <span style={lbl}>Frame thickness</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <input type="range" min="0" max="2.4" step="0.05" value={fw} style={{ flex: 1, minWidth: 0 }}
+              aria-label="Frame thickness"
+              onChange={(ev) => set({ fbFrameW: Number(ev.target.value) })} />
+            <span style={{ fontSize: 11, color: 'var(--muted)', minWidth: 42, textAlign: 'right' }}>{fw.toFixed(2)}%</span>
+          </div>
+        </div>
+        <div style={fld}>
+          <span style={lbl}>Frame colour</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <input type="color" value={fc} aria-label="Frame colour"
+              style={{ width: 30, height: 24, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'transparent', cursor: 'pointer', flex: 'none' }}
+              onChange={(ev) => set({ fbFrameColor: ev.target.value.toUpperCase() })} />
+            {FB_SWATCHES.map((sw) => (
+              <button key={sw} type="button" title={sw} onClick={() => set({ fbFrameColor: sw })}
+                style={{ width: 18, height: 18, borderRadius: 4, cursor: 'pointer', padding: 0,
+                  border: fc === sw ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw }} />
+            ))}
+          </div>
+        </div>
+        <div style={fld}>
+          <span style={lbl}>Preview — held size, before it grows</span>
+          {/* A borderless still of the style, with the frame drawn over it in the
+              browser. The frame here is CSS, so it shows thickness and colour
+              honestly but it is not the render: Creatomate centres a stroke on
+              its path and clips the outer half, which the engine doubles for. */}
+          <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 6, overflow: 'hidden', background: '#000', marginTop: 6 }}>
+            <img src="/style-refs/framed_box_plain.jpg" alt=""
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            <div style={{ position: 'absolute', left: '10.2%', top: '13.7%', width: '79.6%', height: '72.6%',
+              boxSizing: 'border-box', border: fw <= 0 ? 'none' : `${Math.max(1, fw * 2.6)}px solid ${fc}` }} />
+          </div>
+        </div>
+        <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>
+          Thickness is a share of frame width, so it looks the same at 1080p or 4K.
+          0.70% is the reference measurement. Drag to 0 for no frame.
+        </p>
+      </div>
+    );
+  };
+
   const glassStylePanel = (st) => {
       if (st !== 'glass') return null;
       const seg = segments[0] || {};
@@ -2203,6 +2280,12 @@ export default function AdminPage() {
             duoTreatment: s.duoTreatment || null,
             // Glass: the spotlight beams
             glassLight: s.glassLight !== false,
+            // Framed Box: atmosphere on/off, and the frame's thickness + colour.
+            // fbFrameW stays null when untouched — 0 is a real setting (no frame),
+            // so "unset" and "off" must not collapse into the same value.
+            fbAtmosphere: s.fbAtmosphere !== false,
+            fbFrameW: (s.fbFrameW === null || s.fbFrameW === undefined) ? null : Number(s.fbFrameW),
+            fbFrameColor: s.fbFrameColor || null,
           }),
         });
         ok++;
@@ -3540,10 +3623,21 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
               {MONTAGE_STYLES.map((o) => {
                 const sel = segments.length > 0 && segments[0].style === o.value;
+                // Framed Box's panel is JOINED to its card rather than spanning the
+                // row, so the card and the panel have to be ONE grid item — a
+                // sibling would be placed in the next cell along, not underneath.
+                // The other styles' panels stay full-width, which is why this is a
+                // per-style wrapper rather than a change to all of them.
+                const joined = sel && o.value === 'framed_box';
+                const Wrap = joined ? 'div' : Fragment;
+                const wrapProps = joined
+                  ? { key: o.value, style: { display: 'flex', flexDirection: 'column', minWidth: 0 } }
+                  : { key: o.value };
                 return (
-                  <Fragment key={o.value}>
+                  <Wrap {...wrapProps}>
                   <button type="button" onClick={() => setSegments((arr) => arr.map((x) => ({ ...x, style: o.value })))}
-                    style={{ textAlign: 'left', border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 12, padding: 12, cursor: 'pointer', background: sel ? 'rgba(47,107,255,0.08)' : 'transparent', color: 'var(--text)' }}>
+                    style={{ textAlign: 'left', border: sel ? '2px solid #2f6bff' : '1px solid var(--line)', borderRadius: 12, padding: 12, cursor: 'pointer', background: sel ? 'rgba(47,107,255,0.08)' : 'transparent', color: 'var(--text)',
+                      ...(joined ? { borderBottom: 'none', borderBottomLeftRadius: 0, borderBottomRightRadius: 0, paddingBottom: 8 } : {}) }}>
                     <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', marginBottom: 8, background: '#000' }}>
                       <video src={`/style-previews/${o.preview || o.value}.mp4`} muted loop autoPlay playsInline preload="auto"
                         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
@@ -3566,7 +3660,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                   </button>
                   {sel && duotoneStylePanel(o.value)}
                   {sel && glassStylePanel(o.value)}
-                  </Fragment>
+                  {sel && framedBoxStylePanel(o.value)}
+                  </Wrap>
                 );
               })}
             </div>

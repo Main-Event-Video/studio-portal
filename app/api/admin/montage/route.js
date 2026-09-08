@@ -49,7 +49,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -254,6 +254,16 @@ export async function POST(request) {
         duoTreatment: duoTreatment || null,
         glassLight: glassLight !== false,   // Glass: light beams on/off
         glassRefl,                          // Glass: reflections (null = on; false only to speed a motion-only draft)
+        // Framed Box. Snapshotted like everything else here so Export Final
+        // reproduces THIS draft; sanitised at the boundary rather than trusted.
+        // fbFrameW keeps null when unset — 0 is a real setting (no frame) and
+        // Number(null) === 0, so a bare isFinite check would turn "not set" into
+        // "off". That trap has bitten this codebase twice.
+        fbAtmosphere: fbAtmosphere !== false,
+        fbFrameW: (fbFrameW === null || fbFrameW === undefined || fbFrameW === '' || !Number.isFinite(Number(fbFrameW)))
+          ? null : Math.max(0, Math.min(2.4, Number(fbFrameW))),
+        fbFrameColor: (typeof fbFrameColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(fbFrameColor))
+          ? fbFrameColor.toUpperCase() : null,
 
         // Fully-resolved play sequence (r2_keys + each photo's edits AT THIS
         // MOMENT, placeholder names) — the snapshot the "Export Final" re-render
@@ -355,6 +365,10 @@ export async function POST(request) {
       // material does not matter and the render time does — but it has to be
       // asked for explicitly rather than being the quiet default.
       glassRefl: glassRefl !== false,
+      atmosphere: fbAtmosphere !== false,
+      frameW: (fbFrameW === null || fbFrameW === undefined || fbFrameW === '' || !Number.isFinite(Number(fbFrameW)))
+        ? null : Math.max(0, Math.min(2.4, Number(fbFrameW))),
+      frameColor: (typeof fbFrameColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(fbFrameColor)) ? fbFrameColor : null,
     });
 
     const render = await createRender({
