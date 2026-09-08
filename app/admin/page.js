@@ -2193,9 +2193,16 @@ export default function AdminPage() {
             </div>
             <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>A light runs the edge of each photograph, travelling with it.
               <br />
-              <strong>100% is the look you have already seen</strong> — the headroom is above it. Turning it up
-              makes the tube thicker, adds a second, third and fourth light to each picture (each its own colour
-              from those below) and sends them round faster. 300% is four lights, double thickness, three laps.</p>
+              <strong>100% is the look you have already seen.</strong> Above it the tube thickens, more lights
+              join (each its own colour from those below) and they run faster.
+              <br />
+              <strong>From 150%</strong> the tracing light stays, and a standing two-colour frame lights up
+              underneath it — so the highlight sweeps round a tube that is already burning. Short bars strike
+              on and off around the picture, and loose squiggles are drawn on between shots.
+              <br />
+              <span style={{ color: '#f5a623' }}>From 200%</span> echo frames stand off outside the photograph.
+              On a green-screen montage that area IS the key colour, so those echoes key away with it — they
+              are for montages finished over a dark or imported background.</p>
           </>
         )}
       </div>
