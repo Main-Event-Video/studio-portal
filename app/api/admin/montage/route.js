@@ -139,6 +139,13 @@ async function postMontage(request) {
   const albumByKey = new Map();
   // The montage-wide border override. null means "use the Edit Photos borders",
   // which is the default and leaves every existing render behaving as before.
+  // THE KEY COLOUR, resolved HERE and not further down. It was originally
+  // declared next to the green bookend it feeds, several hundred lines below —
+  // but params.keyColor is written into the database insert LONG BEFORE that, in
+  // an outer scope, so every render since threw "KEY is not defined" before it
+  // reached Creatomate. Parse checks cannot see this; only running it can.
+  // Anything the params snapshot needs has to be resolved up here with it.
+  const KEY = normalizeKeyColor(keyColor);
   const SB = normalizeStyleBorder(styleBorder);
   // Universal overlays: dust + light leaks, and neon squiggles. Percentages,
   // clamped here so a hand-made request cannot ask for something silly.
@@ -401,7 +408,6 @@ async function postMontage(request) {
     // The backdrop colour is a per-montage setting now (a key cannot tell
     // backdrop green from green inside a photograph). The bookend is a real
     // photo item, so it needs the matching solid asset, not just the hex.
-    const KEY = normalizeKeyColor(keyColor);
     const greenItem = { type: 'photo', green: true, url: `${siteUrl}${keyAssetFor(KEY)}`, fit: 'fill', w: 1920, h: 1080 };
     const items = (greenScreen !== false)
       ? [greenItem, ...photoItemsBuilt, greenItem]
