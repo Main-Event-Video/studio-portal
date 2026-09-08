@@ -39,7 +39,30 @@ async function probeDims(url) {
   return null;
 }
 
+// WHY THIS WRAPPER EXISTS. Every EXPECTED failure in here returns
+// NextResponse.json({ error }), and the admin shows that message. But an
+// UNEXPECTED throw had nothing catching it, so Next returned a bare 500 with no
+// body and the admin could only say "Request failed (500)" — which is exactly
+// what Josh hit trying to test the neon, and it left both of us guessing at a
+// stack trace neither of us could see.
+//
+// Now the real message comes back. It is admin-only behind requireAdmin, so
+// there is no one to leak an internal detail to, and a name plus a message is
+// the difference between one round trip and five.
 export async function POST(request) {
+  try {
+    return await postMontage(request);
+  } catch (e) {
+    const detail = e && e.message ? String(e.message) : String(e);
+    console.error('[montage POST] uncaught', e);
+    return NextResponse.json({
+      error: `Render request failed: ${detail}`,
+      where: (e && e.stack ? String(e.stack).split('\n').slice(0, 4).join(' | ') : null),
+    }, { status: 500 });
+  }
+}
+
+async function postMontage(request) {
   const auth = await requireAdmin(request);
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
@@ -125,6 +148,12 @@ export async function POST(request) {
     : null;
   const NEON = (neon && typeof neon === 'object' && neon.on)
     ? { on: true, intensity: pct(neon.intensity, 100),
+        // One colour, or several to alternate between. Capped at six so a
+        // hand-made request cannot make the cycle meaningless.
+        colors: Array.isArray(neon.colors)
+          ? neon.colors.filter((c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c))
+            .slice(0, 6).map((c) => c.toUpperCase())
+          : [],
         color: (typeof neon.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(neon.color)) ? neon.color.toUpperCase() : '#00E5FF' }
     : null;
   const editFor = (k) => {

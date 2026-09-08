@@ -714,7 +714,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonColor: '#00E5FF' });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'] });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -2158,16 +2158,36 @@ export default function AdminPage() {
                 onChange={(ev) => set({ neonI: Number(ev.target.value) })} />
               <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg.neonI ?? 100, 10)}%</span>
             </div>
+            {/* MULTI-SELECT, not a single pick. Josh: "add a alternating color
+                selector for the neon". Choose several and the arcs cycle through
+                them by arc index, so two squiggles alive at the same moment are
+                never the same hue — which is what real neon in a room looks
+                like. Choose one and it behaves exactly as it did. The last
+                colour cannot be unpicked; an empty palette would silently mean
+                no neon at all while the toggle still said On. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11.5, color: 'var(--muted)', minWidth: 66 }}>Colour</span>
-              <input type="color" value={seg.neonColor || '#00E5FF'} aria-label="Neon colour"
-                style={{ width: 28, height: 22, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
-                onChange={(ev) => set({ neonColor: ev.target.value.toUpperCase() })} />
-              {NEON_SWATCHES.map((sw) => (
-                <button key={sw} type="button" title={sw} onClick={() => set({ neonColor: sw })}
-                  style={{ width: 16, height: 16, borderRadius: 4, cursor: 'pointer', padding: 0,
-                    border: (seg.neonColor || '#00E5FF') === sw ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw }} />
-              ))}
+              <span style={{ fontSize: 11.5, color: 'var(--muted)', minWidth: 66 }}>Colours</span>
+              {NEON_SWATCHES.map((sw) => {
+                const picked = (seg.neonColors || ['#00E5FF']).includes(sw);
+                const last = picked && (seg.neonColors || []).length <= 1;
+                return (
+                  <button key={sw} type="button" disabled={last}
+                    title={last ? 'At least one colour has to stay picked' : (picked ? `Remove ${sw}` : `Add ${sw}`)}
+                    onClick={() => set((() => {
+                      const cur = seg.neonColors || ['#00E5FF'];
+                      const next = cur.includes(sw) ? cur.filter((c) => c !== sw) : [...cur, sw];
+                      return { neonColors: next.length ? next : cur, neonColor: (next[0] || sw) };
+                    })())}
+                    style={{ width: 20, height: 20, borderRadius: 5, cursor: last ? 'default' : 'pointer', padding: 0,
+                      border: picked ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw,
+                      opacity: picked ? 1 : 0.42 }} />
+                );
+              })}
+              <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                {(seg.neonColors || ['#00E5FF']).length > 1
+                  ? `${(seg.neonColors || []).length} colours, alternating`
+                  : 'one colour'}
+              </span>
             </div>
             <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>
               Short arcs of light sweeping across the frame, three at a time, in the gaps between green.
@@ -2707,7 +2727,9 @@ export default function AdminPage() {
             // Montage-wide border override from the style panel. 'edits' (the
             // default) sends null, so nothing changes for an untouched montage.
             atmo: s.atmoOn ? { on: true, intensity: Number(s.atmoI ?? 100), dust: Number(s.atmoDust ?? 100), leak: Number(s.atmoLeak ?? 100) } : null,
-            neon: s.neonOn ? { on: true, intensity: Number(s.neonI ?? 100), color: s.neonColor || '#00E5FF' } : null,
+            neon: s.neonOn ? { on: true, intensity: Number(s.neonI ?? 100),
+              colors: Array.isArray(s.neonColors) && s.neonColors.length ? s.neonColors : [s.neonColor || '#00E5FF'],
+              color: s.neonColor || '#00E5FF' } : null,
             styleBorder: s.sbMode === 'none'
               ? { mode: 'none' }
               : s.sbMode === 'custom'
