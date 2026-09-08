@@ -56,6 +56,97 @@ function swatch(x, extra) {
   };
 }
 
+// =============================================================
+// NEON PROBE  —  GET /api/admin/probe?what=neon
+//
+// The neon squiggles rendered as NOTHING, twice. What is already PROVEN by real
+// renders is that a stroke-only shape DOES draw: Framed Box's frame is exactly
+// that (fill_color rgba(0,0,0,0), stroke_color, stroke_width in px) and Josh
+// signed off "border test was a success". The magenta key backdrop proves plain
+// filled shapes draw too.
+//
+// So the fault is in one of the things the neon arcs add ON TOP of that proven
+// shape, and there are five candidates. Guessing costs a full render each time.
+// This draws them side by side, each changing ONE thing from the control, so a
+// single cheap render says which one kills it.
+//
+// Read the result by which columns show a line and which are blank.
+// =============================================================
+const NEON = '#00E5FF';
+const RING = (rx, ry) => `M ${rx} 0 L ${(100 - rx).toFixed(2)} 0 Q 100 0 100 ${ry} L 100 ${(100 - ry).toFixed(2)} Q 100 100 ${(100 - rx).toFixed(2)} 100 L ${rx} 100 Q 0 100 0 ${(100 - ry).toFixed(2)} L 0 ${ry} Q 0 0 ${rx} 0 Z`;
+
+function neonProbeSource() {
+  // Six columns, one variable each. Every column draws the SAME rounded ring in
+  // the same place; only the listed property differs.
+  const col = (i) => 8.5 + i * 16.6;
+  const ring = (i, extra, track) => ({
+    type: 'shape', path: RING(14, 14), track,
+    x: `${col(i)}%`, y: '44%', x_anchor: '50%', y_anchor: '50%',
+    width: '14%', height: '46%',
+    fill_color: 'rgba(0,0,0,0)',
+    stroke_color: NEON, stroke_width: '6 px',
+    stroke_cap: 'round', stroke_join: 'round',
+    ...extra,
+  });
+  const cap = (i, text, track) => ({
+    type: 'text', text, track,
+    x: `${col(i)}%`, y: '80%', x_anchor: '50%', y_anchor: '50%', width: '15%',
+    font_family: 'Open Sans', font_weight: '700', font_size: '1.9 vmin',
+    fill_color: '#FFFFFF', text_align: 'center',
+  });
+  return {
+    output_format: 'mp4',
+    width: 1280, height: 720, frame_rate: 25, duration: 2,
+    elements: [
+      { type: 'shape', path: RECT, track: 1, width: '100%', height: '100%',
+        x: '50%', y: '50%', x_anchor: '50%', y_anchor: '50%', fill_color: '#101014' },
+
+      // 1 CONTROL. Nothing but the proven Framed Box construction. If THIS is
+      // blank, stroke-only shapes are not the problem and something far more
+      // basic is (the path, the units, the track).
+      ring(0, {}, 2), cap(0, '1 plain stroke', 2),
+
+      // 2 SCREEN BLEND. The only difference. Neon has to be screen-blended to
+      // read as light.
+      ring(1, { blend_mode: 'screen' }, 3), cap(1, '2 + screen', 3),
+
+      // 3 STROKE TRIMMING. stroke_start / stroke_end, the properties the whole
+      // travelling-light idea rests on and which no render has ever confirmed.
+      // The SDK types list them; that proves the NAME, not the behaviour.
+      ring(2, { stroke_start: '10%', stroke_end: '35%' }, 4), cap(2, '3 + trim', 4),
+
+      // 4 TRIM ANIMATED. stroke_offset keyframed, which is how the light travels.
+      ring(3, { stroke_start: '10%', stroke_end: '35%',
+        stroke_offset: [{ time: 0, value: '0%', easing: 'linear' }, { time: 2, value: '40%' }] }, 5),
+      cap(3, '4 + offset anim', 5),
+
+      // 5 A HIGH TRACK. The overlay sits on 120+, above everything else in the
+      // montage. Nothing in this repo has ever used a track that high, so it is
+      // an untested assumption, not a fact.
+      ring(4, { blend_mode: 'screen' }, 122), cap(4, '5 on track 122', 123),
+
+      // 6 EXACTLY WHAT THE ENGINE EMITS: high track, screen, trimmed, offset
+      // animated, keyframed opacity, three stacked widths. If 1-5 all draw and
+      // this does not, the fault is in the combination or the opacity ramp.
+      ...[[14, 26], [7, 50], [3, 100]].map((w, k) => ({
+        ...ring(5, {
+          blend_mode: 'screen',
+          stroke_width: `${w[0]} px`,
+          stroke_start: '10%', stroke_end: '35%',
+          stroke_offset: [{ time: 0, value: '0%', easing: 'linear' }, { time: 2, value: '40%' }],
+          opacity: [
+            { time: 0, value: '0%', easing: 'quadratic-out' },
+            { time: 0.4, value: `${w[1]}%`, easing: 'linear' },
+            { time: 1.6, value: `${w[1]}%`, easing: 'quadratic-in' },
+            { time: 2, value: '0%' },
+          ],
+        }, 124 + k),
+      })),
+      cap(5, '6 the real thing', 128),
+    ],
+  };
+}
+
 function probeSource() {
   return {
     output_format: 'mp4',
@@ -249,10 +340,13 @@ export async function GET(request) {
   }
 
   try {
+    // ?what=neon draws the neon-construction probe instead of the material one.
+    const what = new URL(request.url).searchParams.get('what');
+    const neon = what === 'neon';
     // Quarter scale: this is a diagnostic, not a deliverable.
     const r = await createRender({
-      source: probeSource(),
-      metadata: JSON.stringify({ kind: 'capability-probe' }),
+      source: neon ? neonProbeSource() : probeSource(),
+      metadata: JSON.stringify({ kind: neon ? 'neon-probe' : 'capability-probe' }),
       renderScale: 0.5,
     });
     return NextResponse.json({
