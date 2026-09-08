@@ -80,6 +80,8 @@ async function api(path, options = {}) {
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
+  // Carried back so the generate summary can say what the engine emitted — see
+  // the note on `built` in the montage route.
   return json;
 }
 
@@ -2675,9 +2677,10 @@ export default function AdminPage() {
     setGenBusy(true);
     let ok = 0;
     const errs = [];
+    const builtAll = [];
     for (const s of plan) {
       try {
-        await api('/api/admin/montage', {
+        const r = await api('/api/admin/montage', {
           method: 'POST',
           body: JSON.stringify({
             clientId: c.id,
@@ -2737,6 +2740,7 @@ export default function AdminPage() {
                 : null,
           }),
         });
+        if (r && r.built) builtAll.push(r.built);
         ok++;
       } catch (err) {
         errs.push(err.message);
@@ -2744,8 +2748,21 @@ export default function AdminPage() {
     }
     setGenBusy(false);
     setMErr(errs.length > 0);
+    // WHAT THE ENGINE EMITTED. Only shown when an overlay was asked for, so it
+    // stays out of the way on an ordinary render. It answers the question a
+    // render alone cannot: if neon was switched on and this says 0, the setting
+    // never reached the engine; if it says a number and the video has none,
+    // Creatomate dropped the shapes. Different bugs, and one line tells them
+    // apart instead of another render.
+    const bSum = builtAll.reduce((a2, b) => ({
+      neon: a2.neon + (b.neon || 0), dust: a2.dust + (b.dust || 0), leak: a2.leak + (b.leak || 0),
+    }), { neon: 0, dust: 0, leak: 0 });
+    const asked = segments.some((x) => x.neonOn || x.atmoOn);
+    const bTxt = asked
+      ? ` Built: ${bSum.neon} neon, ${bSum.dust} dust, ${bSum.leak} leak element${bSum.neon + bSum.dust + bSum.leak === 1 ? '' : 's'}.`
+      : '';
     setMMsg(
-      `Queued ${ok} render${ok === 1 ? '' : 's'}${errs.length ? ` — ${errs.length} failed: ${errs.join('; ')}` : ''}. ` +
+      `Queued ${ok} render${ok === 1 ? '' : 's'}${errs.length ? ` — ${errs.length} failed: ${errs.join('; ')}` : ''}.${bTxt} ` +
         'They’ll appear below as Rendering, then Ready. Renders take a few minutes; use Refresh.'
     );
     loadMontages();

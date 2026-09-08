@@ -480,7 +480,18 @@ async function postMontage(request) {
       .update({ status: 'rendering', render_id: render.id, updated_at: new Date().toISOString() })
       .eq('id', row.id);
 
-    return NextResponse.json({ ok: true, montageId: row.id, renderId: render.id });
+    // WHAT WAS ACTUALLY BUILT. Josh turned neon on, the render came back and
+    // there was none — and there was no way to tell whether the setting had not
+    // reached the engine, or had reached it and Creatomate ignored the shapes.
+    // Those are completely different bugs and guessing between them costs a
+    // render each time. Counting the emitted elements separates them in one go:
+    // a zero here means it never got built, a number here means it was built and
+    // the renderer dropped it.
+    const built = (() => {
+      const n = (re) => source.elements.filter((e) => re.test(e.name || '')).length;
+      return { elements: source.elements.length, neon: n(/^OvlNeon/), dust: n(/^OvlDust/), leak: n(/^OvlLeak/) };
+    })();
+    return NextResponse.json({ ok: true, montageId: row.id, renderId: render.id, built });
   } catch (e) {
     await db
       .from('studio_montages')
