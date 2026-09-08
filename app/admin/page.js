@@ -539,7 +539,7 @@ export default function AdminPage() {
     { value: 'hollywood', label: 'Hollywood — gold on black, slow + cinematic' },
     { value: 'timeless', label: 'Timeless — ivory, elegant, gentle' },
     { value: 'party', label: 'Party — fast, punchy, high energy' },
-    { value: 'party2', label: 'Party 2 — energetic, drift + varied transitions' },
+    { value: 'party2', label: 'Party 2 — energetic drift; slide + circular-wipe + fade' },
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
     { value: 'duotone2', label: 'Duotone Split 2 — frantic, bg & hero transition separately' },
     { value: 'duotone_pastel', label: 'Duotone Split Pastel — soft rainbow bg + true-colour hero' },
@@ -566,7 +566,7 @@ export default function AdminPage() {
     // Reuses Party 2's real render clip on purpose: Party 3 IS Party 2's look —
     // the difference is only what happens mid-transition, which a thumbnail
     // cannot show honestly.
-    { value: 'party3', preview: 'party2', label: 'Party 3 — Party 2 movement with cover transitions (green-bleed fix test)' },
+    { value: 'party3', preview: 'party2', label: 'Party 3 — Party 2 plus a straight wipe in the rotation' },
   ];
 
   // Styles that have never been through a real Creatomate render. The "Try the
