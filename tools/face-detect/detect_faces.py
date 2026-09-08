@@ -147,8 +147,24 @@ def dedupe(cands):
 
 
 def detect(buf, cascades):
-    arr = np.frombuffer(buf, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    # AN EMPTY BUFFER RAISES, IT DOES NOT RETURN None. This job ran happily
+    # through 130 photographs and then died on the 131st with
+    #   (-215:Assertion failed) !buf.empty() in function 'imdecode_'
+    # because one R2 object came back with zero bytes. The whole design here is
+    # that an undecodable photo is skipped and left pending — but that only
+    # works for the case OpenCV signals by returning None. For an empty buffer
+    # it throws instead, which killed the run and threw away 130 good results
+    # that had not been written yet.
+    #
+    # So: check the length first, and treat ANY decoder failure as "not
+    # decodable" rather than trusting it to report one particular way.
+    if not buf:
+        return None
+    try:
+        arr = np.frombuffer(buf, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    except cv2.error:
+        return None
     if img is None:
         return None                      # not decodable — distinct from "no faces"
     h, w = img.shape[:2]
@@ -294,12 +310,25 @@ def main():
             print(f'  [{i}] {key}  FETCH FAILED: {e}', flush=True)
             n_bad += 1
             continue
-        faces = detect(buf, cascades)
+        # BELT AND BRACES. The fetch is already wrapped so one bad object cannot
+        # stop the batch; detect() was not, and that is exactly how a single
+        # zero-byte file took down a whole run. One photograph must never be
+        # able to cost the other four hundred.
+        try:
+            faces = detect(buf, cascades)
+        except Exception as e:                      # noqa: BLE001
+            print(f'  [{i}] {key}  DETECT FAILED ({len(buf)} bytes): {e}', flush=True)
+            n_bad += 1
+            continue
         if faces is None:
             # Undecodable (HEIC without a codec, a truncated object). Leave the
             # row alone so a later run with a better decoder can try again —
             # writing [] here would permanently mark it "no faces".
-            print(f'  [{i}] {key}  NOT DECODABLE, left pending', flush=True)
+            # Say the size: 0 bytes means the OBJECT is broken in R2 and no
+            # decoder will ever read it, which is a different problem from a
+            # format this runner cannot handle.
+            why = 'EMPTY OBJECT (0 bytes)' if not buf else f'not decodable ({len(buf)} bytes)'
+            print(f'  [{i}] {key}  {why}, left pending', flush=True)
             n_bad += 1
             continue
         best = f"{faces[0]['score']:.2f} {faces[0]['source']}" if faces else 'none -> panes stay glass'
