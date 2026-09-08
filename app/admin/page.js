@@ -735,6 +735,46 @@ export default function AdminPage() {
   const [newOpen, setNewOpen] = useState(false);
   // Archived clients live in their own row at the bottom, also closed each load.
   const [archOpen, setArchOpen] = useState(false);
+  // Sorting the client list. Josh: "allow me to sort the clients by Alphabetical
+  // client name / Event Date / Last Upload", and "lets have event date be
+  // default". Newest event first, which is exactly what one click on the Event
+  // header gives — the default is deliberately not a special order, or the list
+  // would rearrange itself the first time you touched the header it was already
+  // sorted by.
+  const [sortKey, setSortKey] = useState('event');
+  const [sortDir, setSortDir] = useState(-1);
+  const sortVal = (c) => (sortKey === 'name' ? String(c.display_name || '').toLowerCase()
+    : sortKey === 'event' ? (c.event_date || '')
+      : (c.last_upload_at || ''));
+  const bySort = (a, b) => {
+    const ka = sortVal(a); const kb = sortVal(b);
+    // BLANKS ALWAYS LAST, whichever way the arrow points. A client with no event
+    // date yet, or who has never uploaded, is not "earliest" — sorting them to
+    // the top would open the list with a wall of empty rows every time.
+    const ea = !ka; const eb = !kb;
+    if (ea && eb) return 0;
+    if (ea) return 1;
+    if (eb) return -1;
+    if (ka < kb) return -sortDir;
+    if (ka > kb) return sortDir;
+    return 0;
+  };
+  // First click picks the direction that column is actually wanted in — names
+  // A-Z, dates newest first — instead of always starting ascending and making
+  // you click twice.
+  const sortBy = (k) => {
+    if (sortKey === k) setSortDir((d) => -d);
+    else { setSortKey(k); setSortDir(k === 'name' ? 1 : -1); }
+  };
+  const sortHead = (k, label) => (
+    <th onClick={() => sortBy(k)} title={`Sort by ${label.toLowerCase()}`}
+      style={{ cursor: 'pointer', userSelect: 'none', color: sortKey === k ? 'var(--blue)' : undefined }}>
+      {label}{' '}
+      <span aria-hidden="true" style={{ fontSize: 9, opacity: 0.85 }}>
+        {sortKey === k ? (sortDir === 1 ? '\u25B2' : '\u25BC') : ''}
+      </span>
+    </th>
+  );
   // The one row that gathers every archived client. Rendered at the boundary
   // between the live list and the archived tail, so it holds its place whether
   // the fold is open or shut and the rows above it never move.
@@ -4487,10 +4527,10 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             <table>
               <thead>
                 <tr>
-                  <th>Client</th>
+                  {sortHead('name', 'Client')}
                   <th>Email</th>
-                  <th>Event</th>
-                  <th>Last upload</th>
+                  {sortHead('event', 'Event')}
+                  {sortHead('upload', 'Last upload')}
                   <th>Files</th>
                   <th></th>
                 </tr>
@@ -4506,7 +4546,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     Maker — and two places to keep in step. An archived client is
                     MOVED, not limited; opening one gives the same workspace.
                     Closed on every load — Josh: "reset to closed". */}
-                {[...clients.filter((c) => !c.archived), ...clients.filter((c) => c.archived)].map((c, ci, arr) => {
+                {[...clients.filter((c) => !c.archived).sort(bySort),
+                  ...clients.filter((c) => c.archived).sort(bySort)].map((c, ci, arr) => {
                   const isOpen = openClientId === c.id;
                   const firstArchived = c.archived && (ci === 0 || !arr[ci - 1].archived);
                   if (c.archived && !archOpen) {
