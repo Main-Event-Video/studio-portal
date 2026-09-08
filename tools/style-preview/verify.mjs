@@ -252,4 +252,32 @@ for (const style of ['duotone', 'duotone2', 'duotone_pastel']) {
 }
 console.log(`Duotone: ${Object.keys(DUO_PALETTES).length} palettes x ${Object.keys(DUO_TREATMENTS).length} treatments checked on 3 styles.`);
 
+// NEON ARCS MUST BE ON SCREEN. Two renders came back empty because the arcs
+// were drawn on the edge of a box LARGER than the frame: a rounded rectangle at
+// 104% (never mind 174%) has all four of its sides beyond the picture, so the
+// outline is never once inside it. Everything about those renders was correct
+// except that the drawing was happening off screen, and nothing could see it —
+// not a parse check, not a track-collision check, not the element count.
+//
+// The test is the arithmetic that was missed: the outline lives on the box
+// EDGES, so at least one edge has to fall within 0-100% of the frame.
+{
+  let offscreen = 0, arcs = 0;
+  for (const style of ['hollywood', 'sliding_images', 'photo_slide', 'party2', 'basic_cut']) {
+    const photos = manifest.map((m) => ({ type: 'photo', url: `https://x/${m.file}`, framing: 'top', fit: null, size: 100, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null, w: m.w, h: m.h }));
+    const src = buildMontageSource({ items: photos, style, title: 'N', watermarkUrl: null, includeCards: false, greenBookends: false, photoSeconds: 2, width: 1920, height: 1080, neonOpts: { on: true, colors: ['#00E5FF'] } });
+    for (const e of src.elements.filter((x) => /^OvlNeon/.test(x.name || ''))) {
+      arcs++;
+      const w = parseFloat(e.width), x = parseFloat(e.x), y = parseFloat(e.y);
+      const edges = [x - w / 2, x + w / 2, y - w / 2, y + w / 2];
+      if (!edges.some((v) => v >= 0 && v <= 100)) {
+        offscreen++;
+        if (offscreen < 4) console.log(`FAIL ${style}: neon arc ${w.toFixed(0)}% at ${x.toFixed(0)},${y.toFixed(0)} is entirely off screen`);
+      }
+    }
+  }
+  if (offscreen) fail += offscreen;
+  console.log(`Neon: ${arcs} arc elements checked across 5 styles, ${offscreen} off screen.`);
+}
+
 console.log(fail === 0 ? `\nALL ${Object.keys(STYLES).length} STYLES OK (9 modes each)` : `\n${fail} failures`);
