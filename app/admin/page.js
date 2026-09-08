@@ -1975,12 +1975,29 @@ export default function AdminPage() {
           {/* A borderless still of the style, with the frame drawn over it in the
               browser. The frame here is CSS, so it shows thickness and colour
               honestly but it is not the render: Creatomate centres a stroke on
-              its path and clips the outer half, which the engine doubles for. */}
-          <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 6, overflow: 'hidden', background: '#000', marginTop: 6 }}>
+              its path and clips the outer half, which the engine doubles for.
+
+              THE RECTANGLE IS MEASURED, NOT MODELLED. It was first written from
+              FB_HOLD_W/FB_HOLD_H, which is the size the print holds at — but the
+              still is a grab of one frame of a print that never stops growing, so
+              it is not at hold size, and the frame sat floating inside the print
+              instead of on its edge. These four numbers are the sharp-vs-blurred
+              boundary measured off framed_box_plain.jpg itself (column/row
+              high-frequency energy: sharp print at x 56..584, y 33..304 of
+              640x360). If that still is ever replaced, re-measure them.
+
+              border-box puts the line INSIDE the rectangle, which is also where
+              the render puts it: the outer half of the centred stroke is clipped
+              away by the print's own box, so what survives lies inside the edge.
+
+              Thickness is in cqw so it is honestly fw% OF THE PREVIEW'S WIDTH,
+              the same share of frame width the render uses — not a px guess that
+              drifts as the panel changes width. */}
+          <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 9', borderRadius: 6, overflow: 'hidden', background: '#000', marginTop: 6, containerType: 'inline-size' }}>
             <img src="/style-refs/framed_box_plain.jpg" alt=""
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            <div style={{ position: 'absolute', left: '10.2%', top: '13.7%', width: '79.6%', height: '72.6%',
-              boxSizing: 'border-box', border: fw <= 0 ? 'none' : `${Math.max(1, fw * 2.6)}px solid ${fc}` }} />
+            <div style={{ position: 'absolute', left: '8.75%', top: '9.17%', width: '82.50%', height: '75.28%',
+              boxSizing: 'border-box', border: fw <= 0 ? 'none' : `${fw}cqw solid ${fc}` }} />
           </div>
         </div>
         <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>
