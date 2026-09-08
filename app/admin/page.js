@@ -1811,6 +1811,7 @@ export default function AdminPage() {
                   }}>
                     <option value="default">Style default</option>
                     <option value="green">Green screen (keyable)</option>
+                    <option value="photoblur">Blurred blow-up of each photo</option>
                     <option value="soft_focus">Texture — Soft-focus (animated)</option>
                     <option value="linen">Texture — Cream linen (animated)</option>
                     <option value="gradient">Texture — Gradient wash (animated)</option>
@@ -1895,6 +1896,14 @@ export default function AdminPage() {
                       </div>
                     );
                   })()}
+                  {seg.bgMode === 'photoblur' && (
+                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--muted)' }}>
+                      <span>Blur</span>
+                      <input type="range" min="0" max="60" value={parseInt(seg.bgBlur || '32', 10)} onChange={(e) => apply({ bgBlur: e.target.value })} />
+                      <span>{parseInt(seg.bgBlur || '32', 10)}</span>
+                      <span style={{ fontSize: 11 }}>32 is the Framed Box measurement.</span>
+                    </div>
+                  )}
                   {seg.bgMode === 'image' && (
                     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <input type="text" placeholder="Background image URL" value={seg.bgUrl || ''} onChange={(e) => apply({ bgUrl: e.target.value })} style={{ width: '100%' }} />
@@ -1943,7 +1952,11 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                    Default keeps the style’s own backdrop. Green screen is keyable. An imported image or video
+                    Default keeps the style’s own backdrop. Green screen is keyable. Blurred blow-up puts a
+                    soft, enlarged copy of each photo behind itself, changing on every cut — it is Framed Box’s
+                    bed, and it works on Hollywood, Timeless, the Party family, Basic cut, Photo Slide, Sliding
+                    Images, Multi Slide, Neon Frame and the Duotones. The wall styles cover the frame with their
+                    own beds, so it renders but is never seen there. An imported image or video
                     sits behind everything, tinted. Backgrounds apply to the one-at-a-time styles, Story Builder,
                     Polaroid/Photo Drop and the slide family — the wall styles (Collage, Epic, Trendy, Gallery,
                     Multi Page) supply their own backdrop and ignore this.
@@ -2434,6 +2447,8 @@ export default function AdminPage() {
             greenScreen: s.green !== false,
             background: s.bgMode === 'green'
               ? { green: true }
+              : s.bgMode === 'photoblur'
+                ? { photoBlur: true, blur: bgBlurOf(s) }
               : ['soft_focus', 'linen', 'gradient'].includes(s.bgMode)
                 ? { texture: s.bgMode, animated: true }
                 : (s.bgMode === 'library' && s.bgKey)

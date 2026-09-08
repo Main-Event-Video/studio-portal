@@ -57,6 +57,10 @@ export async function POST(request) {
   const bgControl = (background && typeof background === 'object')
     ? {
         green: !!background.green,
+        // Blurred blow-up of EACH photo (the Framed Box bed, offered to every
+        // style that can show a backdrop). Not a single layer like the others —
+        // the engine builds it as a per-shot sequence.
+        photoBlur: !!background.photoBlur,
         // built-in texture (name only; URL resolved at render time from siteUrl)
         texture: (background.texture && TEXTURES[background.texture]) ? String(background.texture) : null,
         animated: background.animated !== false,   // textures drift by default
