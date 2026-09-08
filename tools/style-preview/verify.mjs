@@ -269,6 +269,22 @@ console.log(`Duotone: ${Object.keys(DUO_PALETTES).length} palettes x ${Object.ke
     for (const e of src.elements.filter((x) => /^OvlNeon/.test(x.name || ''))) {
       arcs++;
       const w = parseFloat(e.width), x = parseFloat(e.x), y = parseFloat(e.y);
+      // Creatomate REQUIRES stroke_start/stroke_end in 0-100 and rejects the
+      // whole render otherwise. The trim used to be start + length with start
+      // drawn from the full range, so any start above ~0.72 produced an end
+      // past 100 — five arcs in thirty, so it survived several renders before
+      // a seed happened to hit it. Range-check every one.
+      for (const k2 of ['stroke_start', 'stroke_end', 'stroke_offset']) {
+        const raw = e[k2];
+        const vals = Array.isArray(raw) ? raw.map((kf) => kf.value) : [raw];
+        for (const v of vals) {
+          const num = parseFloat(v);
+          if (v !== undefined && (!Number.isFinite(num) || num < -100 || num > 100)) {
+            console.log(`FAIL ${style}: ${e.name} ${k2}=${v} is outside what Creatomate accepts`);
+            fail++;
+          }
+        }
+      }
       const edges = [x - w / 2, x + w / 2, y - w / 2, y + w / 2];
       if (!edges.some((v) => v >= 0 && v <= 100)) {
         offscreen++;
