@@ -297,4 +297,36 @@ console.log(`Duotone: ${Object.keys(DUO_PALETTES).length} palettes x ${Object.ke
   console.log(`Neon: ${rings} rings checked across 6 styles, ${offbox} off their shot box, ${ranges} out of range.`);
 }
 
+// UNITS. Creatomate validates these and rejects the WHOLE render on one bad
+// value — a montage was lost to `Shape.z_rotation: Expected a number ending
+// with \u00B0` because two new elements were written with CSS's "deg" instead of
+// the degree symbol every other z_rotation in the engine already used. Nothing
+// caught it: it parses, it builds, it collides with nothing, and it only fails
+// at Creatomate. Cheap to assert, so assert it everywhere.
+{
+  let checked = 0, wrong = 0;
+  for (const style of Object.keys(STYLES)) {
+    const photos = manifest.map((m) => ({ type: 'photo', url: `https://x/${m.file}`, framing: 'top', fit: null, size: 100, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null, w: m.w, h: m.h }));
+    const src = buildMontageSource({ items: photos, style, title: 'U', watermarkUrl: null, includeCards: false, greenBookends: false, photoSeconds: 2, width: 1920, height: 1080, assetBase: 'https://x', atmosphereOpts: { on: true }, neonOpts: { on: true, intensity: 300, colors: ['#00E5FF', '#FF2D95'] } });
+    const walk = (node) => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) { node.forEach(walk); return; }
+      if (node.z_rotation !== undefined) {
+        const vals = Array.isArray(node.z_rotation) ? node.z_rotation.map((k) => k.value) : [node.z_rotation];
+        for (const v of vals) {
+          checked++;
+          if (typeof v === 'string' && !/\u00B0$/.test(v)) {
+            wrong++;
+            if (wrong < 4) console.log(`FAIL ${style}: z_rotation ${JSON.stringify(v)} must end with \u00B0, not deg`);
+          }
+        }
+      }
+      Object.values(node).forEach(walk);
+    };
+    walk(src.elements);
+  }
+  fail += wrong;
+  console.log(`Units: ${checked} z_rotation values checked across all styles, ${wrong} wrong.`);
+}
+
 console.log(fail === 0 ? `\nALL ${Object.keys(STYLES).length} STYLES OK (9 modes each)` : `\n${fail} failures`);
