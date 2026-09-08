@@ -122,15 +122,32 @@ export async function GET(request) {
 
   // ---- default mode: the client's whole timeline (unchanged) ----
   if (!clientId) return NextResponse.json({ error: 'Missing clientId' }, { status: 400 });
-  const { media: data, error } = await orderedClientMedia(db, clientId, { imagesOnly: true });
+  // Videos come back too now. Josh: "I need to be able to see where the video
+  // goes." They are not IN the montage as footage, but their slot is — each one
+  // becomes a chroma-green gap at exactly this position in the export — so
+  // hiding them here hid the only thing that tells him where those gaps land.
+  const { media: data, error } = await orderedClientMedia(db, clientId);
   if (error) return NextResponse.json({ error: 'Could not load photos', detail: error.message }, { status: 500 });
 
   // Stable per-photo import numbers (001, 002 …) — permanent reference ids.
   const impSeq = await importSeqMap(db, clientId);
 
+  // THE PHOTO NUMBER MUST NOT COUNT VIDEOS. `index` is not decoration — it is the
+  // key the montage's photo selection is written in ("1-20,25"), so a video
+  // taking a number would silently shift every selection past it. Photos keep an
+  // unbroken 1..N; a video carries no number at all.
+  let photoNo = 0;
   const photos = await Promise.all(
-    (data || []).slice(0, 500).map(async (m, i) => ({
-      index: i + 1,
+    (data || []).slice(0, 500).map(async (m, i) => {
+      const isVideo = !(m.content_type || '').startsWith('image/');
+      if (!isVideo) photoNo += 1;
+      return {
+      index: isVideo ? null : photoNo,
+      video: isVideo,
+      // Position in the client's timeline. The admin keeps photos and videos in
+      // SEPARATE lists (see loadProjPhotos) so nothing that counts photos is
+      // disturbed, and merges them by this for display only.
+      ord: i,
       id: m.id,
       key: m.r2_key,
       filename: m.filename,
@@ -139,12 +156,13 @@ export async function GET(request) {
       // The client's own crop, if they made one. The strip SHOWS the cropped
       // version — it is what the montage will use — and carries the flag so the
       // tile can badge it and the editor can offer the full frame back.
-      clientCrop: !!m.crop_key,
+      clientCrop: !isVideo && !!m.crop_key,
       cropRatio: (m.crop_rect && m.crop_rect.ratio) || null,
-      url: await getViewUrl(m.crop_key || m.r2_key, 3600),
-      originalUrl: m.crop_key ? await getViewUrl(m.r2_key, 3600) : null,
+      url: await getViewUrl((!isVideo && m.crop_key) || m.r2_key, 3600),
+      originalUrl: (!isVideo && m.crop_key) ? await getViewUrl(m.r2_key, 3600) : null,
       downloadUrl: await getDownloadUrl(m.r2_key, m.filename, 3600),
-    }))
+      };
+    })
   );
   return NextResponse.json({ photos });
 }

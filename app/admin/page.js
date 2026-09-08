@@ -717,6 +717,12 @@ export default function AdminPage() {
   const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF' });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
+  // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
+  // that array as "the photos" — counts, the 1..N selection maths, the prev/next
+  // arrows, "Photo 4 of 30" — and a video sitting in it would quietly wrong
+  // every one of them. They live here and are merged back only where they are
+  // drawn, by their timeline position.
+  const [projVideos, setProjVideos] = useState([]);
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
   const [projPhotosLoading, setProjPhotosLoading] = useState(false);
   const [showRef, setShowRef] = useState(false);         // numbered reference strip
@@ -1296,7 +1302,8 @@ export default function AdminPage() {
     setProjPhotosLoading(true);
     try {
       const { photos } = await api(`/api/admin/montage/photos?clientId=${clientId}`);
-      setProjPhotos(photos || []);
+      setProjPhotos((photos || []).filter((p) => !p.video));
+      setProjVideos((photos || []).filter((p) => p.video));
       setProjPhotosClientId(clientId);
       // Refresh + warm the cached full order (so the first drag is instant too).
       fullOrderRef.current = null; fullOrderClientRef.current = null;
@@ -3447,6 +3454,30 @@ export default function AdminPage() {
           };
 
           // One thumbnail cell.
+          // A VIDEO IN THE GRID. Not draggable, not editable, no photo number —
+          // it is a marker, not a photo. The dashed outline is the same chroma
+          // green the gap actually renders as, so the marker and the thing it
+          // stands for look like each other. Its position comes from the
+          // client's timeline; this screen shows that order, it does not set it.
+          const videoCell = (p) => (
+            <div key={`t:${p.key || p.id}`} title={`${p.filename} — a green gap will be left here for you to key this clip into`}
+              style={{ border: '2px dashed #00b140', borderRadius: 8, overflow: 'hidden', position: 'relative',
+                background: 'repeating-linear-gradient(135deg,#0d1a12,#0d1a12 8px,#0a140e 8px,#0a140e 16px)' }}>
+              <div style={{ position: 'relative', aspectRatio: '16 / 9', display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                <span style={{ fontSize: 22, color: '#00b140', lineHeight: 1 }}>{'\u25B6'}</span>
+                <span style={{ fontSize: 10, color: '#9fb8a8', maxWidth: '92%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.filename}</span>
+                <span style={{ fontSize: 10, color: '#00b140' }}>green gap here</span>
+              </div>
+              <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 9, letterSpacing: '.06em',
+                background: 'rgba(0,177,64,0.14)', color: '#00b140', border: '1px solid rgba(0,177,64,0.5)',
+                padding: '1px 5px', borderRadius: 4 }}>VIDEO</span>
+              {p.importSeq != null && <span title={`Import #${String(p.importSeq).padStart(3, '0')} — permanent reference number`}
+                style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 10, fontWeight: 900, letterSpacing: '.3px',
+                  background: '#f5a623', color: '#241700', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>
+                {String(p.importSeq).padStart(3, '0')}</span>}
+            </div>
+          );
           const photoCell = (p) => {
             const pe = { ...defE, ...(photoEdits.photos[p.key] || {}) };
             const isSel = p.key === selKey;
@@ -3487,7 +3518,13 @@ export default function AdminPage() {
           // Group the montage photos into their albums (contiguous runs in play
           // order) so the editor shows squared-off album sections, not one flat grid.
           const groups = [];
-          projPhotos.forEach((p) => {
+          // Photos and videos back in one order for DISPLAY only. `ord` is the
+          // client's timeline position, which is exactly where the export puts
+          // each video's green gap — so what he sees here is where the gap lands.
+          const withVideos = projVideos.length
+            ? [...projPhotos, ...projVideos].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0))
+            : projPhotos;
+          withVideos.forEach((p) => {
             const a = p.album || '';
             let g = groups.length && groups[groups.length - 1].album === a ? groups[groups.length - 1] : null;
             if (!g) { g = { album: a, photos: [] }; groups.push(g); }
@@ -3605,9 +3642,9 @@ export default function AdminPage() {
             );
           };
           const renderCells = (photos) => photos.map((p) => (
-            <Fragment key={`c:${p.key || p.index}`}>
-              {photoCell(p)}
-              {p.key === selKey && editorPanel(p)}
+            <Fragment key={`c:${p.key || p.id || p.index}`}>
+              {p.video ? videoCell(p) : photoCell(p)}
+              {!p.video && p.key === selKey && editorPanel(p)}
             </Fragment>
           ));
 
@@ -3660,7 +3697,17 @@ export default function AdminPage() {
                           <span aria-hidden="true" style={{ fontSize: 11, color: 'var(--muted)', width: 10, display: 'inline-block' }}>{collapsed ? '\u25b8' : '\u25be'}</span>
                           {isAlbum && <span style={{ width: 10, height: 10, borderRadius: 3, background: '#7c5cff', flex: '0 0 auto' }} />}
                           <strong style={{ fontSize: 13 }}>{isAlbum ? g.album : 'Loose photos'}</strong>
-                          <span style={{ color: 'var(--muted)', fontSize: 12, fontWeight: 400 }}>{g.photos.length} photo{g.photos.length === 1 ? '' : 's'}</span>
+                          {/* Count the photos, not the cells — a video in this
+                              album is a marker, not one of its photos. */}
+                          {(() => {
+                            const np = g.photos.filter((x) => !x.video).length;
+                            const nv = g.photos.length - np;
+                            return (
+                              <span style={{ color: 'var(--muted)', fontSize: 12, fontWeight: 400 }}>
+                                {np} photo{np === 1 ? '' : 's'}{nv ? ` · ${nv} video${nv === 1 ? '' : 's'}` : ''}
+                              </span>
+                            );
+                          })()}
                         </button>
                         {albumBorderPanel(g.album)}
                       </div>
