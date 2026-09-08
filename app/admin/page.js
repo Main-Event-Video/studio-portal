@@ -2156,7 +2156,7 @@ export default function AdminPage() {
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
               <span style={{ minWidth: 66 }}>Intensity</span>
-              <input type="range" min="0" max="200" step="5" value={parseInt(seg.neonI ?? 100, 10)} style={{ flex: 1, minWidth: 0 }}
+              <input type="range" min="0" max="300" step="10" value={parseInt(seg.neonI ?? 100, 10)} style={{ flex: 1, minWidth: 0 }}
                 onChange={(ev) => set({ neonI: Number(ev.target.value) })} />
               <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg.neonI ?? 100, 10)}%</span>
             </div>
@@ -2191,11 +2191,11 @@ export default function AdminPage() {
                   : 'one colour'}
               </span>
             </div>
-            <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>
-              Short arcs of light sweeping across the frame, three at a time, in the gaps between green.
-              Same path-trimming as Neon Frame&rsquo;s travelling light. <span style={{ color: '#f5a623' }}>Unproven
-              by a render</span> — the effect has never been seen, only built.
-            </p>
+            <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>A light runs the edge of each photograph, travelling with it.
+              <br />
+              <strong>100% is the look you have already seen</strong> — the headroom is above it. Turning it up
+              makes the tube thicker, adds a second, third and fourth light to each picture (each its own colour
+              from those below) and sends them round faster. 300% is four lights, double thickness, three laps.</p>
           </>
         )}
       </div>
