@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabaseAdmin';
 import { getClientByToken } from '@/lib/portal';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
 import { getObjectBuffer, putFile, deleteFile } from '@/lib/r2';
-import { isHeic, convertHeicToJpeg, toJpgName, toJpgKey } from '@/lib/heic';
+import { isHeic, anyImageToJpeg, toJpgName, toJpgKey } from '@/lib/heic';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,7 +43,16 @@ export async function POST(request) {
   if (isHeic({ filename, contentType })) {
     try {
       const heicBuf = await getObjectBuffer(key);
-      const jpegBuf = await convertHeicToJpeg(heicBuf);
+      // SNIFF THE BYTES, do not trust the extension. This used to call
+      // convertHeicToJpeg, which hands everything to the HEIC decoder and throws
+      // on anything that is not really HEIC — so a photo NAMED .heic that is
+      // actually a JPEG (phones and share-sheets do this) failed here, kept its
+      // original, and turned up in the admin as an unpreviewable grey tile.
+      //
+      // The convert-heic backfill has always used the sniffing path and rescued
+      // exactly those files, which meant the upload path was strictly weaker
+      // than the repair tool for no reason. Now they agree.
+      const jpegBuf = await anyImageToJpeg(heicBuf);
       const jpgKey = toJpgKey(key);
       await putFile(jpgKey, jpegBuf, 'image/jpeg');
       // Replace: drop the HEIC original now that the JPEG is safely stored.
@@ -55,7 +64,8 @@ export async function POST(request) {
       converted = true;
     } catch (e) {
       // Conversion failed — KEEP the original HEIC rather than lose the photo.
-      // It'll show as an unpreviewable tile, but nothing is destroyed.
+      // It'll show as an unpreviewable tile, but nothing is destroyed, and the
+      // convert-heic backfill can be re-run over it later.
       console.error('HEIC conversion failed for', key, e?.message || e);
     }
   }
