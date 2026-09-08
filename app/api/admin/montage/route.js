@@ -125,6 +125,9 @@ export async function POST(request) {
       saturation: Number.isFinite(Number(e.saturation)) ? Math.min(200, Math.max(0, Math.round(Number(e.saturation)))) : 100,
       posX: Number.isFinite(Number(e.posX)) ? Number(e.posX) : null,
       posY: Number.isFinite(Number(e.posY)) ? Number(e.posY) : null,
+      // Josh's per-montage escape from a client's crop, for a look that needs the
+      // full frame. Deliberately NOT a change to what the client saved.
+      useOriginal: e.useOriginal === true,
       // Album border vs per-photo border, most recently set one wins. Resolved
       // here (not in the engine) so the stored render snapshot carries the border
       // that was actually chosen at this moment — an Export Final months later
@@ -135,7 +138,15 @@ export async function POST(request) {
   const photoObj = (k) => {
     const e = editFor(k);
     const adj = adjustments && adjustments[k] != null ? adjustments[k] : undefined; // number 0 (slider top) must survive
-    return { type: 'photo', r2_key: k, framing: adj != null ? adj : e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect, mode: e.mode, contrast: e.contrast, saturation: e.saturation, posX: e.posX, posY: e.posY, border: borderIsOn(e.border) ? e.border : null };
+    // THE CLIENT'S CROP, and Josh's per-montage escape from it. When the client
+    // has cropped a photo the montage uses their version — "the montage knows to
+    // keep it as is" — unless this montage says otherwise. The override lives in
+    // the per-montage edit, so switching back to the full frame for one look
+    // never touches what the client saved.
+    const cropKey = cropByKey.get(k) || null;
+    const useCrop = cropKey && e.useOriginal !== true;
+    return { type: 'photo', r2_key: useCrop ? cropKey : k, sourceKey: k, clientCropped: !!cropKey, usingCrop: !!useCrop,
+      framing: adj != null ? adj : e.anchor, fit: e.fit, size: e.size, colorCorrect: e.colorCorrect, mode: e.mode, contrast: e.contrast, saturation: e.saturation, posX: e.posX, posY: e.posY, border: borderIsOn(e.border) ? e.border : null };
   };
 
   // Full timeline (photos + videos) in play order. Photos define the 1..N
@@ -144,6 +155,9 @@ export async function POST(request) {
   const { items: timelineItems, error: mErr } = await orderedClientTimeline(db, clientId);
   if (mErr) return NextResponse.json({ error: 'Could not load media', detail: mErr.message }, { status: 500 });
   for (const m of timelineItems || []) albumByKey.set(m.r2_key, m.folder_path || null);
+  // Which photos the client cropped, and where that crop lives.
+  const cropByKey = new Map();
+  for (const m of timelineItems || []) if (m.crop_key) cropByKey.set(m.r2_key, m.crop_key);
   const photosAll = (timelineItems || []).filter((m) => (m.content_type || '').startsWith('image/') && !isHeic({ filename: m.filename, contentType: m.content_type }));
   if (photosAll.length < 1) {
     return NextResponse.json(

@@ -3275,7 +3275,9 @@ export default function AdminPage() {
                   onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag}
                   style={{ position: 'relative', width: '100%', maxWidth: 720, margin: '0 auto', aspectRatio: '16 / 9', background: '#000', borderRadius: 10, overflow: 'hidden', containerType: 'size', cursor: e.fit === 'fill' ? 'grab' : 'default' }}
                 >
-                  <img src={selP.url} alt={selP.filename} draggable={false} onLoad={noteDims(selP.key)} style={{ width: '100%', height: '100%', userSelect: 'none', ...styleFor(e) }} />
+                  <img src={(selP.clientCrop && e.useOriginal && selP.originalUrl) ? selP.originalUrl : selP.url}
+                    alt={selP.filename} draggable={false} onLoad={noteDims(selP.key)}
+                    style={{ width: '100%', height: '100%', userSelect: 'none', ...styleFor(e) }} />
                   {borderOverlay(selP, e)}
                   {arrow(-1, idx <= 0)}
                   {arrow(1, idx >= projPhotos.length - 1)}
@@ -3284,6 +3286,29 @@ export default function AdminPage() {
                     {e.fit === 'fill' ? 'Fill — drag the photo to position it' : 'Fit — whole photo, nothing cropped'}
                   </span>
                 </div>
+                {/* THE CLIENT CROPPED THIS ONE. Josh wanted to know before he
+                    starts reframing it — "so that I know not to change it and the
+                    montage knows to keep it as is" — with a way out for a look
+                    that needs the full frame. The override is PER MONTAGE: it
+                    never touches what the client saved, so their crop is still
+                    there for the next one. */}
+                {selP.clientCrop && (
+                  <div style={{ maxWidth: 720, margin: '12px auto 0', border: '1px solid rgba(255,212,121,0.45)',
+                    background: 'rgba(255,212,121,0.07)', borderRadius: 9, padding: '9px 12px' }}>
+                    <div style={{ fontSize: 12, color: '#ffd479', fontWeight: 600 }}>
+                      Cropped by the client{selP.cropRatio ? ` to ${selP.cropRatio}` : ''}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
+                      <button type="button" className={!e.useOriginal ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 10px', fontSize: 11 }}
+                        onClick={() => editPhoto(c.id, selP.key, { useOriginal: false })}>Use their crop</button>
+                      <button type="button" className={e.useOriginal ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 10px', fontSize: 11 }}
+                        onClick={() => editPhoto(c.id, selP.key, { useOriginal: true })}>Use the full original</button>
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                        This montage only — their crop is untouched.
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', maxWidth: 720, margin: '12px auto 0', fontSize: 12, color: 'var(--muted)' }}>
                   <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Framing
                     {['top', 'center', 'bottom'].map((a) => (
@@ -3376,6 +3401,18 @@ export default function AdminPage() {
                 <span style={{ position: 'absolute', top: 4, left: 4, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 6px', borderRadius: 5 }}>{p.index}</span>
                 {p.importSeq != null && <span title={`Import #${String(p.importSeq).padStart(3, '0')} — permanent reference number`} style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 10, fontWeight: 900, letterSpacing: '.3px', background: '#f5a623', color: '#241700', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(p.importSeq).padStart(3, '0')}</span>}
                 {pe.removed && <span style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 9, background: '#e23b3b', color: '#fff', padding: '1px 5px', borderRadius: 4 }}>removed</span>}
+                {/* TOP RIGHT is the only free corner: top-left is the play-order
+                    number, bottom-left the permanent import number, bottom-right
+                    the removed tag. Josh: "careful 'client crop' does not overlap
+                    the number system on the bottom left". */}
+                {p.clientCrop && (
+                  <span title={`Cropped by the client${p.cropRatio ? ` to ${p.cropRatio}` : ''} — the montage uses their framing`}
+                    style={{ position: 'absolute', top: 4, right: 4, fontSize: 9, letterSpacing: '.07em',
+                      background: 'rgba(8,10,14,0.82)', color: '#ffd479', border: '1px solid rgba(255,212,121,0.5)',
+                      padding: '2px 5px', borderRadius: 4 }}>
+                    CLIENT CROP
+                  </span>
+                )}
               </div>
             );
           };

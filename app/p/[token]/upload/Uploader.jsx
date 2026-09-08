@@ -221,6 +221,14 @@ export default function Uploader({ token }) {
   const [tl, setTl] = useState([]);            // [{type:'media',item} | {type:'album',name,items}]
   const [picked, setPicked] = useState(null);  // { scope:'top'|'album', album, id, kind:'media'|'album' }
   const [zoomIdx, setZoomIdx] = useState(2);
+  // The crop editor: which photo is open, the box in 0..1 of the ORIGINAL photo,
+  // and which of the two allowed shapes it is locked to.
+  const [cropOn, setCropOn] = useState(null);          // the media row being cropped
+  const [cropBox, setCropBox] = useState({ x: 0, y: 0, w: 1, h: 1 });
+  const [cropRatio, setCropRatio] = useState(16 / 9);
+  const [cropBusy, setCropBusy] = useState(false);
+  const cropImgRef = useRef(null);
+  const cropDragRef = useRef(null);
   const [openAlbums, setOpenAlbums] = useState(() => new Set());
   const [libOpen, setLibOpen] = useState(false);       // Photo Library grid
   const libDragRef = useRef(null);                      // { scope, id }
@@ -807,6 +815,91 @@ export default function Uploader({ token }) {
     );
   }
 
+  // ---- crop ---------------------------------------------------------------
+  // Josh: "Double click it opens - drag to expand kinda thing", "keep original",
+  // and only 9:16 or 16:9 — "that will save us a lot of hassle in the long run".
+  // Those two are also the only shapes where what the client frames is what
+  // reaches the screen: 16:9 fills the film exactly and 9:16 is kept whole by
+  // the styles that hold tall photos tall. Any other shape gets re-cropped by
+  // the engine, so their framing would be quietly undone.
+  function openCrop(m) {
+    const saved = m.cropRect && Number.isFinite(Number(m.cropRect.w)) ? m.cropRect : null;
+    setCropRatio(saved && saved.ratio === '9:16' ? 9 / 16 : 16 / 9);
+    setCropBox(saved ? { x: Number(saved.x), y: Number(saved.y), w: Number(saved.w), h: Number(saved.h) } : { x: 0, y: 0, w: 1, h: 1 });
+    setCropOn(m);
+  }
+  // Fit the biggest box of `ratio` inside the photo. The photo is DISPLAYED at
+  // its own aspect, so a shape expressed in fractions of the display is not the
+  // same shape in pixels — every conversion below divides through by the image's
+  // aspect, or a "16:9" crop comes out 16:9 of the wrong thing.
+  function cropFit(ratio) {
+    const el = cropImgRef.current;
+    const a = el && el.naturalWidth && el.naturalHeight ? el.naturalWidth / el.naturalHeight : 1;
+    let w = 1;
+    let h = a / ratio;
+    if (h > 1) { h = 1; w = ratio / a; }
+    setCropBox({ x: (1 - w) / 2, y: (1 - h) / 2, w, h });
+  }
+  function cropPoint(ev, el) {
+    const r = el.getBoundingClientRect();
+    const t = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+    return { x: (t.clientX - r.left) / r.width, y: (t.clientY - r.top) / r.height };
+  }
+  function cropDown(ev, mode) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const stage = ev.currentTarget.closest('[data-cropstage]');
+    if (!stage) return;
+    cropDragRef.current = { mode, start: cropPoint(ev, stage), from: { ...cropBox }, stage };
+  }
+  function cropMove(ev) {
+    const d = cropDragRef.current;
+    if (!d) return;
+    ev.preventDefault();
+    const el = cropImgRef.current;
+    const a = el && el.naturalWidth && el.naturalHeight ? el.naturalWidth / el.naturalHeight : 1;
+    const p = cropPoint(ev, d.stage);
+    const dx = p.x - d.start.x;
+    const dy = p.y - d.start.y;
+    const o = d.from;
+    const cl = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const MIN = 0.1;
+    let b;
+    if (d.mode === 'move') {
+      b = { ...o, x: cl(o.x + dx, 0, 1 - o.w), y: cl(o.y + dy, 0, 1 - o.h) };
+    } else {
+      let l = o.x; let t = o.y; let r = o.x + o.w; let bt = o.y + o.h;
+      if (d.mode.includes('w')) l = cl(o.x + dx, 0, r - MIN);
+      if (d.mode.includes('e')) r = cl(o.x + o.w + dx, l + MIN, 1);
+      if (d.mode.includes('n')) t = cl(o.y + dy, 0, bt - MIN);
+      if (d.mode.includes('s')) bt = cl(o.y + o.h + dy, t + MIN, 1);
+      b = { x: l, y: t, w: r - l, h: bt - t };
+      // Re-lock to the chosen shape, then pull it back inside the photo.
+      if (d.mode.includes('e') || d.mode.includes('w')) b.h = b.w * a / cropRatio;
+      else b.w = b.h * cropRatio / a;
+      if (b.w > 1) { b.w = 1; b.h = b.w * a / cropRatio; }
+      if (b.h > 1) { b.h = 1; b.w = b.h * cropRatio / a; }
+      b.x = cl(b.x, 0, 1 - b.w);
+      b.y = cl(b.y, 0, 1 - b.h);
+    }
+    setCropBox(b);
+  }
+  function cropUp() { cropDragRef.current = null; }
+  async function saveCrop() {
+    if (!cropOn) return;
+    setCropBusy(true);
+    await organize({ action: 'crop', id: cropOn.id, rect: cropBox, ratio: cropRatio < 1 ? '9:16' : '16:9' });
+    setCropBusy(false);
+    setCropOn(null);
+  }
+  async function clearCrop() {
+    if (!cropOn) return;
+    setCropBusy(true);
+    await organize({ action: 'uncrop', id: cropOn.id });
+    setCropBusy(false);
+    setCropOn(null);
+  }
+
   function mediaCard(m, num, scope, album) {
     const isVideo = (m.contentType || '').startsWith('video');
     const isPk = picked && picked.scope === scope && (picked.album || null) === (album || null) && picked.id === m.id;
@@ -818,6 +911,7 @@ export default function Uploader({ token }) {
         onDragStart={(e) => { try { e.dataTransfer.setData('text/plain', m.id); e.dataTransfer.effectAllowed = 'move'; } catch { /* older browsers */ } setPicked({ scope, album: album || null, id: m.id, kind: 'media' }); }}
         onDragEnd={() => setPicked((c) => (c && c.id === m.id ? null : c))}
         onClick={(e) => { e.stopPropagation(); pickToggle({ scope, album: album || null, id: m.id, kind: 'media' }); }}
+        onDoubleClick={(e) => { if (mediaKind(m) === 'image') { e.stopPropagation(); openCrop(m); } }}
       >
         <div className="thumb">
           {(() => {
@@ -830,6 +924,12 @@ export default function Uploader({ token }) {
         </div>
         <span className="num">{num}</span>
         {m.importSeq != null && <span className="impno" title={`Import #${String(m.importSeq).padStart(3, '0')} — this photo’s permanent reference number`}>{String(m.importSeq).padStart(3, '0')}</span>}
+        {m.cropRect && (
+          <span title="You cropped this photo — double-click to change it"
+            style={{ position: 'absolute', bottom: 6, right: 6, zIndex: 6, fontSize: 9, letterSpacing: '.06em',
+              background: 'rgba(8,10,14,.82)', color: '#ffd479', border: '1px solid rgba(255,212,121,.5)',
+              padding: '2px 5px', borderRadius: 4 }}>CROPPED</span>
+        )}
         <button
           type="button"
           title="Delete this photo"
@@ -1302,6 +1402,76 @@ export default function Uploader({ token }) {
             <p style={{ margin: '14px 0 8px', fontSize: 12.5, color: '#7f8b99' }}>We recommend a phone — but you can stay here:</p>
             <button type="button" onClick={() => { const q = 'token=' + encodeURIComponent(token) + (qrChar ? '&character=' + encodeURIComponent(qrChar) : ''); window.location.href = '/character-studio.html?' + q; }} style={{ width: '100%', padding: 12, borderRadius: 12, border: '1.5px solid #38b6ff', background: '#38b6ff', color: '#04210f', fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>Continue on this computer →</button>
             <button type="button" onClick={() => setQrChar(null)} style={{ marginTop: 10, width: '100%', padding: 10, borderRadius: 12, border: 'none', background: 'transparent', color: '#93a3b6', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* THE CROP EDITOR. Opens on double-click, drags to resize, locked to the
+          two shapes the films are built for. The photo shown is always the
+          ORIGINAL (originalUrl when a crop already exists), so a crop made too
+          tight can be widened again — that is the whole point of keeping it. */}
+      {cropOn && (
+        <div onClick={() => { if (!cropBusy) setCropOn(null); }}
+          style={{ position: 'fixed', inset: 0, zIndex: 9500, background: 'rgba(6,8,12,.88)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ background: '#11151c', color: '#e6e9ef', borderRadius: 14, padding: 16, maxWidth: 760, width: '100%' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Crop this photo</div>
+            <div style={{ fontSize: 12.5, color: '#8b94a3', marginBottom: 12 }}>
+              Drag the middle to move it, drag a corner to resize. Your original is kept — you can undo this any time.
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => { setCropRatio(16 / 9); cropFit(16 / 9); }}
+                style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                  border: cropRatio >= 1 ? '1px solid #38b6ff' : '1px solid #232a35',
+                  background: cropRatio >= 1 ? '#38b6ff' : 'transparent', color: cropRatio >= 1 ? '#04210f' : '#e6e9ef', fontWeight: 700 }}>16 : 9 wide</button>
+              <button type="button" onClick={() => { setCropRatio(9 / 16); cropFit(9 / 16); }}
+                style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                  border: cropRatio < 1 ? '1px solid #38b6ff' : '1px solid #232a35',
+                  background: cropRatio < 1 ? '#38b6ff' : 'transparent', color: cropRatio < 1 ? '#04210f' : '#e6e9ef', fontWeight: 700 }}>9 : 16 tall</button>
+            </div>
+
+            <div data-cropstage="1"
+              onMouseMove={cropMove} onMouseUp={cropUp} onMouseLeave={cropUp}
+              onTouchMove={cropMove} onTouchEnd={cropUp}
+              style={{ position: 'relative', width: '100%', maxHeight: '54vh', display: 'flex', justifyContent: 'center', userSelect: 'none', touchAction: 'none' }}>
+              <div style={{ position: 'relative', maxHeight: '54vh' }}>
+                <img ref={cropImgRef} src={cropOn.originalUrl || cropOn.url} alt={cropOn.filename} draggable={false}
+                  onLoad={() => { if (!(cropOn.cropRect && Number.isFinite(Number(cropOn.cropRect.w)))) cropFit(cropRatio); }}
+                  style={{ display: 'block', maxWidth: '100%', maxHeight: '54vh', borderRadius: 8 }} />
+                <div
+                  onMouseDown={(e) => cropDown(e, 'move')} onTouchStart={(e) => cropDown(e, 'move')}
+                  style={{ position: 'absolute', left: `${cropBox.x * 100}%`, top: `${cropBox.y * 100}%`,
+                    width: `${cropBox.w * 100}%`, height: `${cropBox.h * 100}%`, boxSizing: 'border-box',
+                    border: '2px solid #fff', boxShadow: '0 0 0 9999px rgba(6,8,12,.62)', cursor: 'move' }}>
+                  {['nw', 'ne', 'sw', 'se'].map((h) => (
+                    <span key={h}
+                      onMouseDown={(e) => cropDown(e, h)} onTouchStart={(e) => cropDown(e, h)}
+                      style={{ position: 'absolute', width: 18, height: 18, background: '#fff', borderRadius: 4,
+                        [h[0] === 'n' ? 'top' : 'bottom']: -9, [h[1] === 'w' ? 'left' : 'right']: -9,
+                        cursor: (h === 'nw' || h === 'se') ? 'nwse-resize' : 'nesw-resize' }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button type="button" disabled={cropBusy} onClick={saveCrop}
+                style={{ padding: '9px 16px', borderRadius: 10, border: 'none', background: '#38b6ff', color: '#04210f', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
+                {cropBusy ? 'Saving…' : 'Save crop'}
+              </button>
+              {cropOn.cropRect && (
+                <button type="button" disabled={cropBusy} onClick={clearCrop}
+                  style={{ padding: '9px 14px', borderRadius: 10, border: '1px solid #232a35', background: 'transparent', color: '#e6e9ef', fontSize: 13, cursor: 'pointer' }}>
+                  Back to the whole photo
+                </button>
+              )}
+              <button type="button" disabled={cropBusy} onClick={() => setCropOn(null)}
+                style={{ padding: '9px 14px', borderRadius: 10, border: 'none', background: 'transparent', color: '#93a3b6', fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -50,9 +50,15 @@ export async function GET(request) {
   // Prefer the full set (hidden filtered + timeline_pos). Fall back progressively
   // if a newer column isn't there yet (hidden_at → sql/013, timeline_pos →
   // sql/006) so the portal NEVER shows an empty list.
+  // crop_key/crop_rect are newer than timeline_pos, so they get their own rung on
+  // the ladder rather than sharing one — a portal missing the crop migration must
+  // not also lose timeline_pos, which would silently reorder the timeline.
+  const cropCols = 'id, filename, content_type, r2_key, kind, note, sort_number, folder_path, timeline_pos, created_at, crop_key, crop_rect';
   const fullCols = 'id, filename, content_type, r2_key, kind, note, sort_number, folder_path, timeline_pos, created_at';
   const baseCols = 'id, filename, content_type, r2_key, kind, note, sort_number, folder_path, created_at';
-  let { data, error } = await runQuery(fullCols, true);
+  let { data, error } = await runQuery(cropCols, true);
+  if (error) ({ data, error } = await runQuery(cropCols, false));
+  if (error) ({ data, error } = await runQuery(fullCols, true));
   if (error) ({ data, error } = await runQuery(fullCols, false));
   if (error) ({ data, error } = await runQuery(baseCols, false));
   if (error) {
@@ -86,7 +92,13 @@ export async function GET(request) {
         timelinePos: m.timeline_pos ?? null,
         importSeq: seq.byId.get(m.id) ?? null,
         createdAt: m.created_at,
-        url: await getViewUrl(m.r2_key, 3600),
+        // The client sees their own crop everywhere, because that is what the
+        // montage will use. originalUrl is what the crop editor re-opens, so
+        // they are always dragging over the WHOLE photo and can widen a crop
+        // they made too tight.
+        url: await getViewUrl(m.crop_key || m.r2_key, 3600),
+        originalUrl: m.crop_key ? await getViewUrl(m.r2_key, 3600) : null,
+        cropRect: m.crop_rect || null,
         ...(token ? { shareUrl: `${shareBase}/s/${token}` } : {}),
         ...(token && m.kind === 'final' ? { downloadUrl: `${url.origin}/api/portal/share/${token}?mode=download` } : {}),
       };

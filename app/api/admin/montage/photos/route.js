@@ -136,7 +136,13 @@ export async function GET(request) {
       filename: m.filename,
       album: m.folder_path || null,
       importSeq: impSeq.byKey.get(m.r2_key) ?? null,
-      url: await getViewUrl(m.r2_key, 3600),
+      // The client's own crop, if they made one. The strip SHOWS the cropped
+      // version — it is what the montage will use — and carries the flag so the
+      // tile can badge it and the editor can offer the full frame back.
+      clientCrop: !!m.crop_key,
+      cropRatio: (m.crop_rect && m.crop_rect.ratio) || null,
+      url: await getViewUrl(m.crop_key || m.r2_key, 3600),
+      originalUrl: m.crop_key ? await getViewUrl(m.r2_key, 3600) : null,
       downloadUrl: await getDownloadUrl(m.r2_key, m.filename, 3600),
     }))
   );
