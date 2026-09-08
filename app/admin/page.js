@@ -2191,18 +2191,42 @@ export default function AdminPage() {
                   : 'one colour'}
               </span>
             </div>
+            {/* THE GREEN-SCREEN CEILING. Josh asked for this to be said outright:
+                "can you add that instruction - what level this stops working on
+                greenscreen". It is 150%. Everything up to and including 150%
+                is drawn ON the photograph, so it survives the key. The echo
+                frames at 200%+ stand OUTSIDE it, and outside the photograph is
+                the chroma backdrop — so they key away with it and the setting
+                quietly does less than it says. Stated always, and lit up the
+                moment the slider is above it. */}
+            {(() => {
+              const over = parseInt(seg.neonI ?? 100, 10) >= 200;
+              return (
+                <div style={{
+                  marginTop: 9, padding: '7px 9px', borderRadius: 8, fontSize: 10.5, lineHeight: 1.45,
+                  border: `1px solid ${over ? 'rgba(245,166,35,0.55)' : 'var(--line)'}`,
+                  background: over ? 'rgba(245,166,35,0.10)' : 'transparent',
+                  color: over ? '#f5a623' : 'var(--muted)',
+                }}>
+                  <strong>Green screen: keep it at 150% or below.</strong>{' '}
+                  Everything up to 150% is drawn <em>on</em> the photograph, so it survives the key. The echo
+                  frames from 200% stand <em>outside</em> the photo — and outside the photo is your key colour,
+                  so they key away with it.
+                  {over && <> <br />You are at {parseInt(seg.neonI ?? 100, 10)}%. On a keyed montage the echoes
+                    will not make it through; everything else still will.</>}
+                </div>
+              );
+            })()}
             <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>A light runs the edge of each photograph, travelling with it.
               <br />
               <strong>100% is the look you have already seen.</strong> Above it the tube thickens, more lights
               join (each its own colour from those below) and they run faster.
               <br />
-              <strong>From 150%</strong> the tracing light stays, and a standing two-colour frame lights up
-              underneath it — so the highlight sweeps round a tube that is already burning. Short bars strike
-              on and off around the picture, and loose squiggles are drawn on between shots.
+              <strong>150%</strong> keeps the tracing light and lights a standing two-colour frame underneath it,
+              so the highlight sweeps round a tube that is already burning. Short bars strike on and off around
+              the picture, and loose squiggles are drawn on between shots.
               <br />
-              <span style={{ color: '#f5a623' }}>From 200%</span> echo frames stand off outside the photograph.
-              On a green-screen montage that area IS the key colour, so those echoes key away with it — they
-              are for montages finished over a dark or imported background.</p>
+              <strong>200% and up</strong> adds echo frames standing off outside the photograph.</p>
           </>
         )}
       </div>
