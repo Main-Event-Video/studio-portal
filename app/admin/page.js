@@ -741,6 +741,16 @@ export default function AdminPage() {
   const [newOpen, setNewOpen] = useState(false);
   // Archived clients live in their own row at the bottom, also closed each load.
   const [archOpen, setArchOpen] = useState(false);
+  // Which albums are showing filenames under their thumbnails. Josh: "just want
+  // to see occasional names" — so it is PER ALBUM, and it is a way of reading
+  // the screen rather than an edit: it never touches photoEdits, is not saved,
+  // and does not reach a render. Resets on load like the other folds.
+  const [nameAlbums, setNameAlbums] = useState(() => new Set());
+  const toggleNames = (k) => setNameAlbums((prev) => {
+    const next = new Set(prev);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
   // Sorting the client list. Josh: "allow me to sort the clients by Alphabetical
   // client name / Event Date / Last Upload", and "lets have event date be
   // default". Newest event first, which is exactly what one click on the Event
@@ -3512,6 +3522,14 @@ export default function AdminPage() {
                     CLIENT CROP
                   </span>
                 )}
+                {nameAlbums.has(albumKey(p.album)) && (
+                  <div title={p.filename}
+                    style={{ borderTop: '1px solid var(--line)', padding: '4px 5px', fontSize: 10,
+                      color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap',
+                      overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {p.filename}
+                  </div>
+                )}
               </div>
             );
           };
@@ -3606,6 +3624,36 @@ export default function AdminPage() {
                   opacity: on ? 1 : 0.7,
                 }} />
                 {open ? 'Done' : (on ? `Border ${b.w.toFixed(1)}` : 'Border')}
+              </button>
+            );
+          };
+
+          // Filenames. Josh: "just want to see occasional names" — so it is PER
+          // ALBUM and it is a way of READING the screen, not an edit: it never
+          // touches photoEdits, is not saved, and never reaches a render. It sits
+          // next to Border because that is where he asked for it, and it is
+          // deliberately the same pill shape so the two read as one pair.
+          const albumNamesPanel = (albumName) => {
+            const k = albumKey(albumName);
+            const on = nameAlbums.has(k);
+            return (
+              <button type="button" onClick={() => toggleNames(k)}
+                title={on ? 'Hide the file names' : 'Show each photo\u2019s file name under its thumbnail'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer',
+                  border: `1px solid ${on ? '#d8b56b' : 'var(--line)'}`,
+                  background: on ? 'rgba(216,181,107,0.16)' : 'transparent',
+                  color: on ? '#d8b56b' : 'var(--muted)',
+                }}>
+                <span aria-hidden="true" style={{
+                  width: 13, height: 13, borderRadius: 3, flex: '0 0 auto',
+                  border: '2px solid currentColor', opacity: on ? 1 : 0.7,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 9, lineHeight: 1, fontWeight: 900,
+                }}>{on ? '\u2713' : ''}</span>
+                Filenames
               </button>
             );
           };
@@ -3710,6 +3758,7 @@ export default function AdminPage() {
                           })()}
                         </button>
                         {albumBorderPanel(g.album)}
+                        {albumNamesPanel(g.album)}
                       </div>
                       {/* Shown even when collapsed: the Border button sits in the
                           header and stays clickable there, so hiding its panel
@@ -3731,6 +3780,7 @@ export default function AdminPage() {
                     <strong style={{ fontSize: 13 }}>All photos</strong>
                     <span style={{ color: 'var(--muted)', fontSize: 12 }}>{projPhotos.length} photo{projPhotos.length === 1 ? '' : 's'}</span>
                     {albumBorderPanel('')}
+                    {albumNamesPanel('')}
                   </div>
                   {albumBorderBody('')}
                   <div style={gridStyle}
