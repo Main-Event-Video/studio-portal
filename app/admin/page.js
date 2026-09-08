@@ -729,6 +729,34 @@ export default function AdminPage() {
   // Photo Editor (per-client): per-photo framing/fit/size/removed + global
   // colorCorrect. Persisted on the client row and applied to EVERY style render.
   const [photoEdits, setPhotoEdits] = useState({ photos: {}, colorCorrect: false, albumBorders: {} });
+  // New client folds away. It is the first thing on the page and rarely used, so
+  // open by default it pushed the client list down every single visit. Closed on
+  // every load, by Josh's choice — no remembered state.
+  const [newOpen, setNewOpen] = useState(false);
+  // Archived clients live in their own row at the bottom, also closed each load.
+  const [archOpen, setArchOpen] = useState(false);
+  // The one row that gathers every archived client. Rendered at the boundary
+  // between the live list and the archived tail, so it holds its place whether
+  // the fold is open or shut and the rows above it never move.
+  const archivedToggleRow = (arr) => {
+    const n = arr.filter((c) => c.archived).length;
+    return (
+      <tr key="__archived_toggle">
+        <td colSpan={6} style={{ background: 'rgba(255,46,76,0.04)' }}>
+          <button type="button" onClick={() => setArchOpen((v) => !v)} aria-expanded={archOpen}
+            style={{ background: 'transparent', border: '1px solid var(--red)', borderRadius: 999,
+              padding: '5px 14px', color: 'var(--red)', fontWeight: 700, fontSize: 12.5,
+              letterSpacing: '.05em', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span aria-hidden="true" style={{ fontSize: 11 }}>{archOpen ? '▾' : '▸'}</span>
+            ARCHIVED
+            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, letterSpacing: 0 }}>
+              {n} client{n === 1 ? '' : 's'}
+            </span>
+          </button>
+        </td>
+      </tr>
+    );
+  };
   // Which album's border panel is expanded in Edit Photos ('' = the loose photos).
   const [borderPanel, setBorderPanel] = useState(null);
   // Albums collapsed in Edit Photos, by album key. A long shoot is hundreds of
@@ -4276,8 +4304,19 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
 
       {!openClientId && (
       <section className="panel">
-        <h2 className="neon neon-red">New client</h2>
-        <form onSubmit={handleCreate}>
+        <button type="button" onClick={() => setNewOpen((v) => !v)} aria-expanded={newOpen}
+          style={{ background: 'transparent', border: '1px solid var(--red)', borderRadius: 999,
+            padding: '6px 16px', color: 'var(--red)', fontWeight: 800, fontSize: 13, letterSpacing: '.09em',
+            textTransform: 'uppercase', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+            textShadow: '0 0 8px rgba(255,46,76,.55)' }}>
+          <span aria-hidden="true" style={{ fontSize: 11 }}>{newOpen ? '▾' : '▸'}</span> New client
+        </button>
+        {/* The ticket — the one-time username/password and portal link — lives in
+            this section, so the fold has to stay OPEN while one is on screen or
+            creating a client would hide the credentials it just produced. That is
+            also why there is no auto-close after Create. */}
+        {(newOpen || ticket) && (<>
+        <form onSubmit={handleCreate} style={{ marginTop: 16 }}>
           <div className="grid-2">
             <div>
               <label htmlFor="display_name">Welcome name (shown on portal)</label>
@@ -4333,6 +4372,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             )}
           </dl>
         )}
+        </>)}
       </section>
       )}
 
@@ -4456,18 +4496,36 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 </tr>
               </thead>
               <tbody>
-                {clients.map((c) => {
+                {/* ARCHIVED CLIENTS GATHER INTO ONE ROW. They used to sit in the
+                    live list carrying a small pill, so a studio with a few years
+                    of past events had its working clients scattered among
+                    finished ones.
+                    ONE list, not two: the archived ones are simply ordered last
+                    and skipped while the fold is shut. Splitting the map would
+                    mean a second copy of the workspace row — the whole Montage
+                    Maker — and two places to keep in step. An archived client is
+                    MOVED, not limited; opening one gives the same workspace.
+                    Closed on every load — Josh: "reset to closed". */}
+                {[...clients.filter((c) => !c.archived), ...clients.filter((c) => c.archived)].map((c, ci, arr) => {
                   const isOpen = openClientId === c.id;
+                  const firstArchived = c.archived && (ci === 0 || !arr[ci - 1].archived);
+                  if (c.archived && !archOpen) {
+                    // Still emit the toggle at the boundary, or a shut fold would
+                    // have nothing to open it with.
+                    return firstArchived ? archivedToggleRow(arr) : null;
+                  }
                   return (
                     <FragmentRow key={c.id}>
+                      {firstArchived && archivedToggleRow(arr)}
                       <tr className={isOpen ? 'row-open' : undefined}>
-                        <td>
+                        <td style={c.archived ? { background: 'rgba(255,46,76,0.02)' } : undefined}>
                           <button
                             type="button"
                             className="name-pill"
                             onClick={() => openClient(c)}
                             aria-expanded={isOpen}
                             style={{
+                              ...(c.archived ? { opacity: 0.8 } : {}),
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: 6,
@@ -4573,6 +4631,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     </FragmentRow>
                   );
                 })}
+
               </tbody>
             </table>
           </div>
