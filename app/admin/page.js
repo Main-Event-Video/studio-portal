@@ -2755,7 +2755,10 @@ export default function AdminPage() {
     // running, and the numbers say what the engine emitted.
     const bTxt = ` Sent neon:${segments.some((x) => x.neonOn) ? 'on' : 'off'}`
       + ` dust:${segments.some((x) => x.atmoOn) ? 'on' : 'off'}`
-      + ` — built ${bSum.neon} neon / ${bSum.dust} dust / ${bSum.leak} leak elements.`;
+      + ` — built ${bSum.neon} neon / ${bSum.dust} dust / ${bSum.leak} leak elements.`
+      // MEvid Stills: a picked move that could not run (no cut-out yet, etc.)
+      // says so here instead of silently playing its fallback.
+      + builtAll.flatMap((b) => (Array.isArray(b.notes) ? b.notes : [])).map((s) => ` ⚠ ${s}`).join('');
     setMMsg(
       `Queued ${ok} render${ok === 1 ? '' : 's'}${errs.length ? ` — ${errs.length} failed: ${errs.join('; ')}` : ''}.${bTxt} ` +
         'They’ll appear below as Rendering, then Ready. Renders take a few minutes; use Refresh.'

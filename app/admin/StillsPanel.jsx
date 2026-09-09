@@ -14,8 +14,9 @@
 // do the LOOK settings the bar shares with every other style (sbMode / sbW /
 // sbColor for the print border, neonOn / neonI / neonT / neonColors /
 // neonExtras for the neon). Josh 9/9: on this page the border ALWAYS
-// overrides Edit Photos, so the choice is Off / Colour / Neon — never "use
-// Edit Photos".
+// overrides Edit Photos, so the choice is Off / Colour — never "use Edit
+// Photos" — and Neon is its own switch, so a mat and the light can be on
+// together (Josh 9/9: "allow a border and neon at the same time").
 //
 // The preview is a CSS approximation of the Creatomate render (same as the
 // MEvid demo pages): right layout and motion, but only the render is the truth.
@@ -45,8 +46,9 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
   const mix = Array.isArray(seg.stillsMix) ? seg.stillsMix : [];
   const shadow = seg.stillsShadow !== false;
   const atmo = !!seg.atmoOn;
-  // Border on this page: 'off' | 'colour' | 'neon' (neon = tracing light, no mat)
-  const border = seg.neonOn ? 'neon' : (seg.sbMode === 'none' ? 'off' : 'colour');
+  // Border on this page: 'off' | 'colour'; neon is a separate switch (both can be on)
+  const border = seg.sbMode === 'none' ? 'off' : 'colour';
+  const neon = !!seg.neonOn;
   const bW = Number.isFinite(Number(seg.sbW)) ? Number(seg.sbW) : BORDER_DEFAULT.w;
   const bColor = seg.sbColor || BORDER_DEFAULT.color;
   const [open, setOpen] = useState(!!seg.stillsOpen);
@@ -147,7 +149,10 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
       if (fx.needs === 'cutoutA' && plan[i - 1]) plan[i - 1].clips.forEach((c) => needCut.add(c.id));
       if (fx.needs === 'watercolorAB') { sc.clips.forEach((c) => needWc.add(c.id)); if (plan[i - 1]) plan[i - 1].clips.forEach((c) => needWc.add(c.id)); }
     });
-    const missing = (set, kf, sf) => [...set].filter((k) => { const s = photoEdits?.photos?.[k]?.stills || {}; return !s[kf] && s[sf] !== 'none'; });
+    // 'none' (no person) and 'failed' are not retried automatically — a failing
+    // photo would otherwise hit the engine again on every edit. The tile shows
+    // a Retry for 'failed'.
+    const missing = (set, kf, sf) => [...set].filter((k) => { const s = photoEdits?.photos?.[k]?.stills || {}; return !s[kf] && s[sf] !== 'none' && s[sf] !== 'failed'; });
     const cutKeys = missing(needCut, 'cutout_key', 'cutout_status');
     const wcKeys = missing(needWc, 'watercolor_key', 'watercolor_status');
     setDerive((d) => ({ ...d, cut: needCut.size ? `${needCut.size - cutKeys.length}/${needCut.size}` : null, wc: needWc.size ? `${needWc.size - wcKeys.length}/${needWc.size}` : null }));
@@ -179,6 +184,25 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, clientId, plan, photoEdits, derive.busy]);
+
+  // Retry one photo's derivative after a failure (forces the engine to run again).
+  const retryDerive = async (key, what) => {
+    if (derive.busy) return;
+    setDerive((d) => ({ ...d, busy: true, err: '' }));
+    try {
+      const res = await api('/api/admin/montage/stills-derive', { method: 'POST', body: JSON.stringify({ clientId, keys: [key], what, force: true }) });
+      setPhotoEdits((prev) => {
+        const photosNext = { ...prev.photos };
+        for (const d of res.done || []) {
+          const cur = photosNext[d.key] || {};
+          const kf = what === 'cutout' ? 'cutout_key' : 'watercolor_key', sf = what === 'cutout' ? 'cutout_status' : 'watercolor_status';
+          photosNext[d.key] = { ...cur, stills: { ...(cur.stills || {}), [sf]: d.status, ...(d.r2_key ? { [kf]: d.r2_key } : {}) } };
+        }
+        return { ...prev, photos: photosNext };
+      });
+    } catch (e) { setDerive((d) => ({ ...d, err: e.message || 'retry failed' })); }
+    finally { setDerive((d) => ({ ...d, busy: false })); }
+  };
 
   // ── preview ────────────────────────────────────────────────────
   const previewScene = useMemo(() => {
@@ -263,13 +287,11 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
           {section('LOOK — border, shadow, neon, dust & leaks', [
             row('Border', <>
               <span style={{ display: 'inline-flex', gap: 4 }}>
-                {pillBtn(border === 'off', 'Off', () => update({ sbMode: 'none', neonOn: false }))}
-                {pillBtn(border === 'colour', 'Colour', () => update({ sbMode: 'custom', sbW: bW, sbColor: bColor, neonOn: false }))}
-                {pillBtn(border === 'neon', 'Neon', () => update({ sbMode: 'none', neonOn: true }))}
+                {pillBtn(border === 'off', 'Off', () => update({ sbMode: 'none' }))}
+                {pillBtn(border === 'colour', 'Colour', () => update({ sbMode: 'custom', sbW: bW, sbColor: bColor }))}
               </span>
-              {help(border === 'off' ? 'No border on this montage. (This page always overrides Edit Photos.)'
-                : border === 'colour' ? 'A print mat around every photo, this thickness and colour. Overrides Edit Photos.'
-                : 'A neon light traces the edge of every photo instead of a mat. Overrides Edit Photos.')}
+              {help(border === 'off' ? 'No print mat on this montage. (This page always overrides Edit Photos.)'
+                : 'A print mat around every photo, this thickness and colour. Overrides Edit Photos.')}
               {border === 'colour' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
                   <span>Thickness</span>
@@ -286,7 +308,14 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
                   ))}
                 </div>
               )}
-              {border === 'neon' && <NeonControls seg={seg} set={update} compact />}
+            </>),
+            row('Neon', <>
+              <span style={{ display: 'inline-flex', gap: 4 }}>
+                {pillBtn(!neon, 'Off', () => update({ neonOn: false }))}
+                {pillBtn(neon, 'On', () => update({ neonOn: true }))}
+              </span>
+              {help(neon ? 'A neon light traces the edge of every photo (outside the mat, when there is one).' : 'No neon light.')}
+              {neon && <NeonControls seg={seg} set={update} compact />}
             </>),
             row('Shadow', <>
               <span style={{ display: 'inline-flex', gap: 4 }}>
@@ -348,6 +377,17 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
               const p = photos.find((x) => x.key === first.id);
               const pick = picks[first.id];
               const badge = si === 0 ? 'opens' : (pick ? label(pick) : `Auto · ${label(sc.transition)}`);
+              // a picked move that needs a cut-out / painting the photo does not have yet
+              const need = si > 0 && pick && STILLS_FX[pick] ? STILLS_FX[pick].needs : null;
+              const needOn = need === 'cutoutA' ? plan[si - 1]?.clips?.[0]?.id : first.id;
+              const dst = (photoEdits?.photos?.[needOn]?.stills) || {};
+              const ready = !need || (need === 'watercolorAB' ? !!dst.watercolor_key : !!dst.cutout_key);
+              const dWhat = need === 'watercolorAB' ? 'painting' : 'cut-out';
+              const dStatus = need === 'watercolorAB' ? dst.watercolor_status : dst.cutout_status;
+              const notReady = need && !ready ? (
+                dStatus === 'none' ? `no person found — will use ${label(STILLS_FX[pick].fallback)}`
+                : dStatus === 'failed' ? `${dWhat} could not be made — will use ${label(STILLS_FX[pick].fallback)}`
+                : `making the ${dWhat}… a render before it is done uses ${label(STILLS_FX[pick].fallback)}`) : null;
               const active = sc.clips.some((c) => c.id === previewKey);
               const tick = (k) => (
                 <span onClick={(e) => { e.stopPropagation(); setSelected((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k])); }}
@@ -381,6 +421,14 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
                     <div onClick={() => setMenuFor(menuFor === first.id ? null : first.id)} style={{ fontSize: 10.5, padding: '5px 6px', color: pick ? '#f5b301' : 'var(--muted)', fontWeight: pick ? 700 : 400, cursor: si === 0 ? 'default' : 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {badge}{si > 0 ? ' ▾' : ''}
                     </div>
+                    {notReady && (
+                      <div title={notReady} style={{ fontSize: 9.5, padding: '0 6px 5px', color: '#f5a623', lineHeight: 1.3 }}>
+                        ⚠ {notReady}
+                        {dStatus === 'failed' && !derive.busy && (
+                          <span onClick={() => retryDerive(needOn, need === 'watercolorAB' ? 'watercolor' : 'cutout')} style={{ marginLeft: 5, color: '#38b6ff', cursor: 'pointer', fontWeight: 700 }}>Retry</span>
+                        )}
+                      </div>
+                    )}
                     {menuFor === first.id && si > 0 && (
                       <Menu current={pick || null} onPick={(t) => { setPick(first.id, t); setMenuFor(null); setPreviewKey(first.id); }} onClose={() => setMenuFor(null)} />
                     )}

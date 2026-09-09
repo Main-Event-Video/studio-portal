@@ -24,19 +24,30 @@ const MAX_PHOTOS = 100; // spine cap: keeps renders + credits sane
 // orientation 5–8 means the displayed image is rotated 90°, so its aspect swaps.
 // Fully guarded: any failure (sharp missing, truncated header, odd format) just
 // returns null and the style falls back to treating the photo as landscape.
+// Josh 9/9 (Stills, a replaced photo): the header probe came back empty for one
+// file, so the engine treated a portrait as landscape and the neon traced a
+// 3:2 box round a 9:16 picture. Now a failed header read retries on the WHOLE
+// file (capped at 40 MB) before giving up, and every give-up is logged with
+// the reason so the next one is not a mystery.
 async function probeDims(url) {
-  try {
-    const sharp = (await import('sharp')).default;
-    const res = await fetch(url, { headers: { Range: 'bytes=0-262143' } });
-    if (!res.ok && res.status !== 206) return null;
+  let sharp;
+  try { sharp = (await import('sharp')).default; } catch (e) { console.error('[probeDims] sharp unavailable', e?.message); return null; }
+  const read = async (headers) => {
+    const res = await fetch(url, headers ? { headers } : undefined);
+    if (!res.ok && res.status !== 206) throw new Error(`fetch ${res.status}`);
     const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > 40 * 1024 * 1024) throw new Error(`too large (${buf.length} bytes)`);
     const md = await sharp(buf).metadata();
-    if (md && md.width && md.height) {
-      const rot = md.orientation >= 5 && md.orientation <= 8;
-      return { w: rot ? md.height : md.width, h: rot ? md.width : md.height };
+    if (!(md && md.width && md.height)) throw new Error('no size in metadata');
+    const rot = md.orientation >= 5 && md.orientation <= 8;
+    return { w: rot ? md.height : md.width, h: rot ? md.width : md.height };
+  };
+  try { return await read({ Range: 'bytes=0-262143' }); } catch (e1) {
+    try { return await read(null); } catch (e2) {
+      console.error('[probeDims] unknown dims', String(url).split('?')[0].slice(-80), 'header:', e1?.message, 'full:', e2?.message);
+      return null;
     }
-  } catch { /* unknown → caller defaults to landscape */ }
-  return null;
+  }
 }
 
 // WHY THIS WRAPPER EXISTS. Every EXPECTED failure in here returns
@@ -479,6 +490,32 @@ async function postMontage(request) {
       stillsOpts: STILLS,                         // MEvid Stills
     });
 
+    // MEvid Stills leaves a plan summary on the source (_stills). It is ours,
+    // not Creatomate's: lift it off before the post and turn any move that fell
+    // back into a plain sentence for the admin (Josh 9/9: "I did a cut out for
+    // Image 9 and it didn't happen" — it fell back to Push because the cut-out
+    // was not there, and nothing said so).
+    const stillsPlan = source && source._stills ? source._stills : null;
+    if (stillsPlan) delete source._stills;
+    const notes = [];
+    if (stillsPlan && Array.isArray(stillsPlan.scenes)) {
+      // number the photo the way the admin numbers it (its slot in the client's photo list)
+      const photoNo = new Map();
+      photosAll.forEach((p, i) => photoNo.set(p.r2_key, i + 1));
+      const label = (k) => ({ cutfly: 'Cut-out fly-in', cutpop: 'Cut-out pop', cutpeel: 'Person stays, world changes', watercolor: 'Watercolor' })[k] || k;
+      for (const sc of stillsPlan.scenes) {
+        if (!sc || !sc.wanted) continue;
+        const id = sc.ids && sc.ids[0];
+        const st = (pePhotos && pePhotos[id] && pePhotos[id].stills) || {};
+        const isCut = /^cutout/.test(sc.wanted.needs || '');
+        const status = isCut ? st.cutout_status : st.watercolor_status;
+        const why = status === 'failed' ? (isCut ? 'the cut-out failed to generate' : 'the painting failed to generate')
+          : status === 'none' ? 'no person was found in the photo'
+          : (isCut ? 'the cut-out has not been made yet (open the MEvid Stills panel and wait for "Cut-outs ready")' : 'the painting has not been made yet');
+        notes.push(`Photo ${photoNo.get(id) || '?'}: ${label(sc.wanted.key)} could not run — ${why} — used ${label(sc.transition)} instead.`);
+      }
+    }
+
     const render = await createRender({
       source,
       webhookUrl: `${siteUrl}/api/webhooks/creatomate`,
@@ -507,7 +544,7 @@ async function postMontage(request) {
     // the renderer dropped it.
     const built = (() => {
       const n = (re) => source.elements.filter((e) => re.test(e.name || '')).length;
-      return { elements: source.elements.length, neon: n(/^OvlNeon/), dust: n(/^OvlDust/), leak: n(/^OvlLeak/) };
+      return { elements: source.elements.length, neon: n(/^OvlNeon/), dust: n(/^OvlDust/), leak: n(/^OvlLeak/), notes };
     })();
     return NextResponse.json({ ok: true, montageId: row.id, renderId: render.id, built });
   } catch (e) {
