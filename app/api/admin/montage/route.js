@@ -72,7 +72,7 @@ async function postMontage(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null, styleBorder = null, atmo = null, neon = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null, styleBorder = null, atmo = null, neon = null, stills = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -147,6 +147,9 @@ async function postMontage(request) {
   // Anything the params snapshot needs has to be resolved up here with it.
   const KEY = normalizeKeyColor(keyColor);
   const SB = normalizeStyleBorder(styleBorder);
+  // MEVID STILLS segment settings (9/9), snapshotted into params so Export Full
+  // Rez replays the same picks and screens.
+  const STILLS = cleanStills(stills);
   // Universal overlays: dust + light leaks, and neon squiggles. Percentages,
   // clamped here so a hand-made request cannot ask for something silly.
   const pct = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(300, Number(v))) : d);
@@ -328,6 +331,7 @@ async function postMontage(request) {
         videoGaps: gapCount,
         colorCorrect: !!pe.colorCorrect,
         background: bgControl,   // "Add background" control, so Export Final reuses it
+        stills: STILLS,          // MEvid Stills picks/screens/mode — replayed by Export Final
         // Multi Page motion options (transition + rhythm), so a re-render matches.
         mpTransition: mpTransition || null,
         mpStagger: Number.isFinite(Number(mpStagger)) ? Number(mpStagger) : null,
@@ -402,7 +406,10 @@ async function postMontage(request) {
         if (s.type !== 'photo') return { type: 'placeholder', name: s.name };
         const url = await getViewUrl(s.r2_key, 21600);
         const dims = needsDims ? await probeDims(url) : null;
-        return { type: 'photo', url, framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY, border: s.border || null, w: dims?.w || null, h: dims?.h || null, faces: facesByKey.get(s.r2_key) || null };
+        const it = { type: 'photo', url, sourceKey: s.sourceKey || s.r2_key, framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect, mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY, border: s.border || null, w: dims?.w || null, h: dims?.h || null, faces: facesByKey.get(s.r2_key) || null };
+        // MEvid Stills derivatives (cut-out / watercolor), presigned for this render.
+        if (st.stills) await attachStillsDerivatives(it, pePhotos);
+        return it;
       })
     );
 
@@ -466,6 +473,7 @@ async function postMontage(request) {
       frameW: (fbFrameW === null || fbFrameW === undefined || fbFrameW === '' || !Number.isFinite(Number(fbFrameW)))
         ? null : Math.max(0, Math.min(2.4, Number(fbFrameW))),
       frameColor: (typeof fbFrameColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(fbFrameColor)) ? fbFrameColor : null,
+      stillsOpts: STILLS,                         // MEvid Stills
     });
 
     const render = await createRender({
@@ -642,4 +650,39 @@ export async function GET(request) {
     }))
   );
   return NextResponse.json({ montages });
+}
+
+
+// ── MEVID STILLS helpers (9/9) ────────────────────────────────────────────
+// Segment settings from the admin: transition order, screens, per-photo picks,
+// manual groups. Kept small and validated — it is snapshotted into params.
+function cleanStills(s) {
+  if (!s || typeof s !== 'object') return null;
+  const out = {};
+  out.mode = ['cycle', 'shuffle', 'mix'].includes(s.mode) ? s.mode : 'cycle';
+  out.mix = Array.isArray(s.mix) ? s.mix.filter((k) => typeof k === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(k)).slice(0, 40) : [];
+  out.screens = ['off', 'auto', 'manual'].includes(s.screens) ? s.screens : 'off';
+  out.shadow = s.shadow !== false;
+  out.picks = {};
+  if (s.picks && typeof s.picks === 'object') {
+    for (const [k, v] of Object.entries(s.picks)) {
+      if (typeof k === 'string' && k.length < 400 && typeof v === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(v)) out.picks[k] = v;
+    }
+  }
+  out.groups = (Array.isArray(s.groups) ? s.groups : []).map((g) => {
+    const keys = Array.isArray(g?.keys) ? g.keys.filter((k) => typeof k === 'string' && k.length < 400).slice(0, 4) : [];
+    if (keys.length < 2) return null;
+    return { keys, layout: typeof g.layout === 'string' && /^[a-z0-9_-]{1,24}$/i.test(g.layout) ? g.layout : null };
+  }).filter(Boolean).slice(0, 200);
+  if (Number.isFinite(Number(s.seed))) out.seed = Number(s.seed);
+  return out;
+}
+
+// Presign a photo's cut-out / watercolor (made by stills-derive) onto the item.
+async function attachStillsDerivatives(it, pePhotos) {
+  const e = pePhotos && it.sourceKey ? pePhotos[it.sourceKey] : null;
+  const d = e && e.stills && typeof e.stills === 'object' ? e.stills : null;
+  if (!d) return;
+  try { if (d.cutout_key && d.cutout_status !== 'failed') it.cutout_url = await getViewUrl(d.cutout_key, 21600); } catch { /* fallback move */ }
+  try { if (d.watercolor_key && d.watercolor_status !== 'failed') it.watercolor_url = await getViewUrl(d.watercolor_key, 21600); } catch { /* fallback move */ }
 }

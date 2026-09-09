@@ -103,6 +103,13 @@ export async function POST(request) {
     // Without this the export would quietly come back with the borders in the
     // wrong place (or gone) on any style that skips the probe, which is the
     // "exports won't match the draft" failure this helper exists to prevent.
+    let stillsPhotos = {};
+    if (st.stills) {
+      try {
+        const { data: cl } = await db.from('studio_clients').select('photo_edits').eq('id', src.client_id).single();
+        stillsPhotos = (cl && cl.photo_edits && typeof cl.photo_edits === 'object' && cl.photo_edits.photos) ? cl.photo_edits.photos : {};
+      } catch { stillsPhotos = {}; }
+    }
     const needsDims = styleNeedsDims(st) || seq.some((s) => s && s.type === 'photo' && borderIsOn(s.border))
       || !!(params.neon && params.neon.on);   // neon traces the picture's rect, same reason as a border
     // Same face lookup the draft did, so a high-rez export crops identically to
@@ -125,14 +132,24 @@ export async function POST(request) {
         if (!s || s.type !== 'photo') return { type: 'placeholder', name: s?.name };
         const url = await getViewUrl(s.r2_key, 21600);
         const dims = needsDims ? await probeDims(url) : null;
-        return {
-          type: 'photo', url,
+        const it = {
+          type: 'photo', url, sourceKey: s.sourceKey || s.r2_key,
           framing: s.framing, fit: s.fit, size: s.size, colorCorrect: s.colorCorrect,
           mode: s.mode, contrast: s.contrast, saturation: s.saturation, posX: s.posX, posY: s.posY,
           border: s.border || null,
           w: dims?.w || null, h: dims?.h || null,
           faces: facesByKey.get(s.r2_key) || null,
         };
+        // MEvid Stills: cut-out / watercolor derivatives, read from the client's
+        // CURRENT photo_edits (they only ever get added, never change).
+        if (st.stills) {
+          const d = stillsPhotos[it.sourceKey] && stillsPhotos[it.sourceKey].stills;
+          if (d) {
+            try { if (d.cutout_key && d.cutout_status !== 'failed') it.cutout_url = await getViewUrl(d.cutout_key, 21600); } catch { /* fallback move */ }
+            try { if (d.watercolor_key && d.watercolor_status !== 'failed') it.watercolor_url = await getViewUrl(d.watercolor_key, 21600); } catch { /* fallback move */ }
+          }
+        }
+        return it;
       }),
     );
 
@@ -187,6 +204,7 @@ export async function POST(request) {
       atmosphere: params.fbAtmosphere !== false,
       frameW: params.fbFrameW ?? null,
       frameColor: params.fbFrameColor ?? null,
+      stillsOpts: params.stills || null,           // MEvid Stills: the draft's picks/screens
     });
 
     const render = await createRender({

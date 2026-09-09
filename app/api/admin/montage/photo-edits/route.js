@@ -70,8 +70,32 @@ function clean(edits) {
     // still applies. Only an explicit entry competes with the album's timestamp.
     const border = cleanBorder(v.border);
     out.photos[key] = { anchor, fit, size, removed: !!v.removed, colorCorrect: !!v.colorCorrect, mode, contrast, saturation, posX, posY, border };
+    // MEVID STILLS per-photo state (9/9): the transition this photo arrives
+    // with (null = Auto), and the R2 keys of its derivatives (written by
+    // /api/admin/montage/stills-derive, never by the editor).
+    const st = cleanStills(v.stills);
+    if (st) out.photos[key].stills = st;
   }
+  // Manual screens for MEvid Stills: [{ keys:[r2_key…], layout }].
+  const groups = Array.isArray(edits.stillsGroups) ? edits.stillsGroups : [];
+  out.stillsGroups = groups.map((g) => {
+    if (!g || typeof g !== 'object') return null;
+    const keys = Array.isArray(g.keys) ? g.keys.filter((k) => typeof k === 'string' && k.length < 400).slice(0, 4) : [];
+    if (keys.length < 2) return null;
+    const layout = typeof g.layout === 'string' && /^[a-z0-9_-]{1,24}$/i.test(g.layout) ? g.layout : null;
+    return { keys, layout };
+  }).filter(Boolean).slice(0, 200);
   return out;
+}
+
+const STATUSES = ['ready', 'none', 'failed'];
+function cleanStills(s) {
+  if (!s || typeof s !== 'object') return null;
+  const out = {};
+  if (typeof s.transition === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(s.transition)) out.transition = s.transition;
+  for (const f of ['cutout_key', 'watercolor_key']) if (typeof s[f] === 'string' && s[f].length < 400) out[f] = s[f];
+  for (const f of ['cutout_status', 'watercolor_status']) if (STATUSES.includes(s[f])) out[f] = s[f];
+  return Object.keys(out).length ? out : null;
 }
 
 export async function GET(request) {
@@ -110,6 +134,23 @@ export async function POST(request) {
 
   const db = createServiceClient();
   const safe = clean(edits);
+  // Derivative keys are written server-side by stills-derive while the editor
+  // may hold an older copy of the edits in memory — never let an editor save
+  // drop them. Merge the stored keys back in wherever the incoming entry lacks
+  // them.
+  try {
+    const { data: cur } = await db.from('studio_clients').select('photo_edits').eq('id', clientId).single();
+    const curPhotos = cur && cur.photo_edits && typeof cur.photo_edits === 'object' && cur.photo_edits.photos ? cur.photo_edits.photos : {};
+    for (const [k, v] of Object.entries(curPhotos)) {
+      const cs = v && v.stills && typeof v.stills === 'object' ? v.stills : null;
+      if (!cs) continue;
+      const keep = {};
+      for (const f of ['cutout_key', 'cutout_status', 'watercolor_key', 'watercolor_status']) if (cs[f] !== undefined) keep[f] = cs[f];
+      if (!Object.keys(keep).length) continue;
+      const dest = safe.photos[k] || (safe.photos[k] = { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null, border: null });
+      dest.stills = { ...keep, ...(dest.stills || {}) };
+    }
+  } catch { /* best effort — a failed merge only loses derivative keys, which regenerate */ }
   const { error } = await db
     .from('studio_clients')
     .update({ photo_edits: safe })

@@ -7,6 +7,7 @@ import { parsePhotoSpec } from '@/lib/montage';
 import { resolveBorder, borderSource, borderIsOn, albumKey, normalizeStyleBorder, NO_BORDER_STYLES, BORDER_MIN, BORDER_MAX, BORDER_DEFAULT } from '@/lib/photoBorder';
 import { DUO_PALETTES, DUO_TREATMENTS } from '@/lib/montage';
 import { buildTimeline } from '@/lib/timelineOrder';
+import StillsPanel from './StillsPanel';
 
 // Clients move unwanted / duplicate files into this folder; only the admin
 // actually deletes them ("Empty Trash"). Must match the portal's constant.
@@ -569,6 +570,10 @@ export default function AdminPage() {
     // the difference is only what happens mid-transition, which a thumbnail
     // cannot show honestly.
     { value: 'party3', preview: 'party2', label: 'Party 3 — Party 2 plus a straight wipe in the rotation' },
+    // MEvid Stills (9/9): the MEvid transition engine — one photo at a time
+    // (or 2/3/4-up screens), cycling all 26 transitions; per-photo picks and
+    // manual screens in the "Open MEvid Stills" panel under the segment's Style.
+    { value: 'stills', label: 'MEvid Stills — one at a time, 26 transitions, screens' },
   ];
 
   // Styles that have never been through a real Creatomate render. The "Try the
@@ -716,7 +721,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'] });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -2798,6 +2803,15 @@ export default function AdminPage() {
               : s.sbMode === 'custom'
                 ? { mode: 'custom', w: Number(s.sbW ?? BORDER_DEFAULT.w), color: s.sbColor || BORDER_DEFAULT.color }
                 : null,
+            // MEvid Stills: order/screens from the segment, per-photo picks and
+            // manual screens from the client's photo edits (only this segment's photos).
+            stills: s.style === 'stills' ? (() => {
+              const keys = parsePhotoSpec(s.photos, N).map((i) => projPhotos[i - 1]?.key).filter(Boolean);
+              const picks = {};
+              keys.forEach((k) => { const tr = photoEdits?.photos?.[k]?.stills?.transition; if (tr) picks[k] = tr; });
+              const groups = (Array.isArray(photoEdits?.stillsGroups) ? photoEdits.stillsGroups : []).filter((g) => g.keys.every((k) => keys.includes(k)));
+              return { mode: s.stillsMode || 'cycle', mix: Array.isArray(s.stillsMix) ? s.stillsMix : [], screens: s.stillsScreens || 'off', shadow: s.stillsShadow !== false, picks, groups, seed: Date.now() };
+            })() : null,
           }),
         });
         if (r && r.built) builtAll.push(r.built);
@@ -4540,6 +4554,10 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                       ))}
                     </select>
                   </div>
+                )}
+                {s.style === 'stills' && (
+                  <StillsPanel seg={s} update={(patch) => updateSegment(s.key, patch)} projPhotos={projPhotos}
+                    photoEdits={photoEdits} setPhotoEdits={setPhotoEdits} persistEdits={persistEdits} clientId={mClientId} api={api} />
                 )}
                 <div className="field-group">
                   <label className="choice" style={{ color: 'var(--text)', display: 'flex' }}>
