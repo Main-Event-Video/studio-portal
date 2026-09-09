@@ -9,6 +9,7 @@ import { DUO_PALETTES, DUO_TREATMENTS } from '@/lib/montage';
 import { buildTimeline } from '@/lib/timelineOrder';
 import StillsPanel from './StillsPanel';
 import NeonControls from './NeonControls';
+import CropEditor from './CropEditor';
 
 // Clients move unwanted / duplicate files into this folder; only the admin
 // actually deletes them ("Empty Trash"). Must match the portal's constant.
@@ -879,6 +880,19 @@ export default function AdminPage() {
   const saveChainRef = useRef(null);
   const [selKey, setSelKey] = useState(null);        // photo open in the big editor
   const bigDragRef = useRef(null);                   // drag-to-position state
+  // The drag-to-crop window (the client portal's tool, now in admin too —
+  // Josh 9/9). Writes a cropped sibling file; the original is never touched.
+  const [cropFor, setCropFor] = useState(null);      // projPhotos entry being cropped
+  const [cropBusy, setCropBusy] = useState(false);
+  const cropPhoto = async (clientId, p, rect, ratio) => {
+    setCropBusy(true);
+    try {
+      await api('/api/admin/media', { method: 'POST', body: JSON.stringify(ratio ? { clientId, action: 'crop', id: p.id, rect, ratio } : { clientId, action: 'uncrop', id: p.id }) });
+      setCropFor(null);
+      await loadProjPhotos(clientId, true);
+    } catch (err) { setMErr(true); setMMsg(err.message); }
+    setCropBusy(false);
+  };
 
   // client intake (read-only view in the workspace)
   const [intake, setIntake] = useState(null);
@@ -2758,6 +2772,7 @@ export default function AdminPage() {
       + ` — built ${bSum.neon} neon / ${bSum.dust} dust / ${bSum.leak} leak elements.`
       // MEvid Stills: a picked move that could not run (no cut-out yet, etc.)
       // says so here instead of silently playing its fallback.
+      + builtAll.map((b) => (b.border ? ` Border: ${b.border}.` : '')).join('')
       + builtAll.flatMap((b) => (Array.isArray(b.notes) ? b.notes : [])).map((s) => ` ⚠ ${s}`).join('');
     setMMsg(
       `Queued ${ok} render${ok === 1 ? '' : 's'}${errs.length ? ` — ${errs.length} failed: ${errs.join('; ')}` : ''}.${bTxt} ` +
@@ -3760,7 +3775,7 @@ export default function AdminPage() {
                   <div style={{ maxWidth: 720, margin: '12px auto 0', border: '1px solid rgba(255,212,121,0.45)',
                     background: 'rgba(255,212,121,0.07)', borderRadius: 9, padding: '9px 12px' }}>
                     <div style={{ fontSize: 12, color: '#ffd479', fontWeight: 600 }}>
-                      Cropped by the client{selP.cropRatio ? ` to ${selP.cropRatio}` : ''}
+                      {selP.cropBy === 'admin' ? 'Cropped by you' : 'Cropped by the client'}{selP.cropRatio ? ` to ${selP.cropRatio}` : ''}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
                       <button type="button" className={!e.useOriginal ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 10px', fontSize: 11 }}
@@ -3768,12 +3783,17 @@ export default function AdminPage() {
                       <button type="button" className={e.useOriginal ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 10px', fontSize: 11 }}
                         onClick={() => editPhoto(c.id, selP.key, { useOriginal: true })}>Use the full original</button>
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                        This montage only — their crop is untouched.
+                        This montage only — the crop itself is untouched.
                       </span>
                     </div>
                   </div>
                 )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', maxWidth: 720, margin: '12px auto 0', fontSize: 12, color: 'var(--muted)' }}>
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Crop
+                    <button type="button" className={selP.clientCrop ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }}
+                      title="Drag a 16:9 or 9:16 window over the photo. The original is kept."
+                      onClick={() => setCropFor(selP)}>{selP.clientCrop ? `Cropped${selP.cropRatio ? ` ${selP.cropRatio}` : ''} · edit ⤢` : 'Drag to crop ⤢'}</button>
+                  </div>
                   <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Framing
                     {['top', 'center', 'bottom'].map((a) => (
                       <button key={a} type="button" className={e.anchor === a && e.fit === 'fill' && !Number.isFinite(e.posX) ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }}
@@ -3894,11 +3914,11 @@ export default function AdminPage() {
                     the removed tag. Josh: "careful 'client crop' does not overlap
                     the number system on the bottom left". */}
                 {p.clientCrop && (
-                  <span title={`Cropped by the client${p.cropRatio ? ` to ${p.cropRatio}` : ''} — the montage uses their framing`}
+                  <span title={`${p.cropBy === 'admin' ? 'Cropped by you' : 'Cropped by the client'}${p.cropRatio ? ` to ${p.cropRatio}` : ''} — the montage uses this framing`}
                     style={{ position: 'absolute', top: 4, right: 4, fontSize: 9, letterSpacing: '.07em',
-                      background: 'rgba(8,10,14,0.82)', color: '#ffd479', border: '1px solid rgba(255,212,121,0.5)',
+                      background: 'rgba(8,10,14,0.82)', color: p.cropBy === 'admin' ? '#8fc0ff' : '#ffd479', border: `1px solid ${p.cropBy === 'admin' ? 'rgba(143,192,255,0.5)' : 'rgba(255,212,121,0.5)'}`,
                       padding: '2px 5px', borderRadius: 4 }}>
-                    CLIENT CROP
+                    {p.cropBy === 'admin' ? 'CROPPED' : 'CLIENT CROP'}
                   </span>
                 )}
                 {nameAlbums.has(albumKey(p.album)) && (
@@ -4842,6 +4862,12 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
 
   return (
     <main className="wrap">
+      {cropFor && projPhotosClientId && (
+        <CropEditor photo={cropFor} busy={cropBusy}
+          onSave={(rect, ratio) => cropPhoto(projPhotosClientId, cropFor, rect, ratio)}
+          onClear={() => cropPhoto(projPhotosClientId, cropFor, null, null)}
+          onClose={() => setCropFor(null)} />
+      )}
       <div className="logo-header">
         <Image src="/logo.png" alt="Main Event Studio" width={220} height={148} priority />
         <p className="eyebrow">Studio Admin</p>

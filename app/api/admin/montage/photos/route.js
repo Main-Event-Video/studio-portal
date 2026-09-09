@@ -158,6 +158,10 @@ export async function GET(request) {
       // tile can badge it and the editor can offer the full frame back.
       clientCrop: !isVideo && !!m.crop_key,
       cropRatio: (m.crop_rect && m.crop_rect.ratio) || null,
+      // who framed it ('client' | 'admin') + the saved box, so the admin's crop
+      // window reopens on the same box
+      cropBy: (m.crop_rect && m.crop_rect.by) || 'client',
+      cropRect: !isVideo && m.crop_key && m.crop_rect ? m.crop_rect : null,
       url: await getViewUrl((!isVideo && m.crop_key) || m.r2_key, 3600),
       originalUrl: (!isVideo && m.crop_key) ? await getViewUrl(m.r2_key, 3600) : null,
       downloadUrl: await getDownloadUrl(m.r2_key, m.filename, 3600),

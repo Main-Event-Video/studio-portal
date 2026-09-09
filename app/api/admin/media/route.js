@@ -1,7 +1,7 @@
 // GET  /api/admin/media?clientId=...  → a client's uploaded files (images +
 //                                       videos) with presigned view/download URLs
 // POST /api/admin/media  { clientId, action, ... }
-//   action 'update' | 'renumber' | 'renameFolder' | 'delete'  (admin: delete OK)
+//   action 'update' | 'renumber' | 'renameFolder' | 'delete' | 'crop' | 'uncrop'  (admin: delete OK)
 // Shared organize logic lives in lib/mediaOrganize (also used by the portal).
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
@@ -92,7 +92,7 @@ export async function POST(request) {
     if (r.error) return NextResponse.json({ error: r.error, detail: r.detail }, { status: r.status || 500 });
     return NextResponse.json({ ok: true });
   }
-  const result = await applyMediaAction(db, clientId, body, { allowDelete: true });
+  const result = await applyMediaAction(db, clientId, body, { allowDelete: true, actor: 'admin' });
   if (result.error) {
     return NextResponse.json({ error: result.error, detail: result.detail }, { status: result.status || 500 });
   }

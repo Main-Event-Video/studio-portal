@@ -544,7 +544,12 @@ async function postMontage(request) {
     // the renderer dropped it.
     const built = (() => {
       const n = (re) => source.elements.filter((e) => re.test(e.name || '')).length;
-      return { elements: source.elements.length, neon: n(/^OvlNeon/), dust: n(/^OvlDust/), leak: n(/^OvlLeak/), notes };
+      // The border the render was actually built with (Josh 9/9: a 2.0 white
+      // border was picked and the draft came back bare — this line says whether
+      // the setting reached the server at all).
+      const withB = sequence.filter((s) => s.type === 'photo' && borderIsOn(s.border)).length;
+      const border = SB ? (SB.on ? `montage-wide ${SB.color} ${SB.w}` : 'montage-wide none') : 'from Edit Photos';
+      return { elements: source.elements.length, neon: n(/^OvlNeon/), dust: n(/^OvlDust/), leak: n(/^OvlLeak/), notes, border: `${border} → ${withB} of ${sequence.filter((s) => s.type === 'photo').length} photos carry one` };
     })();
     return NextResponse.json({ ok: true, montageId: row.id, renderId: render.id, built });
   } catch (e) {
