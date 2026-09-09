@@ -155,6 +155,10 @@ async function postMontage(request) {
     : null;
   const NEON = (neon && typeof neon === 'object' && neon.on)
     ? { on: true, intensity: pct(neon.intensity, 100),
+        // Tube thickness, its own dial on top of intensity. Missing/null means
+        // 100 — Number(null) is 0, so pct() alone would turn "not set" into a
+        // hairline.
+        thickness: (neon.thickness === null || neon.thickness === undefined || neon.thickness === '') ? 100 : pct(neon.thickness, 100),
         // One colour, or several to alternate between. Capped at six so a
         // hand-made request cannot make the cycle meaningless.
         colors: Array.isArray(neon.colors)
@@ -373,7 +377,10 @@ async function postMontage(request) {
     // dimension probe on styles that would otherwise skip it. It costs a header
     // range-fetch per photo and only when a border is actually switched on.
     const anyBorder = sequence.some((s) => s.type === 'photo' && borderIsOn(s.border));
-    const needsDims = styleNeedsDims(st) || anyBorder;
+    // Neon too: the light traces the picture's own rect, and on a Fit photo
+    // that rect is only knowable from the real pixel shape. Without dims the
+    // photo goes out as a bare image and gets no light at all.
+    const needsDims = styleNeedsDims(st) || anyBorder || !!NEON;
     // FACE DATA for Glass's accent crops. One query for the whole sequence, not
     // one per photo, and only for the style that uses it. A photo with no row —
     // or one the detection job has not reached yet — simply has no faces, and

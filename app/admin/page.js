@@ -716,7 +716,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'] });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'] });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -2179,6 +2179,16 @@ export default function AdminPage() {
                 onChange={(ev) => set({ neonI: Number(ev.target.value) })} />
               <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg.neonI ?? 100, 10)}%</span>
             </div>
+            {/* THICKNESS, its own dial. Josh: "can we add a slider to make it
+                thicker too?" 100% is the thickness Intensity alone gives; it
+                multiplies the tube's stroke width and nothing else (brightness,
+                light count and speed stay with Intensity). */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
+              <span style={{ minWidth: 66 }}>Thickness</span>
+              <input type="range" min="50" max="300" step="10" value={parseInt(seg.neonT ?? 100, 10)} style={{ flex: 1, minWidth: 0 }}
+                onChange={(ev) => set({ neonT: Number(ev.target.value) })} />
+              <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg.neonT ?? 100, 10)}%</span>
+            </div>
             {/* MULTI-SELECT, not a single pick. Josh: "add a alternating color
                 selector for the neon". Choose several and the arcs cycle through
                 them by arc index, so two squiggles alive at the same moment are
@@ -2780,7 +2790,7 @@ export default function AdminPage() {
             // Montage-wide border override from the style panel. 'edits' (the
             // default) sends null, so nothing changes for an untouched montage.
             atmo: s.atmoOn ? { on: true, intensity: Number(s.atmoI ?? 100), dust: Number(s.atmoDust ?? 100), leak: Number(s.atmoLeak ?? 100) } : null,
-            neon: s.neonOn ? { on: true, intensity: Number(s.neonI ?? 100),
+            neon: s.neonOn ? { on: true, intensity: Number(s.neonI ?? 100), thickness: Number(s.neonT ?? 100),
               colors: Array.isArray(s.neonColors) && s.neonColors.length ? s.neonColors : [s.neonColor || '#00E5FF'],
               color: s.neonColor || '#00E5FF' } : null,
             styleBorder: s.sbMode === 'none'

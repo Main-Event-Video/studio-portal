@@ -103,7 +103,8 @@ export async function POST(request) {
     // Without this the export would quietly come back with the borders in the
     // wrong place (or gone) on any style that skips the probe, which is the
     // "exports won't match the draft" failure this helper exists to prevent.
-    const needsDims = styleNeedsDims(st) || seq.some((s) => s && s.type === 'photo' && borderIsOn(s.border));
+    const needsDims = styleNeedsDims(st) || seq.some((s) => s && s.type === 'photo' && borderIsOn(s.border))
+      || !!(params.neon && params.neon.on);   // neon traces the picture's rect, same reason as a border
     // Same face lookup the draft did, so a high-rez export crops identically to
     // the draft it came from. Snapshots store r2_keys, and faces live on the
     // media row rather than in the snapshot, so this re-reads them.

@@ -295,6 +295,32 @@ console.log(`Duotone: ${Object.keys(DUO_PALETTES).length} palettes x ${Object.ke
   }
   fail += offbox + ranges;
   console.log(`Neon: ${rings} rings checked across 6 styles, ${offbox} off their shot box, ${ranges} out of range.`);
+
+  // EVERY PICTURE GETS A LIGHT. Josh: "the neon selector isn't hitting on
+  // every image." Two ways it wasn't: a borderless Fit photo went out as a
+  // bare <image> with no composition to nest a ring in (every 9:16 on Party 2
+  // / Party 3), and the six-box cap left half of Photo Ribbon / Gallery /
+  // Trendy dark. Dims are passed for every style here because the route now
+  // forces the probe whenever neon is on.
+  let dark = 0;
+  for (const style of Object.keys(STYLES)) {
+    const photos = manifest.map((m) => ({ type: 'photo', url: `https://x/${m.file}`, framing: 'top', fit: null, size: 100, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null, w: m.w, h: m.h }));
+    const src = buildMontageSource({ items: photos, style, title: 'N', watermarkUrl: null, includeCards: false, greenBookends: false, photoSeconds: 2, width: 1920, height: 1080, neonOpts: { on: true, colors: ['#00E5FF'] } });
+    const seen = new Set(), lit = new Set();
+    const walk = (node, ringed) => {
+      const kids = node.elements || [];
+      const has = ringed || kids.some((k) => k.type === 'shape' && k.stroke_start !== undefined);
+      for (const k of kids) {
+        if ((k.type === 'image' || k.type === 'video') && /^https:\/\/x\//.test(k.source || '') && !/green/.test(k.source)) { seen.add(k.source); if (has) lit.add(k.source); }
+        walk(k, has);
+      }
+    };
+    walk(src, false);
+    const miss = [...seen].filter((u) => !lit.has(u)).length;
+    if (miss) { dark += miss; console.log(`FAIL ${style}: ${miss} of ${seen.size} photos have no neon ring`); }
+  }
+  fail += dark;
+  console.log(`Neon coverage: ${dark} unlit photos across ${Object.keys(STYLES).length} styles.`);
 }
 
 // UNITS. Creatomate validates these and rejects the WHOLE render on one bad
