@@ -8,6 +8,7 @@ import { resolveBorder, borderSource, borderIsOn, albumKey, normalizeStyleBorder
 import { DUO_PALETTES, DUO_TREATMENTS } from '@/lib/montage';
 import { buildTimeline } from '@/lib/timelineOrder';
 import StillsPanel from './StillsPanel';
+import NeonControls from './NeonControls';
 
 // Clients move unwanted / duplicate files into this folder; only the admin
 // actually deletes them ("Empty Trash"). Must match the portal's constant.
@@ -2109,7 +2110,6 @@ export default function AdminPage() {
     </div>
   );
 
-  const NEON_SWATCHES = ['#00E5FF', '#FF2D95', '#7CFF3D', '#FFD23A', '#B14DFF', '#FF6A3D'];
 
   // Dust + light leaks on any style. ONE master with a trim per layer — Josh's
   // "option C: both together and separate". The base figures (dust 36%, leaks
@@ -2176,93 +2176,9 @@ export default function AdminPage() {
           <button type="button" className={on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }}
             onClick={() => set({ neonOn: true })}>On</button>
         </span>
-        {on && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
-              <span style={{ minWidth: 66 }}>Intensity</span>
-              <input type="range" min="0" max="300" step="10" value={parseInt(seg.neonI ?? 100, 10)} style={{ flex: 1, minWidth: 0 }}
-                onChange={(ev) => set({ neonI: Number(ev.target.value) })} />
-              <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg.neonI ?? 100, 10)}%</span>
-            </div>
-            {/* THICKNESS, its own dial. Josh: "can we add a slider to make it
-                thicker too?" 100% is the thickness Intensity alone gives; it
-                multiplies the tube's stroke width and nothing else (brightness,
-                light count and speed stay with Intensity). */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
-              <span style={{ minWidth: 66 }}>Thickness</span>
-              <input type="range" min="50" max="300" step="10" value={parseInt(seg.neonT ?? 100, 10)} style={{ flex: 1, minWidth: 0 }}
-                onChange={(ev) => set({ neonT: Number(ev.target.value) })} />
-              <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg.neonT ?? 100, 10)}%</span>
-            </div>
-            {/* MULTI-SELECT, not a single pick. Josh: "add a alternating color
-                selector for the neon". Choose several and the arcs cycle through
-                them by arc index, so two squiggles alive at the same moment are
-                never the same hue — which is what real neon in a room looks
-                like. Choose one and it behaves exactly as it did. The last
-                colour cannot be unpicked; an empty palette would silently mean
-                no neon at all while the toggle still said On. */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11.5, color: 'var(--muted)', minWidth: 66 }}>Colours</span>
-              {NEON_SWATCHES.map((sw) => {
-                const picked = (seg.neonColors || ['#00E5FF']).includes(sw);
-                const last = picked && (seg.neonColors || []).length <= 1;
-                return (
-                  <button key={sw} type="button" disabled={last}
-                    title={last ? 'At least one colour has to stay picked' : (picked ? `Remove ${sw}` : `Add ${sw}`)}
-                    onClick={() => set((() => {
-                      const cur = seg.neonColors || ['#00E5FF'];
-                      const next = cur.includes(sw) ? cur.filter((c) => c !== sw) : [...cur, sw];
-                      return { neonColors: next.length ? next : cur, neonColor: (next[0] || sw) };
-                    })())}
-                    style={{ width: 20, height: 20, borderRadius: 5, cursor: last ? 'default' : 'pointer', padding: 0,
-                      border: picked ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw,
-                      opacity: picked ? 1 : 0.42 }} />
-                );
-              })}
-              <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
-                {(seg.neonColors || ['#00E5FF']).length > 1
-                  ? `${(seg.neonColors || []).length} colours, alternating`
-                  : 'one colour'}
-              </span>
-            </div>
-            {/* THE GREEN-SCREEN CEILING. Josh asked for this to be said outright:
-                "can you add that instruction - what level this stops working on
-                greenscreen". It is 150%. Everything up to and including 150%
-                is drawn ON the photograph, so it survives the key. The echo
-                frames at 200%+ stand OUTSIDE it, and outside the photograph is
-                the chroma backdrop — so they key away with it and the setting
-                quietly does less than it says. Stated always, and lit up the
-                moment the slider is above it. */}
-            {(() => {
-              const over = parseInt(seg.neonI ?? 100, 10) >= 200;
-              return (
-                <div style={{
-                  marginTop: 9, padding: '7px 9px', borderRadius: 8, fontSize: 10.5, lineHeight: 1.45,
-                  border: `1px solid ${over ? 'rgba(245,166,35,0.55)' : 'var(--line)'}`,
-                  background: over ? 'rgba(245,166,35,0.10)' : 'transparent',
-                  color: over ? '#f5a623' : 'var(--muted)',
-                }}>
-                  <strong>Green screen: keep it at 150% or below.</strong>{' '}
-                  Everything up to 150% is drawn <em>on</em> the photograph, so it survives the key. The echo
-                  frames from 200% stand <em>outside</em> the photo — and outside the photo is your key colour,
-                  so they key away with it.
-                  {over && <> <br />You are at {parseInt(seg.neonI ?? 100, 10)}%. On a keyed montage the echoes
-                    will not make it through; everything else still will.</>}
-                </div>
-              );
-            })()}
-            <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '8px 0 0', lineHeight: 1.45 }}>A light runs the edge of each photograph, travelling with it.
-              <br />
-              <strong>100% is the look you have already seen.</strong> Above it the tube thickens, more lights
-              join (each its own colour from those below) and they run faster.
-              <br />
-              <strong>150%</strong> keeps the tracing light and lights a standing two-colour frame underneath it,
-              so the highlight sweeps round a tube that is already burning. Short bars strike on and off around
-              the picture, and loose squiggles are drawn on between shots.
-              <br />
-              <strong>200% and up</strong> adds echo frames standing off outside the photograph.</p>
-          </>
-        )}
+        {/* The dials live in NeonControls.jsx, shared with the MEvid Stills
+            panel's "Neon" border so the two can never drift. */}
+        {on && <NeonControls seg={seg} set={set} />}
       </div>
     );
   };
@@ -2797,7 +2713,7 @@ export default function AdminPage() {
             atmo: s.atmoOn ? { on: true, intensity: Number(s.atmoI ?? 100), dust: Number(s.atmoDust ?? 100), leak: Number(s.atmoLeak ?? 100) } : null,
             neon: s.neonOn ? { on: true, intensity: Number(s.neonI ?? 100), thickness: Number(s.neonT ?? 100),
               colors: Array.isArray(s.neonColors) && s.neonColors.length ? s.neonColors : [s.neonColor || '#00E5FF'],
-              color: s.neonColor || '#00E5FF' } : null,
+              color: s.neonColor || '#00E5FF', extras: s.neonExtras !== false } : null,
             styleBorder: s.sbMode === 'none'
               ? { mode: 'none' }
               : s.sbMode === 'custom'

@@ -168,7 +168,10 @@ async function postMontage(request) {
           ? neon.colors.filter((c) => typeof c === 'string' && /^#[0-9A-Fa-f]{6}$/.test(c))
             .slice(0, 6).map((c) => c.toUpperCase())
           : [],
-        color: (typeof neon.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(neon.color)) ? neon.color.toUpperCase() : '#00E5FF' }
+        color: (typeof neon.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(neon.color)) ? neon.color.toUpperCase() : '#00E5FF',
+        // Extras (frame, bars, squiggles, echoes from 150%): only an explicit
+        // false turns them off, so older saved montages keep their look.
+        extras: neon.extras !== false }
     : null;
   const editFor = (k) => {
     const e = pePhotos[k] || {};

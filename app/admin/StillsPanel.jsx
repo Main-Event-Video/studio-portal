@@ -10,13 +10,22 @@
 // every other per-photo edit), so they survive reloads and style switches:
 //   photo_edits.photos[key].stills.transition   (null = Auto)
 //   photo_edits.stillsGroups                    [{ keys:[…], layout }]
-// Segment-level choices (mode / screens / shadow) live on the segment.
+// Segment-level choices (mode / screens / shadow) live on the segment, and so
+// do the LOOK settings the bar shares with every other style (sbMode / sbW /
+// sbColor for the print border, neonOn / neonI / neonT / neonColors /
+// neonExtras for the neon). Josh 9/9: on this page the border ALWAYS
+// overrides Edit Photos, so the choice is Off / Colour / Neon — never "use
+// Edit Photos".
 //
 // The preview is a CSS approximation of the Creatomate render (same as the
 // MEvid demo pages): right layout and motion, but only the render is the truth.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parsePhotoSpec } from '@/lib/montage';
 import { ALL_TRANSITION_KEYS, FX_LABELS, STILLS_FX, NATIVE, screenLayout, planStills } from '@/lib/stillsEngine';
+import { BORDER_MIN, BORDER_MAX, BORDER_DEFAULT } from '@/lib/photoBorder';
+import NeonControls from './NeonControls';
+
+const BORDER_SWATCHES = ['#FFFFFF', '#000000', '#F5E6C8', '#D8B56B', '#C0C0C0', '#FF4D88'];
 
 const FAMILIES = [
   ['Live today', ['Fade', 'Dissolve', 'Slide', 'Wipe', 'Zoom', 'Pop']],
@@ -35,6 +44,10 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
   const screens = seg.stillsScreens || 'off';
   const mix = Array.isArray(seg.stillsMix) ? seg.stillsMix : [];
   const shadow = seg.stillsShadow !== false;
+  // Border on this page: 'off' | 'colour' | 'neon' (neon = tracing light, no mat)
+  const border = seg.neonOn ? 'neon' : (seg.sbMode === 'none' ? 'off' : 'colour');
+  const bW = Number.isFinite(Number(seg.sbW)) ? Number(seg.sbW) : BORDER_DEFAULT.w;
+  const bColor = seg.sbColor || BORDER_DEFAULT.color;
   const [open, setOpen] = useState(!!seg.stillsOpen);
   const [menuFor, setMenuFor] = useState(null);      // key of the tile whose menu is open
   const [selecting, setSelecting] = useState(false);
@@ -42,6 +55,13 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
   const [swapA, setSwapA] = useState(null);           // first tap of an in-screen swap
   const [previewKey, setPreviewKey] = useState(null);  // scene whose move plays in the preview
   const [derive, setDerive] = useState({ cut: null, wc: null, busy: false, err: '' });
+
+  // A fresh segment arrives with sbMode 'edits' (the other styles' default).
+  // Stills always overrides Edit Photos, so that becomes the white default mat.
+  useEffect(() => {
+    if (open && (!seg.sbMode || seg.sbMode === 'edits')) update({ sbMode: 'custom', sbW: bW, sbColor: bColor });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, seg.sbMode]);
 
   // The photos this segment resolves to, in play order.
   const photos = useMemo(() => {
@@ -171,7 +191,19 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
   const pillBtn = (on, txt, fn) => (
     <button type="button" className={on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }} onClick={fn}>{txt}</button>
   );
-  const lbl = { fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 5 };
+  const help = (txt) => <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>{txt}</div>;
+  const row = (k, body) => (
+    <div key={k} style={{ display: 'grid', gridTemplateColumns: '92px 1fr', gap: '6px 12px', alignItems: 'start', margin: '7px 0' }}>
+      <div style={{ fontSize: 12, paddingTop: 4 }}>{k}</div>
+      <div>{body}</div>
+    </div>
+  );
+  const section = (title, rows) => (
+    <div style={{ marginTop: 12, paddingTop: 9, borderTop: '1px solid var(--line)' }}>
+      <div style={{ fontSize: 10.5, letterSpacing: '0.14em', color: '#f5b301', fontWeight: 800, marginBottom: 4 }}>{title}</div>
+      {rows}
+    </div>
+  );
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -184,39 +216,77 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
             <b style={{ color: '#f5b301' }}>MEvid Stills</b>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>uses this segment's photos, pace, background and key colour from the form</span>
           </div>
-          <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', marginTop: 10 }}>
-            <div>
-              <span style={lbl}>Transitions</span>
+          {/* THE BAR — three named sections with a plain-English line under each
+              choice (Josh 9/9: "Cycle all 26 / Shuffle / Screens — confusing what
+              goes with what"). Mockup approved 9/9. */}
+          {section('MOVES — how each photo arrives', [
+            row('Order', <>
               <span style={{ display: 'inline-flex', gap: 4 }}>
                 {pillBtn(mode === 'cycle', 'Cycle all 26', () => update({ stillsMode: 'cycle' }))}
                 {pillBtn(mode === 'shuffle', 'Shuffle', () => update({ stillsMode: 'shuffle' }))}
-                {pillBtn(mode === 'mix', `My mix${mix.length ? ` (${mix.length})` : ''}`, () => update({ stillsMode: 'mix' }))}
+                {pillBtn(mode === 'mix', `My picks${mix.length ? ` (${mix.length})` : ''}`, () => update({ stillsMode: 'mix' }))}
               </span>
-            </div>
-            <div>
-              <span style={lbl}>Screens (2 / 3 / 4-up)</span>
+              {help(mode === 'cycle' ? 'Every photo arrives with a different move, in a fixed order that mixes the families. Tap any photo below to give it its own.'
+                : mode === 'shuffle' ? 'Same 26 moves, dealt in a random order. Re-render for a new deal.'
+                : 'Only the moves you tick here, cycled in order. Tap a photo below to give it something else.')}
+              {mode === 'mix' && (
+                <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {ALL_TRANSITION_KEYS.filter((k) => k !== 'Cut').map((k) => (
+                    <button key={k} type="button" className={mix.includes(k) ? 'btn-primary' : 'btn-ghost'} style={{ padding: '2px 8px', fontSize: 10.5 }}
+                      onClick={() => update({ stillsMix: mix.includes(k) ? mix.filter((x) => x !== k) : [...mix, k] })}>{label(k)}</button>
+                  ))}
+                </div>
+              )}
+            </>),
+          ])}
+          {section('SCREENS — two, three or four photos at once', [
+            row('Screens', <>
               <span style={{ display: 'inline-flex', gap: 4 }}>
                 {pillBtn(screens === 'off', 'Off', () => update({ stillsScreens: 'off' }))}
                 {pillBtn(screens === 'auto', 'Auto', () => update({ stillsScreens: 'auto' }))}
-                {pillBtn(screens === 'manual', 'Manual only', () => update({ stillsScreens: 'manual' }))}
+                {pillBtn(screens === 'manual', 'Only mine', () => update({ stillsScreens: 'manual' }))}
               </span>
-            </div>
-            <div>
-              <span style={lbl}>Shadow</span>
+              {help(screens === 'off' ? 'One photo at a time, always.'
+                : screens === 'auto' ? 'Now and then the engine puts 2, 3 or 4 photos up together, in the same play order. You can still build your own with Select ✓.'
+                : 'No automatic screens — only the ones you build with Select ✓ → Group into a screen.')}
+            </>),
+          ])}
+          {section('LOOK — border, shadow, neon', [
+            row('Border', <>
+              <span style={{ display: 'inline-flex', gap: 4 }}>
+                {pillBtn(border === 'off', 'Off', () => update({ sbMode: 'none', neonOn: false }))}
+                {pillBtn(border === 'colour', 'Colour', () => update({ sbMode: 'custom', sbW: bW, sbColor: bColor, neonOn: false }))}
+                {pillBtn(border === 'neon', 'Neon', () => update({ sbMode: 'none', neonOn: true }))}
+              </span>
+              {help(border === 'off' ? 'No border on this montage. (This page always overrides Edit Photos.)'
+                : border === 'colour' ? 'A print mat around every photo, this thickness and colour. Overrides Edit Photos.'
+                : 'A neon light traces the edge of every photo instead of a mat. Overrides Edit Photos.')}
+              {border === 'colour' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
+                  <span>Thickness</span>
+                  <input type="range" min={BORDER_MIN} max={BORDER_MAX} step="0.1" value={bW} style={{ width: 110 }}
+                    onChange={(ev) => update({ sbMode: 'custom', sbW: Number(ev.target.value) })} />
+                  <span style={{ minWidth: 24 }}>{bW.toFixed(1)}</span>
+                  <input type="color" value={bColor} aria-label="Border colour"
+                    style={{ width: 28, height: 22, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
+                    onChange={(ev) => update({ sbMode: 'custom', sbColor: ev.target.value.toUpperCase() })} />
+                  {BORDER_SWATCHES.map((sw) => (
+                    <button key={sw} type="button" title={sw} onClick={() => update({ sbMode: 'custom', sbColor: sw })}
+                      style={{ width: 16, height: 16, borderRadius: 4, cursor: 'pointer', padding: 0,
+                        border: bColor === sw ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw }} />
+                  ))}
+                </div>
+              )}
+              {border === 'neon' && <NeonControls seg={seg} set={update} compact />}
+            </>),
+            row('Shadow', <>
               <span style={{ display: 'inline-flex', gap: 4 }}>
                 {pillBtn(!shadow, 'Off', () => update({ stillsShadow: false }))}
                 {pillBtn(shadow, 'On', () => update({ stillsShadow: true }))}
               </span>
-            </div>
-          </div>
-          {mode === 'mix' && (
-            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {ALL_TRANSITION_KEYS.filter((k) => k !== 'Cut').map((k) => (
-                <button key={k} type="button" className={mix.includes(k) ? 'btn-primary' : 'btn-ghost'} style={{ padding: '2px 8px', fontSize: 10.5 }}
-                  onClick={() => update({ stillsMix: mix.includes(k) ? mix.filter((x) => x !== k) : [...mix, k] })}>{label(k)}</button>
-              ))}
-            </div>
-          )}
+              {help('Soft drop shadow under each print. Turns itself off on a green / key-colour background.')}
+            </>),
+          ])}
 
           <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginTop: 12, flexWrap: 'wrap' }}>
             <Preview scene={previewScene} urlOf={urlOf} shadow={shadow} />
