@@ -319,7 +319,7 @@ function Menu({ current, onPick, onClose }) {
       {it(null, 'Auto (cycle)')}
       {FAMILIES.map(([fam, ks]) => (
         <div key={fam}>
-          <div style={{ fontSize: 9, fontWeight: 800, color: '#777', letterSpacing: '.08em', textTransform: 'uppercase', padding: '5px 8px 2px' }}>{fam}</div>
+          <div style={{ fontSize: 9.5, fontWeight: 800, color: '#2563eb', letterSpacing: '.08em', textTransform: 'uppercase', padding: '6px 8px 2px', borderTop: '1px solid #eee', marginTop: 3 }}>{fam}</div>
           {ks.filter((k) => NATIVE[k] !== undefined || STILLS_FX[k]).map((k) => it(k, label(k)))}
         </div>
       ))}
@@ -342,6 +342,7 @@ function ApplyMenu({ onPick }) {
 const EASE = { qIn: 'cubic-bezier(.11,0,.5,0)', qOut: 'cubic-bezier(.5,1,.89,1)', qIO: 'cubic-bezier(.45,0,.55,1)', backOut: 'cubic-bezier(.34,1.56,.64,1)', lin: 'linear' };
 function Preview({ scene, urlOf, shadow }) {
   const ref = useRef(null);
+  const arCache = useRef(new Map());
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const st = ref.current; if (!st) return;
@@ -349,15 +350,21 @@ function Preview({ scene, urlOf, shadow }) {
     if (!scene) { const d = document.createElement('div'); d.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#666;font-size:12px'; d.textContent = 'PREVIEW — tap a photo below'; st.appendChild(d); return; }
     const HOLD = 800;
     const W = st.clientWidth, H = st.clientHeight;
+    // Each photo keeps its NATIVE aspect (read from the thumbnail once it has
+    // loaded; 3:2 only until then), contained in its cell like the render.
     const stack = (sc, extra = '') => {
       const wrap = document.createElement('div'); wrap.className = 'stk'; wrap.style.cssText = 'position:absolute;inset:0;transform-origin:50% 50%;' + extra;
       const cells = screenLayout(sc.clips.length, '16:9');
       sc.clips.forEach((c, i) => {
         const cell = sc.clips.length > 1 ? cells[i] : { x: 0.5, y: 0.5, w: 1 / 1.06, h: 1 / 1.06 };
         const ph = document.createElement('div');
-        const bw = cell.w * W, bh = cell.h * H; const ar = 1.4; let pw = Math.min(bw, bh * ar), phh = pw / ar;
-        ph.style.cssText = `position:absolute;left:${cell.x * 100}%;top:${cell.y * 100}%;width:${pw}px;height:${phh}px;transform:translate(-50%,-50%);background:#fff;padding:2px;box-sizing:border-box;${shadow ? 'box-shadow:0 4px 12px rgba(0,0,0,.55)' : ''}`;
-        const img = document.createElement('img'); img.src = urlOf(c.id) || ''; img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block'; ph.appendChild(img); wrap.appendChild(ph);
+        const bw = cell.w * W, bh = cell.h * H;
+        const size = (ar) => { const pw = Math.min(bw, bh * ar), phh = pw / ar; ph.style.width = `${pw}px`; ph.style.height = `${phh}px`; };
+        ph.style.cssText = `position:absolute;left:${cell.x * 100}%;top:${cell.y * 100}%;transform:translate(-50%,-50%);background:#fff;padding:2px;box-sizing:border-box;${shadow ? 'box-shadow:0 4px 12px rgba(0,0,0,.55)' : ''}`;
+        size(arCache.current.get(c.id) || 1.5);
+        const img = document.createElement('img'); img.src = urlOf(c.id) || ''; img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+        img.onload = () => { if (img.naturalWidth && img.naturalHeight) { const ar = img.naturalWidth / img.naturalHeight; arCache.current.set(c.id, ar); size(ar); } };
+        ph.appendChild(img); wrap.appendChild(ph);
       });
       return wrap;
     };
