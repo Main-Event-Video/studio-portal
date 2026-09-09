@@ -44,6 +44,7 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
   const screens = seg.stillsScreens || 'off';
   const mix = Array.isArray(seg.stillsMix) ? seg.stillsMix : [];
   const shadow = seg.stillsShadow !== false;
+  const atmo = !!seg.atmoOn;
   // Border on this page: 'off' | 'colour' | 'neon' (neon = tracing light, no mat)
   const border = seg.neonOn ? 'neon' : (seg.sbMode === 'none' ? 'off' : 'colour');
   const bW = Number.isFinite(Number(seg.sbW)) ? Number(seg.sbW) : BORDER_DEFAULT.w;
@@ -191,6 +192,14 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
   const pillBtn = (on, txt, fn) => (
     <button type="button" className={on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 10px', fontSize: 11 }} onClick={fn}>{txt}</button>
   );
+  const slider = (k, field, max = 200) => (
+    <div key={field} style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 7, fontSize: 11.5, color: 'var(--muted)', maxWidth: 420 }}>
+      <span style={{ minWidth: 66 }}>{k}</span>
+      <input type="range" min="0" max={max} step="5" value={parseInt(seg[field] ?? 100, 10)} style={{ flex: 1, minWidth: 0 }}
+        onChange={(ev) => update({ [field]: Number(ev.target.value) })} />
+      <span style={{ minWidth: 34, textAlign: 'right' }}>{parseInt(seg[field] ?? 100, 10)}%</span>
+    </div>
+  );
   const help = (txt) => <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>{txt}</div>;
   const row = (k, body) => (
     <div key={k} style={{ display: 'grid', gridTemplateColumns: '92px 1fr', gap: '6px 12px', alignItems: 'start', margin: '7px 0' }}>
@@ -251,7 +260,7 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
                 : 'No automatic screens — only the ones you build with Select ✓ → Group into a screen.')}
             </>),
           ])}
-          {section('LOOK — border, shadow, neon', [
+          {section('LOOK — border, shadow, neon, dust & leaks', [
             row('Border', <>
               <span style={{ display: 'inline-flex', gap: 4 }}>
                 {pillBtn(border === 'off', 'Off', () => update({ sbMode: 'none', neonOn: false }))}
@@ -285,6 +294,27 @@ export default function StillsPanel({ seg, update, projPhotos, photoEdits, setPh
                 {pillBtn(shadow, 'On', () => update({ stillsShadow: true }))}
               </span>
               {help('Soft drop shadow under each print. Turns itself off on a green / key-colour background.')}
+            </>),
+            // Dust & light leaks — the same montage-wide atmosphere overlay every
+            // style has (seg.atmoOn / atmoI / atmoDust / atmoLeak), surfaced here
+            // (Josh 9/9: "add a dust and light leak overlay toggle and intensity").
+            row('Dust & leaks', <>
+              <span style={{ display: 'inline-flex', gap: 4 }}>
+                {pillBtn(!atmo, 'Off', () => update({ atmoOn: false }))}
+                {pillBtn(atmo, 'On', () => update({ atmoOn: true }))}
+              </span>
+              {help(atmo
+                ? 'Floating dust and warm light leaks over the whole frame. Intensity moves both; the two under it fine-tune. On a green background it crosses the green beside a photo, which will not key cleanly there.'
+                : 'Floating dust and warm light leaks over the whole frame.')}
+              {atmo && (
+                <>
+                  {slider('Intensity', 'atmoI')}
+                  <div style={{ borderLeft: '3px solid var(--line)', paddingLeft: 9, marginTop: 2 }}>
+                    {slider('Dust', 'atmoDust')}
+                    {slider('Light leaks', 'atmoLeak')}
+                  </div>
+                </>
+              )}
             </>),
           ])}
 
