@@ -733,6 +733,9 @@ export default function AdminPage() {
   // every one of them. They live here and are merged back only where they are
   // drawn, by their timeline position.
   const [projVideos, setProjVideos] = useState([]);
+  // "Fix HEIC photos" — Josh circled back after declining it once: a grey
+  // .HEIC tile showed up in a second project. Holds the last result text.
+  const [heicFix, setHeicFix] = useState({ busy: false, msg: '' });
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
   const [projPhotosLoading, setProjPhotosLoading] = useState(false);
   const [showRef, setShowRef] = useState(false);         // numbered reference strip
@@ -3659,6 +3662,37 @@ export default function AdminPage() {
                 }}>
                 {`Download all videos (${projVideos.length})`}
               </button>
+            </>
+          )}
+          {/* FIX HEIC PHOTOS. A grey tile whose name ends in .HEIC is a photo the
+              upload path could not convert (the repair route sniffs the real
+              bytes and re-encodes whatever it finds, which is strictly stronger).
+              Runs on THIS client only, then reloads the strip so the tile fills
+              in. Safe to press twice: it only touches rows still HEIC and never
+              deletes an original until the JPEG is stored. */}
+          {projPhotos.length > 0 && (
+            <>
+              {' · '}
+              <button type="button" className="linklike" disabled={heicFix.busy}
+                title="Converts any photo still stored as HEIC to JPEG (fixes grey tiles named .HEIC). Only this client."
+                onClick={async () => {
+                  setHeicFix({ busy: true, msg: 'Fixing HEIC photos…' });
+                  try {
+                    const r = await api('/api/admin/convert-heic', { method: 'POST', body: JSON.stringify({ clientId: c.id, limit: 50 }) });
+                    const n = (r.converted || []).length, f = (r.failed || []).length, left = r.remaining || 0;
+                    const bits = [];
+                    bits.push(n ? `Converted ${n}` : 'Nothing to convert');
+                    if (f) bits.push(`${f} failed (${(r.failed || []).map((x) => `${x.filename}: ${x.error}`).join('; ')})`);
+                    if (left > f) bits.push(`${left - f} still to go — press again`);
+                    setHeicFix({ busy: false, msg: bits.join(' · ') });
+                    if (n) loadProjPhotos(c.id, true);
+                  } catch (e) {
+                    setHeicFix({ busy: false, msg: `Fix HEIC failed: ${e.message}` });
+                  }
+                }}>
+                {heicFix.busy ? 'Fixing HEIC…' : 'Fix HEIC photos'}
+              </button>
+              {heicFix.msg && <span style={{ marginLeft: 8, color: heicFix.msg.includes('failed') ? '#f5a623' : 'var(--muted)' }}>{heicFix.msg}</span>}
             </>
           )}
         </p>
