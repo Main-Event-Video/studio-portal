@@ -544,10 +544,10 @@ export default function AdminPage() {
     { value: 'hollywood', label: 'Hollywood — gold on black, slow + cinematic' },
     { value: 'timeless', label: 'Timeless — ivory, elegant, gentle' },
     { value: 'party', label: 'Party — fast, punchy, high energy' },
-    // Thumbnail is the Party 3 draft clip (a real render, Sept 4): the old
-    // party2.mp4 is a July render that still carried the scale transition, and
-    // Josh wants to see the straight wipe in the picker.
-    { value: 'party2', preview: 'party3', label: 'Party 2 — energetic drift; slide + circular-wipe + wipe + fade' },
+    // party2.mp4 is a 2026-09-11 engine capture on the Dylan stills (the
+    // simulator, not a Creatomate render) showing all four moves incl. the
+    // straight wipe. Josh: "create the Party 2 thumbnail using the Dylan images".
+    { value: 'party2', label: 'Party 2 — energetic drift; slide + circular-wipe + wipe + fade' },
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
     { value: 'duotone2', label: 'Duotone Split 2 — frantic, bg & hero transition separately' },
     { value: 'duotone_pastel', label: 'Duotone Split Pastel — soft rainbow bg + true-colour hero' },
