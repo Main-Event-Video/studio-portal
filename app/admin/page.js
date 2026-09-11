@@ -3632,6 +3632,32 @@ export default function AdminPage() {
               </button>
             </>
           )}
+          {/* DOWNLOAD EVERY VIDEO IN ONE CLICK. The montage turns each video into
+              a green gap for Josh to key the real clip into, so he needs the
+              clips themselves on disk. One browser download per video (Chrome
+              asks once to allow multiple downloads) using the signed links the
+              strip already holds — no server zip, which for gigabytes of video
+              would run out of time or memory on Vercel. The files arrive as
+              Album_after-N_original.mov, so Finder sorts them in timeline order
+              and the name says which gap each one fills. Staggered a little:
+              firing every link in the same tick makes Chrome drop some. */}
+          {projVideos.length > 0 && (
+            <>
+              {' · '}
+              <button type="button" className="linklike"
+                title="Saves every video in this project to your Downloads folder, named Album_after-N_original"
+                onClick={() => {
+                  const vids = [...projVideos].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0)).filter((v) => v.downloadUrl);
+                  vids.forEach((v, i) => setTimeout(() => {
+                    const a = document.createElement('a');
+                    a.href = v.downloadUrl; a.download = ''; a.rel = 'noopener';
+                    document.body.appendChild(a); a.click(); a.remove();
+                  }, i * 700));
+                }}>
+                {`Download all videos (${projVideos.length})`}
+              </button>
+            </>
+          )}
         </p>
         {roOpen && roClientId === c.id && renderReorder(c)}
         {showRef && projPhotos.length > 0 && (

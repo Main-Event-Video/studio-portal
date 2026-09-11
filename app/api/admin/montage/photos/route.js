@@ -31,6 +31,14 @@ async function probeDims(url) {
   return null;
 }
 
+// See the comment at the video's downloadUrl below. Slashes and spaces in the
+// album become dashes so the name is one safe token in Finder.
+function videoDownloadName(m, photoNo) {
+  const album = String(m.folder_path || '').trim().replace(/[\/\\\s]+/g, '-').replace(/[^\w.-]/g, '');
+  const slot = photoNo > 0 ? `after-${photoNo}` : 'start';
+  return [album, slot, m.filename || 'video'].filter(Boolean).join('_');
+}
+
 export async function GET(request) {
   const auth = await requireAdmin(request);
   if (auth.error) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -141,6 +149,10 @@ export async function GET(request) {
     (data || []).slice(0, 500).map(async (m, i) => {
       const isVideo = !(m.content_type || '').startsWith('image/');
       if (!isVideo) photoNo += 1;
+      // Captured NOW: every callback in this map runs to its first await in
+      // order, so by the time this one resumes past `await getViewUrl`,
+      // photoNo has been bumped by all the later ones.
+      const slotNo = photoNo;
       return {
       index: isVideo ? null : photoNo,
       video: isVideo,
@@ -164,7 +176,14 @@ export async function GET(request) {
       cropRect: !isVideo && m.crop_key && m.crop_rect ? m.crop_rect : null,
       url: await getViewUrl((!isVideo && m.crop_key) || m.r2_key, 3600),
       originalUrl: (!isVideo && m.crop_key) ? await getViewUrl(m.r2_key, 3600) : null,
-      downloadUrl: await getDownloadUrl(m.r2_key, m.filename, 3600),
+      // A VIDEO downloads under a name that says where it goes. Josh: "I need an
+      // easy way to simply download all these video files … add to the existing
+      // name the album and photo number." A video has no photo number of its
+      // own (it is a green gap between photos), so the name carries the number
+      // of the photo it comes right AFTER — which is exactly where the gap
+      // lands in the export — plus the album, with the original name kept at
+      // the end so nothing is lost:  Baby-Years_after-12_IMG_4432.mov
+      downloadUrl: await getDownloadUrl(m.r2_key, isVideo ? videoDownloadName(m, slotNo) : m.filename, 3600),
       };
     })
   );
