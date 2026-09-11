@@ -142,6 +142,21 @@ async function fetchCharacterDetail(characterId) {
   return res.json().catch(() => null);
 }
 
+// ONE WRITER AT A TIME for a render's `params`. review / visibility / adjust
+// all do a read-modify-write of the same jsonb column on the server, so two in
+// flight at once — Save a rename, then click Show Preview (which marks it
+// viewed) before the first has landed — lets the second write back the params
+// it read BEFORE the rename, and the name is gone. Josh: "it doesn't always
+// keep my rename even when I hit save". Every params write from this page goes
+// through this chain, so the next one starts only after the last one landed.
+let paramsChain = Promise.resolve();
+function apiParams(path, options) {
+  const run = () => api(path, options);
+  const p = paramsChain.then(run, run);
+  paramsChain = p.catch(() => {});
+  return p;
+}
+
 // Save which AI tool this character is being built for.
 async function saveCharacterProgram(characterId, program) {
   const { data } = await supabase.auth.getSession();
@@ -2529,7 +2544,7 @@ export default function AdminPage() {
 
   // Persist framing picks as they're made (refresh-proof). Fire-and-forget.
   function saveAdjustments(montageId, next) {
-    api('/api/admin/montage/adjust', {
+    apiParams('/api/admin/montage/adjust', {
       method: 'POST',
       body: JSON.stringify({ montageId, adjustments: next }),
     }).catch(() => {});
@@ -2583,7 +2598,7 @@ export default function AdminPage() {
   // Hide/unhide a render (non-destructive — just filters it from the list).
   async function hideMontage(id, hidden) {
     try {
-      await api('/api/admin/montage/visibility', {
+      await apiParams('/api/admin/montage/visibility', {
         method: 'POST',
         body: JSON.stringify({ montageId: id, hidden }),
       });
@@ -2603,7 +2618,7 @@ export default function AdminPage() {
       if (rendering) {
         await api('/api/admin/montage/cancel', { method: 'POST', body: JSON.stringify({ montageId: m.id }) }).catch(() => {});
       }
-      await api('/api/admin/montage/visibility', { method: 'POST', body: JSON.stringify({ montageId: m.id, hidden: true }) });
+      await apiParams('/api/admin/montage/visibility', { method: 'POST', body: JSON.stringify({ montageId: m.id, hidden: true }) });
       loadMontages();
     } catch (err) {
       setMErr(true);
@@ -2627,8 +2642,15 @@ export default function AdminPage() {
   // Record review state (viewed / thumbs up-down) on a render. Stored in params
   // server-side; reloads the list to reflect the new label/rating.
   async function reviewMontage(id, patch) {
+    // Show the change at once. The list is re-fetched every few seconds, and a
+    // fetch that STARTED before the save landed can arrive after it and put
+    // the old name back for one poll — which reads as "it didn't save".
+    if (patch.label !== undefined) {
+      const v = String(patch.label || '').trim().slice(0, 80) || null;
+      setMontages((prev) => prev.map((m) => (m.id === id ? { ...m, label: v } : m)));
+    }
     try {
-      await api('/api/admin/montage/review', { method: 'POST', body: JSON.stringify({ montageId: id, ...patch }) });
+      await apiParams('/api/admin/montage/review', { method: 'POST', body: JSON.stringify({ montageId: id, ...patch }) });
       loadMontages();
     } catch (err) {
       setMErr(true);
