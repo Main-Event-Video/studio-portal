@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { getClientByToken } from '@/lib/portal';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
-import { getObjectBuffer, putFile, deleteFile } from '@/lib/r2';
+import { getObjectBuffer, putFile, deleteFile, objectSize } from '@/lib/r2';
 import { isHeic, anyImageToJpeg, toJpgName, toJpgKey } from '@/lib/heic';
 
 export const runtime = 'nodejs';
@@ -32,12 +32,23 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Please sign in again' }, { status: 401 });
   }
 
+  // AN EMPTY UPLOAD IS A FAILED UPLOAD. The browser's PUT can return 200 with
+  // nothing written (a dropped connection at the wrong moment), and until now
+  // the row was saved anyway: a 0-byte object that shows as a blank tile in
+  // both portals and that no repair can recover. Check the stored size and
+  // refuse, so the client sees "try again" instead of a green tick.
+  const stored = await objectSize(key);
+  if (stored === null || stored === 0) {
+    try { await deleteFile(key); } catch { /* nothing to remove */ }
+    return NextResponse.json({ error: `${filename} arrived empty — please try that photo again` }, { status: 422 });
+  }
+
   // What actually gets stored. Starts as the uploaded file; if it's a HEIC we
   // swap in the converted JPEG below (convert + replace).
   let finalKey = key;
   let finalName = filename;
   let finalType = contentType || null;
-  let finalSize = Number.isFinite(size) ? size : null;
+  let finalSize = Number.isFinite(size) ? size : stored;
   let converted = false;
 
   if (isHeic({ filename, contentType })) {

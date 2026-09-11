@@ -736,6 +736,9 @@ export default function AdminPage() {
   // "Fix HEIC photos" — Josh circled back after declining it once: a grey
   // .HEIC tile showed up in a second project. Holds the last result text.
   const [heicFix, setHeicFix] = useState({ busy: false, msg: '' });
+  // Photos whose <img> failed to load — a file the browser cannot show. Keyed
+  // by r2 key; the tile explains itself instead of sitting there grey.
+  const [brokenImgs, setBrokenImgs] = useState({});
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
   const [projPhotosLoading, setProjPhotosLoading] = useState(false);
   const [showRef, setShowRef] = useState(false);         // numbered reference strip
@@ -3983,8 +3986,23 @@ export default function AdminPage() {
                 onDoubleClick={() => setSelKey(isSel ? null : p.key)} title="Drag to reorder · double-click to edit"
                 style={{ border: isSel ? '2px solid #d8b56b' : '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', cursor: 'grab', opacity: pe.removed ? 0.4 : 1, position: 'relative', outline: over ? '2px solid rgba(56,182,255,.5)' : 'none', outlineOffset: '-2px' }}>
                 <div style={{ position: 'relative', aspectRatio: '16 / 9', background: '#000', overflow: 'hidden', containerType: 'size' }}>
-                  <img src={p.url} alt={p.filename} draggable={false} onLoad={noteDims(p.key)} style={{ width: '100%', height: '100%', ...styleFor(pe) }} />
+                  <img src={p.url} alt={p.filename} draggable={false} onLoad={noteDims(p.key)} style={{ width: '100%', height: '100%', ...styleFor(pe) }}
+                    onError={() => setBrokenImgs((b) => (b[p.key] ? b : { ...b, [p.key]: true }))} />
                   {borderOverlay(p, pe)}
+                  {/* A TILE THAT CANNOT SHOW ITS PHOTO SAYS WHY. Josh found two
+                      grey ".HEIC" tiles that Fix HEIC could not touch: the
+                      objects in storage were 0 bytes — the upload never wrote
+                      anything, and nothing can be recovered. Blank grey told him
+                      nothing; this tells him what to do. sizeBytes 0 is the
+                      empty-upload case for certain; a load failure on a file
+                      with size is either a HEIC (Fix HEIC) or a broken file. */}
+                  {(p.sizeBytes === 0 || brokenImgs[p.key]) && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      gap: 3, padding: '6px 8px', textAlign: 'center', background: 'rgba(120,20,20,0.55)', color: '#ffd7d7', fontSize: 10, lineHeight: 1.3, pointerEvents: 'none' }}>
+                      <strong style={{ fontSize: 10.5, letterSpacing: '.04em' }}>{p.sizeBytes === 0 ? 'EMPTY UPLOAD' : 'CAN\u2019T DISPLAY'}</strong>
+                      <span>{p.sizeBytes === 0 ? 'Nothing was received — ask the client to re-send this photo' : 'Try Fix HEIC photos; if it stays, ask the client to re-send it'}</span>
+                    </div>
+                  )}
                 </div>
                 {over && <span style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 7, borderRadius: '8px 0 0 8px', background: over === 'before' ? '#22c55e' : '#38b6ff', boxShadow: over === 'before' ? '0 0 8px #22c55e' : 'none', zIndex: 7 }} />}
                 {over && <span style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: 7, borderRadius: '0 8px 8px 0', background: over === 'after' ? '#22c55e' : '#38b6ff', boxShadow: over === 'after' ? '0 0 8px #22c55e' : 'none', zIndex: 7 }} />}

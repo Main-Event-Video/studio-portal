@@ -391,6 +391,9 @@ export default function Uploader({ token }) {
 
   async function uploadOne({ file, relPath }, index, setStatus, folderOverride) {
     const contentType = file.type || 'application/octet-stream';
+    // A 0-byte file (an iCloud photo that never downloaded, a broken share) can
+    // never become a picture; say so here instead of storing an empty object.
+    if (!file.size) throw new Error('This file is empty — please try it again');
     setStatus(index, { status: 'uploading', pct: 0 });
     const urlRes = await fetch('/api/portal/upload-url', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -399,7 +402,7 @@ export default function Uploader({ token }) {
     if (!urlRes.ok) { const j = await urlRes.json().catch(() => ({})); throw new Error(j.error || 'Could not start upload'); }
     const { url, key } = await urlRes.json();
     await putWithProgress(url, file, (pct) => setStatus(index, { status: 'uploading', pct }));
-    await fetch('/api/portal/confirm', {
+    const conf = await fetch('/api/portal/confirm', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         token, key, filename: file.name, contentType, size: file.size,
@@ -407,6 +410,8 @@ export default function Uploader({ token }) {
         folderPath: folderOverride !== undefined ? folderOverride || null : folderFromPath(relPath),
       }),
     });
+    // The confirm reply was never read, so a refused file still got a tick.
+    if (!conf.ok) { const j = await conf.json().catch(() => ({})); throw new Error(j.error || 'Could not save this photo — please try again'); }
     setStatus(index, { status: 'done', pct: 100 });
   }
 

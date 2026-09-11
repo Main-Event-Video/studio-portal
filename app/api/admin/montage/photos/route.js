@@ -165,6 +165,8 @@ export async function GET(request) {
       filename: m.filename,
       album: m.folder_path || null,
       importSeq: impSeq.byKey.get(m.r2_key) ?? null,
+      // 0 means the upload arrived empty — the tile says so instead of going grey.
+      sizeBytes: Number.isFinite(m.size_bytes) ? m.size_bytes : null,
       // The client's own crop, if they made one. The strip SHOWS the cropped
       // version — it is what the montage will use — and carries the flag so the
       // tile can badge it and the editor can offer the full frame back.
