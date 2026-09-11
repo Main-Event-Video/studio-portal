@@ -323,6 +323,32 @@ console.log(`Duotone: ${Object.keys(DUO_PALETTES).length} palettes x ${Object.ke
   console.log(`Neon coverage: ${dark} unlit photos across ${Object.keys(STYLES).length} styles.`);
 }
 
+// VIDEO GAPS ON EVERY STYLE. Josh: "I am not seeing the green/magenta place
+// holders for videos on the preview export." Only the slideshow path drew them;
+// every bespoke builder filtered the placeholder out. Now the sequence is cut
+// at each video and a keyable card is spliced in (buildWithVideoGaps), so every
+// style must show a full-frame key-colour span per video, in the chosen key.
+{
+  let missing = 0;
+  const P = (m) => ({ type: 'photo', url: `https://x/${m.file}`, framing: 'top', fit: null, size: 100, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null, w: m.w, h: m.h });
+  const ph = manifest.map(P);
+  const items = [ph[0], ph[1], ph[2], { type: 'placeholder', name: 'clip.mov' }, ph[3], ph[4], { type: 'placeholder', name: 'b.mov' }, ph[5], ph[6]];
+  for (const style of Object.keys(STYLES)) {
+    const src = buildMontageSource({ items, style, title: 'V', watermarkUrl: null, includeCards: true, greenBookends: false, photoSeconds: 2, width: 1920, height: 1080, keyColor: '#FF00FF', assetBase: 'https://x' });
+    const isKeyFill = (n) => n && ((typeof n.fill_color === 'string' && n.fill_color.toUpperCase() === '#FF00FF') || /key-ff00ff\.png/i.test(n.source || ''));
+    const fullFrame = (n) => parseFloat(n.width) >= 99 && parseFloat(n.height) >= 99;
+    // a top-level element (or a composition whose first-level child) that is a full-frame key fill and holds no picture
+    const gaps = (src.elements || []).filter((e) => {
+      const kids = e.type === 'composition' ? (e.elements || []) : [e];
+      const pic = JSON.stringify(e).includes('https://x/p') || /"type":"image"/.test(JSON.stringify(kids).replace(/key-ff00ff/g, ''));
+      return !pic && kids.some((k) => isKeyFill(k) && fullFrame(k)) && !/^Background/i.test(e.name || '');
+    });
+    if (gaps.length < 2) { missing++; console.log(`FAIL ${style}: ${gaps.length} video gap(s) found, expected 2`); }
+  }
+  fail += missing;
+  console.log(`Video gaps: ${Object.keys(STYLES).length - missing}/${Object.keys(STYLES).length} styles draw a keyable card per video.`);
+}
+
 // UNITS. Creatomate validates these and rejects the WHOLE render on one bad
 // value — a montage was lost to `Shape.z_rotation: Expected a number ending
 // with \u00B0` because two new elements were written with CSS's "deg" instead of
