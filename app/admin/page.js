@@ -544,7 +544,10 @@ export default function AdminPage() {
     { value: 'hollywood', label: 'Hollywood — gold on black, slow + cinematic' },
     { value: 'timeless', label: 'Timeless — ivory, elegant, gentle' },
     { value: 'party', label: 'Party — fast, punchy, high energy' },
-    { value: 'party2', label: 'Party 2 — energetic drift; slide + circular-wipe + fade' },
+    // Thumbnail is the Party 3 draft clip (a real render, Sept 4): the old
+    // party2.mp4 is a July render that still carried the scale transition, and
+    // Josh wants to see the straight wipe in the picker.
+    { value: 'party2', preview: 'party3', label: 'Party 2 — energetic drift; slide + circular-wipe + wipe + fade' },
     { value: 'duotone', label: 'Duotone Split — dual-tint bg + true-colour hero' },
     { value: 'duotone2', label: 'Duotone Split 2 — frantic, bg & hero transition separately' },
     { value: 'duotone_pastel', label: 'Duotone Split Pastel — soft rainbow bg + true-colour hero' },
@@ -568,10 +571,8 @@ export default function AdminPage() {
     { value: 'comic_book', label: 'Comic Book — moves happen in comic, the real photo is the reveal' },
     { value: 'glass', label: 'Glass — lit panes in a bright room; the room reflows to each photo’s shape' },
     { value: 'neon_frame', label: 'Neon Frame — a light runs around each photo\u2019s own edge, dark backdrop' },
-    // Reuses Party 2's real render clip on purpose: Party 3 IS Party 2's look —
-    // the difference is only what happens mid-transition, which a thumbnail
-    // cannot show honestly.
-    { value: 'party3', preview: 'party2', label: 'Party 3 — Party 2 plus a straight wipe in the rotation' },
+    // Party 3 retired 2026-09-11: its wipe moved into Party 2. The id still
+    // renders (alias in lib/montage.js) so old rows keep working; not offered.
     // MEvid Stills (9/9): the MEvid transition engine — one photo at a time
     // (or 2/3/4-up screens), cycling all 26 transitions; per-photo picks and
     // manual screens in the "Open MEvid Stills" panel under the segment's Style.
@@ -589,8 +590,8 @@ export default function AdminPage() {
   // and which the engine does not yet match. A style with no file here simply
   // shows no ref button.
   const STYLE_REFS = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'photo_ribbon',
-    'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel', 'glass', 'framed_box'];
-  const NEW_STYLES = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'framed_box', 'photo_ribbon', 'neon_frame', 'comic_book', 'party3', 'two_panel', 'duotone_pastel'];
+    'neon_frame', 'comic_book', 'two_panel', 'duotone_pastel', 'glass', 'framed_box'];
+  const NEW_STYLES = ['photo_slide', 'sliding_images', 'multi_slide', 'basic_cut', 'framed_box', 'photo_ribbon', 'neon_frame', 'comic_book', 'two_panel', 'duotone_pastel'];
 
   // ---- Studio background library -------------------------------------------
   // Imported backdrops — images AND videos — shared across every client, so a
