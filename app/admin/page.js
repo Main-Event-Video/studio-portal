@@ -2402,13 +2402,17 @@ export default function AdminPage() {
         </div>
       );
       return (
-        <div style={{ gridColumn: '1 / -1', marginTop: 2, marginBottom: 6, border: '1px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'rgba(61,123,255,0.06)' }}>
+        // This box sits INSIDE the style card's grid cell (~220px), joined to
+        // the card — so nothing in it may carry a fixed width. The first
+        // version had a 300px preview, 200px selects and a 220px text column,
+        // and they all spilled sideways across the neighbouring cards.
+        <div style={{ marginTop: 2, marginBottom: 6, border: '1px solid var(--blue)', borderRadius: 10, padding: '12px 14px', background: 'rgba(61,123,255,0.06)', minWidth: 0, overflow: 'hidden' }}>
           <strong style={{ fontSize: 13 }}>Duotone background</strong>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 10, alignItems: 'flex-end' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
             <label style={{ fontSize: 12, color: 'var(--muted)' }}>
               Background colours
               <select value={seg.duoPalette || ''} onChange={(e) => set({ duoPalette: e.target.value })}
-                style={{ display: 'block', marginTop: 4, minWidth: 200 }}>
+                style={{ display: 'block', marginTop: 4, width: '100%' }}>
                 <option value="">Style default ({st === 'duotone_pastel' ? 'Pastel' : 'Neon'})</option>
                 {Object.entries(DUO_PALETTES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
@@ -2416,19 +2420,19 @@ export default function AdminPage() {
             <label style={{ fontSize: 12, color: 'var(--muted)' }}>
               Background image
               <select value={seg.duoTreatment || ''} onChange={(e) => set({ duoTreatment: e.target.value })}
-                style={{ display: 'block', marginTop: 4, minWidth: 200 }}>
+                style={{ display: 'block', marginTop: 4, width: '100%' }}>
                 <option value="">Black &amp; white (default)</option>
                 <option value="sepia">Sepia</option>
                 <option value="color">Full colour (softer tint)</option>
               </select>
             </label>
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-start' }}>
-            <div style={{ display: 'flex', width: 300, aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--line)', background: '#000', flex: '0 0 auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+            <div style={{ display: 'flex', width: '100%', aspectRatio: '16 / 9', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--line)', background: '#000' }}>
               {halfPreview(pal.pairs[0], 'l')}
               {halfPreview(pal.pairs[2 % pal.pairs.length], 'r')}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', minWidth: 0 }}>
               {/* One swatch per PALETTE, and every one of them is clickable. The
                   first version showed the pairs INSIDE the chosen palette as plain
                   spans — they looked exactly like a picker and did nothing when
@@ -2443,7 +2447,7 @@ export default function AdminPage() {
                       <button key={`${k}:${i}`} type="button" onClick={() => set({ duoPalette: k })}
                         title={k ? v.label : 'This style\u2019s own colours'}
                         style={{
-                          padding: 0, borderRadius: 7, overflow: 'hidden', cursor: 'pointer', width: 78,
+                          padding: 0, borderRadius: 7, overflow: 'hidden', cursor: 'pointer', width: 'calc(50% - 3px)',
                           border: on ? '2px solid #38b6ff' : '1px solid var(--line)',
                           background: 'transparent', textAlign: 'center',
                         }}>
