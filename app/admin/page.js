@@ -724,7 +724,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'edits', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'none', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -2058,16 +2058,12 @@ export default function AdminPage() {
   // why. The album panel already solves the same problem with its "N photos have
   // their own border set more recently" line.
   const styleBorderPanel = (st, seg, set) => {
-    const mode = seg.sbMode || 'edits';
+    // Off / On only. 'edits' (follow Edit Photos) is gone with the Edit Photos
+    // controls; an old segment still carrying it reads as Off.
+    const mode = seg.sbMode === 'custom' ? 'custom' : 'none';
     const w = Number.isFinite(Number(seg.sbW)) ? Number(seg.sbW) : BORDER_DEFAULT.w;
     const color = seg.sbColor || BORDER_DEFAULT.color;
     const dead = NO_BORDER_STYLES.has(st);
-    // What this override is actually displacing, counted off the real edits.
-    const albs = Object.entries((photoEdits.albumBorders) || {}).filter(([, b]) => b && b.on).length;
-    const phs = Object.values((photoEdits.photos) || {}).filter((p) => p && p.border && p.border.on).length;
-    const covered = albs || phs
-      ? `${albs ? `${albs} album${albs === 1 ? '' : 's'}` : ''}${albs && phs ? ' and ' : ''}${phs ? `${phs} photo${phs === 1 ? '' : 's'}` : ''}`
-      : null;
     const opt = (val, label, tone) => {
       const on = mode === val;
       return (
@@ -2086,9 +2082,8 @@ export default function AdminPage() {
     return (
       <div style={{ marginTop: 11 }}>
         <span style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 1 }}>Border</span>
-        {opt('edits', 'Use Edit Photos borders')}
         {opt('none', 'No border', '#e6295c')}
-        {opt('custom', 'Custom border')}
+        {opt('custom', 'Border on')}
         {mode === 'custom' && !dead && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 8, fontSize: 11.5, color: 'var(--muted)' }}>
             <span>Thickness</span>
@@ -2109,11 +2104,9 @@ export default function AdminPage() {
           {dead ? (st === 'framed_box'
               ? 'Framed Box draws its own frame instead — use Frame thickness and colour above.'
               : 'This style does not draw a photo border, so the setting would do nothing here.')
-            : mode === 'edits'
-              ? <>Each album or photo keeps whatever you set in Edit Photos.{covered ? ` ${covered} carr${albs + phs === 1 ? 'ies' : 'y'} a border.` : ' Nothing has one set.'}</>
-              : mode === 'none'
-                ? <>Strips every border for this montage only. Edit Photos is left exactly as it is.{covered ? <span style={{ color: '#ff8fab' }}> Overriding {covered}.</span> : ''}</>
-                : <>One border on every photo in this montage, whatever Edit Photos says.{covered ? <span style={{ color: '#8fc0ff' }}> Overriding {covered}.</span> : ''}</>}
+            : mode === 'none'
+              ? <>No border on any photo in this montage.</>
+              : <>The same border on every photo in this montage. This is the only place a border is set.</>}
         </p>
       </div>
     );
@@ -3757,35 +3750,6 @@ export default function AdminPage() {
             if (!t || !t.naturalWidth || !t.naturalHeight) return;
             setPhotoDims((d) => (d[key] ? d : { ...d, [key]: { w: t.naturalWidth, h: t.naturalHeight } }));
           };
-          // The border, drawn where the RENDER will put it.
-          //
-          // Thickness is in cqh — 1% of the container's height — because the render
-          // measures it as a share of the frame's short side, and these preview boxes
-          // are the same 16:9 shape as the frame. So the slider value means the same
-          // thing in both places instead of being eyeballed twice.
-          //
-          // On a Fit photo the frame hugs the picture, not the box, which is the
-          // whole point of Josh's choice: a 9x16 gets a tall narrow border with
-          // backdrop either side. That needs the photo's real shape, so until the
-          // image has loaded the frame falls back to the box.
-          const borderOverlay = (pp, e) => {
-            const b = resolveBorder(photoEdits, pp.key, pp.album);
-            if (!borderIsOn(b)) return null;
-            let W = 100, H = 100;
-            const d = photoDims[pp.key];
-            if (e.fit !== 'fill' && d && d.w > 0 && d.h > 0) {
-              const ar = d.w / d.h, boxAR = 16 / 9;
-              if (ar >= boxAR) H = (boxAR / ar) * 100; else W = (ar / boxAR) * 100;
-            }
-            return (
-              <span aria-hidden="true" style={{
-                position: 'absolute', left: `${((100 - W) / 2).toFixed(3)}%`, top: `${((100 - H) / 2).toFixed(3)}%`,
-                width: `${W.toFixed(3)}%`, height: `${H.toFixed(3)}%`,
-                border: `${b.w}cqh solid ${b.color}`, boxSizing: 'border-box',
-                pointerEvents: 'none', zIndex: 3,
-              }} />
-            );
-          };
           // The inline editor for ONE photo — opens directly under its
           // thumbnail on double-click. ‹ › move to the previous/next photo.
           const editorPanel = (selP) => {
@@ -3828,7 +3792,6 @@ export default function AdminPage() {
                   <img src={(selP.clientCrop && e.useOriginal && selP.originalUrl) ? selP.originalUrl : selP.url}
                     alt={selP.filename} draggable={false} onLoad={noteDims(selP.key)}
                     style={{ width: '100%', height: '100%', userSelect: 'none', ...styleFor(e) }} />
-                  {borderOverlay(selP, e)}
                   {arrow(-1, idx <= 0)}
                   {arrow(1, idx >= projPhotos.length - 1)}
                   <span style={{ position: 'absolute', top: 8, left: 8, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '2px 8px', borderRadius: 6 }}>Photo {selP.index} of {projPhotos.length}</span>
@@ -3896,32 +3859,11 @@ export default function AdminPage() {
                     <button type="button" className={!e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { colorCorrect: false })}>Off</button>
                     <button type="button" className={e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { colorCorrect: true })}>On</button>
                   </div>
-                  {(() => {
-                    // This photo's own border. Setting anything here stamps it as the
-                    // most recent choice, so it overrides the album for this photo —
-                    // and the album can take it back by being set again afterwards.
-                    const eff = resolveBorder(photoEdits, selP.key, selP.album);
-                    const src = borderSource(photoEdits, selP.key, selP.album);
-                    return (
-                      <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', width: '100%' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
-                          <strong style={{ fontSize: 12, color: 'var(--text)' }}>Border</strong>
-                          <span style={{ fontSize: 11 }}>
-                            {src === 'album'
-                              ? `following ${selP.album ? `“${selP.album}”` : 'the album setting'}`
-                              : src === 'photo' ? 'set on this photo' : 'none'}
-                          </span>
-                          {src === 'photo' && (
-                            <button type="button" className="linklike" style={{ fontSize: 11, marginLeft: 'auto' }}
-                              onClick={() => clearPhotoBorder(c.id, selP.key)}>
-                              Use the album&rsquo;s border
-                            </button>
-                          )}
-                        </div>
-                        {borderControls(eff, (patch) => setPhotoBorder(c.id, selP.key, patch))}
-                      </div>
-                    );
-                  })()}
+                  {/* BORDER LIVES IN CHOOSE STYLE ONLY. Josh 2026-09-11: "I think
+                      I've made it too confusing on myself. Let's remove the Border
+                      button from Edit Photos and only have it in the montage maker"
+                      — one place to set it, per montage, so a chosen colour can no
+                      longer be silently outranked by a setting somewhere else. */}
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
                     <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={rotatingKey === selP.key} title="Rotate this photo 90°" onClick={() => rotateProjPhoto(c.id, selP.key)}>{rotatingKey === selP.key ? 'Rotating…' : 'Rotate ↻'}</button>
                     <a href={selP.downloadUrl || selP.url} download={selP.filename} className="linklike" style={{ fontSize: 12 }}>Download</a>
@@ -3988,7 +3930,6 @@ export default function AdminPage() {
                 <div style={{ position: 'relative', aspectRatio: '16 / 9', background: '#000', overflow: 'hidden', containerType: 'size' }}>
                   <img src={p.url} alt={p.filename} draggable={false} onLoad={noteDims(p.key)} style={{ width: '100%', height: '100%', ...styleFor(pe) }}
                     onError={() => setBrokenImgs((b) => (b[p.key] ? b : { ...b, [p.key]: true }))} />
-                  {borderOverlay(p, pe)}
                   {/* A TILE THAT CANNOT SHOW ITS PHOTO SAYS WHY. Josh found two
                       grey ".HEIC" tiles that Fix HEIC could not touch: the
                       objects in storage were 0 bytes — the upload never wrote
@@ -4054,78 +3995,7 @@ export default function AdminPage() {
           // is one click and the colour wheel is there for everything else.
           const BORDER_SWATCHES = ['#FFFFFF', '#000000', '#F5E6C8', '#D8B56B', '#C0C0C0', '#FF4D88'];
 
-          // The border control block. Used unchanged by an ALBUM and by a SINGLE
-          // photo — they set the same shape of value, and which one wins is decided
-          // by whichever was touched last (lib/photoBorder.js), not by the widget.
-          const borderControls = (b, onChange, extra) => {
-            const on = !!(b && b.on);
-            const w = b && Number.isFinite(Number(b.w)) ? Number(b.w) : BORDER_DEFAULT.w;
-            const color = (b && b.color) || BORDER_DEFAULT.color;
-            return (
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--muted)' }}>
-                <span style={{ display: 'inline-flex', gap: 4 }}>
-                  <button type="button" className={!on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 9px', fontSize: 11 }}
-                    onClick={() => onChange({ on: false })}>Off</button>
-                  <button type="button" className={on ? 'btn-primary' : 'btn-ghost'} style={{ padding: '3px 9px', fontSize: 11 }}
-                    onClick={() => onChange({ on: true, w, color })}>On</button>
-                </span>
-                {/* Deliberately NOT disabled while the border is off. They used to
-                    be, which meant clicking a colour swatch on a fresh album did
-                    nothing at all — you had to find and press On first. Picking a
-                    colour or a thickness IS asking for a border, so it switches
-                    itself on (every handler already sends on: true). */}
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  Thickness
-                  <input type="range" min={BORDER_MIN} max={BORDER_MAX} step="0.1" value={w} style={{ width: 110 }}
-                    onChange={(ev) => onChange({ on: true, w: Number(ev.target.value), color })} />
-                  <span style={{ display: 'inline-block', minWidth: 30 }}>{w.toFixed(1)}</span>
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  Colour
-                  <input type="color" value={color} aria-label="Border colour"
-                    style={{ width: 34, height: 26, padding: 0, border: '1px solid var(--line)', borderRadius: 6, background: 'transparent', cursor: 'pointer' }}
-                    onChange={(ev) => onChange({ on: true, w, color: ev.target.value.toUpperCase() })} />
-                  {BORDER_SWATCHES.map((sw) => (
-                    <button key={sw} type="button" title={sw}
-                      onClick={() => onChange({ on: true, w, color: sw })}
-                      style={{ width: 18, height: 18, borderRadius: 4, cursor: 'pointer',
-                        border: (on && color === sw) ? '2px solid #38b6ff' : '1px solid var(--line)', background: sw, padding: 0 }} />
-                  ))}
-                </span>
-                {extra}
-              </div>
-            );
-          };
 
-          // The album-level panel that sits in each group's header.
-          const albumBorderPanel = (albumName) => {
-            const k = albumKey(albumName);
-            const b = (photoEdits.albumBorders || {})[k] || null;
-            const open = borderPanel === k;
-            const on = borderIsOn(b);
-            // Sits immediately after the photo count, not pushed to the far right —
-            // a control flush against the panel edge reads as chrome and gets
-            // scanned past, which is exactly what happened the first time.
-            return (
-              <button type="button" onClick={() => setBorderPanel(open ? null : k)}
-                title="Give every photo in this album the same border"
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600,
-                  cursor: 'pointer',
-                  border: `1px solid ${open || on ? '#d8b56b' : 'var(--line)'}`,
-                  background: open ? 'rgba(216,181,107,0.16)' : 'transparent',
-                  color: open || on ? '#d8b56b' : 'var(--muted)',
-                }}>
-                <span aria-hidden="true" style={{
-                  width: 13, height: 13, borderRadius: 3, flex: '0 0 auto',
-                  border: `2px solid ${on ? b.color : 'currentColor'}`,
-                  opacity: on ? 1 : 0.7,
-                }} />
-                {open ? 'Done' : (on ? `Border ${b.w.toFixed(1)}` : 'Border')}
-              </button>
-            );
-          };
 
           // Filenames. Josh: "just want to see occasional names" — so it is PER
           // ALBUM and it is a way of READING the screen, not an edit: it never
@@ -4157,37 +4027,6 @@ export default function AdminPage() {
             );
           };
 
-          // The expanded album panel, rendered under the group header.
-          const albumBorderBody = (albumName) => {
-            const k = albumKey(albumName);
-            if (borderPanel !== k) return null;
-            const b = (photoEdits.albumBorders || {})[k] || null;
-            const overridden = groups
-              .filter((g) => albumKey(g.album) === k)
-              .flatMap((g) => g.photos)
-              .filter((ph) => borderSource(photoEdits, ph.key, ph.album) === 'photo').length;
-            return (
-              <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '9px 11px', margin: '0 0 10px', background: 'rgba(127,127,127,0.05)' }}>
-                <div style={{ fontSize: 12, marginBottom: 8 }}>
-                  <strong>Border for every photo {albumName ? `in “${albumName}”` : 'not in an album'}</strong>
-                </div>
-                {borderControls(b, (patch) => setAlbumBorder(c.id, albumName, patch))}
-                <p style={{ fontSize: 11, color: 'var(--muted)', margin: '8px 0 0' }}>
-                  Carries through to the montage on every style. Thickness is a share of
-                  the frame height, so it looks the same weight on a full-screen photo and
-                  on a tiled one.
-                  {overridden > 0 && (
-                    <>
-                      {' '}<span style={{ color: '#d8b56b' }}>
-                        {overridden} photo{overridden === 1 ? ' has' : 's have'} their own border set more
-                        recently and will keep it — changing anything here takes them all back.
-                      </span>
-                    </>
-                  )}
-                </p>
-              </div>
-            );
-          };
           const renderCells = (photos) => photos.map((p) => (
             <Fragment key={`c:${p.key || p.id || p.index}`}>
               {p.video ? videoCell(p) : photoCell(p)}
@@ -4256,14 +4095,8 @@ export default function AdminPage() {
                             );
                           })()}
                         </button>
-                        {albumBorderPanel(g.album)}
                         {albumNamesPanel(g.album)}
                       </div>
-                      {/* Shown even when collapsed: the Border button sits in the
-                          header and stays clickable there, so hiding its panel
-                          would make that button do nothing visible. Setting a
-                          border on a closed album is a reasonable thing to do. */}
-                      {albumBorderBody(g.album)}
                       {!collapsed && (
                         <div style={gridStyle}
                           onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
@@ -4278,10 +4111,8 @@ export default function AdminPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <strong style={{ fontSize: 13 }}>All photos</strong>
                     <span style={{ color: 'var(--muted)', fontSize: 12 }}>{projPhotos.length} photo{projPhotos.length === 1 ? '' : 's'}</span>
-                    {albumBorderPanel('')}
                     {albumNamesPanel('')}
                   </div>
-                  {albumBorderBody('')}
                   <div style={gridStyle}
                     onDragOver={(e) => { if (pcDrag.current) e.preventDefault(); }}
                     onDrop={(e) => { if (pcDrag.current) { e.preventDefault(); commitDrop(c.id, null); } }}

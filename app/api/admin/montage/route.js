@@ -212,7 +212,11 @@ async function postMontage(request) {
       // engine, so the stored render snapshot carries the border that was
       // actually chosen at this moment: an Export Final months later reproduces
       // THIS draft even if the album's border has changed since.
-      border: resolveBorder(pe, k, albumByKey.get(k) || null, SB),
+      // 2026-09-11: the Edit Photos album/photo borders are no longer offered
+      // and no longer read — Josh: "only have it in the montage maker". A
+      // border comes from the Choose Style panel or not at all, so an old
+      // album border saved in photo_edits can never surprise a render again.
+      border: SB || null,
     };
   };
   const photoObj = (k) => {
