@@ -3639,20 +3639,23 @@ export default function AdminPage() {
               strip already holds — no server zip, which for gigabytes of video
               would run out of time or memory on Vercel. The files arrive as
               Album_after-N_original.mov, so Finder sorts them in timeline order
-              and the name says which gap each one fills. Staggered a little:
-              firing every link in the same tick makes Chrome drop some. */}
+              and the name says which gap each one fills. Staggered 1.5s apart:
+              fired closer together Chrome quietly dropped one of five, and its
+              "allow multiple downloads" prompt does not always appear. Each
+              tile also carries its own Download link for the one that gets
+              missed — that is a real click, which Chrome never blocks. */}
           {projVideos.length > 0 && (
             <>
               {' · '}
               <button type="button" className="linklike"
-                title="Saves every video in this project to your Downloads folder, named Album_after-N_original"
+                title="Saves every video in this project to your Downloads folder, named Album_after-N_original. If Chrome skips one, use the Download link on that video's tile."
                 onClick={() => {
                   const vids = [...projVideos].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0)).filter((v) => v.downloadUrl);
                   vids.forEach((v, i) => setTimeout(() => {
                     const a = document.createElement('a');
                     a.href = v.downloadUrl; a.download = ''; a.rel = 'noopener';
                     document.body.appendChild(a); a.click(); a.remove();
-                  }, i * 700));
+                  }, i * 1500));
                 }}>
                 {`Download all videos (${projVideos.length})`}
               </button>
@@ -3916,6 +3919,20 @@ export default function AdminPage() {
                 style={{ position: 'absolute', bottom: 4, left: 4, fontSize: 10, fontWeight: 900, letterSpacing: '.3px',
                   background: '#f5a623', color: '#241700', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>
                 {String(p.importSeq).padStart(3, '0')}</span>}
+              {/* ONE-CLICK DOWNLOAD ON THE TILE. Josh: "add the ability to … have
+                  a download button … or it can live in the box without double
+                  clicking." A real link, not a script — a click on a link is a
+                  user gesture Chrome never blocks, which is what the batch button
+                  above cannot promise (it downloaded 4 of 5 for him). Same
+                  Album_after-N_original name. Bottom-right: the other corners
+                  are the VIDEO tag and the orange import number. */}
+              {p.downloadUrl && (
+                <a href={p.downloadUrl} download title="Download this video (Album_after-N_original)"
+                  onClick={(ev) => ev.stopPropagation()}
+                  style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 10, fontWeight: 700, textDecoration: 'none',
+                    background: '#00b140', color: '#04180b', padding: '2px 7px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>
+                  {'\u2913 Download'}</a>
+              )}
             </div>
           );
           const photoCell = (p) => {
