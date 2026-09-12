@@ -242,7 +242,15 @@ async function postMontage(request) {
   // Which photos the client cropped, and where that crop lives.
   const cropByKey = new Map();
   for (const m of timelineItems || []) if (m.crop_key) cropByKey.set(m.r2_key, m.crop_key);
-  const photosAll = (timelineItems || []).filter((m) => (m.content_type || '').startsWith('image/') && !isHeic({ filename: m.filename, contentType: m.content_type }));
+  // THE NUMBERS MUST MATCH THE STRIP. Edit Photos numbers every image/* row
+  // 1..N, unconverted HEICs included (they show as grey tiles). This list used
+  // to DROP those HEICs, so from the first stuck HEIC onward every number here
+  // was one less than the number on screen — Josh asked for 148 alone and got
+  // 149. Same rows, same numbering; a HEIC that cannot render is skipped AFTER
+  // selection, and the summary says so.
+  const photosAll = (timelineItems || []).filter((m) => (m.content_type || '').startsWith('image/'));
+  const unrenderable = (m) => isHeic({ filename: m.filename, contentType: m.content_type });
+  const skippedHeic = [];
   if (photosAll.length < 1) {
     return NextResponse.json(
       { error: 'This client has no photo uploads yet. Upload photos first.' },
@@ -269,7 +277,9 @@ async function postMontage(request) {
       const ct = it.content_type || '';
       if (ct.startsWith('image/')) {
         const num = numByKey.get(it.r2_key);
-        if (selected.has(num) && !editFor(it.r2_key).removed) sequence.push(photoObj(it.r2_key));
+        if (selected.has(num) && !editFor(it.r2_key).removed) {
+          if (unrenderable(it)) skippedHeic.push(num); else sequence.push(photoObj(it.r2_key));
+        }
       } else if (ct.startsWith('video/')) {
         sequence.push({ type: 'placeholder', name: it.filename });
       }
@@ -279,6 +289,7 @@ async function postMontage(request) {
   } else {
     sequence = indexes.map((i) => photosAll[i - 1]).filter(Boolean)
       .filter((m) => !editFor(m.r2_key).removed)
+      .filter((m, j) => { if (unrenderable(m)) { skippedHeic.push(indexes[j]); return false; } return true; })
       .map((m) => photoObj(m.r2_key));
   }
 
@@ -286,7 +297,9 @@ async function postMontage(request) {
   const gapCount = sequence.length - photoItems.length;
   if (photoItems.length < 1) {
     return NextResponse.json(
-      { error: `Your photo selection didn't match any of this client's ${photosAll.length} photos — check the numbers.` },
+      { error: skippedHeic.length
+        ? `Photo${skippedHeic.length === 1 ? '' : 's'} ${skippedHeic.join(', ')} cannot render: still HEIC (not converted). Press Fix HEIC photos in Edit Photos, or ask the client to re-send.`
+        : `Your photo selection didn't match any of this client's ${photosAll.length} photos — check the numbers.` },
       { status: 400 }
     );
   }
@@ -502,6 +515,7 @@ async function postMontage(request) {
     const stillsPlan = source && source._stills ? source._stills : null;
     if (stillsPlan) delete source._stills;
     const notes = [];
+    if (skippedHeic.length) notes.push(`Photo${skippedHeic.length === 1 ? '' : 's'} ${skippedHeic.join(', ')} skipped: still HEIC (not converted) — press Fix HEIC photos in Edit Photos, or ask the client to re-send.`);
     if (stillsPlan && Array.isArray(stillsPlan.scenes)) {
       // number the photo the way the admin numbers it (its slot in the client's photo list)
       const photoNo = new Map();
