@@ -739,7 +739,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00B140', bgBlur: '0', sbMode: 'none', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#FF00FF', bgBlur: '0', sbMode: 'none', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -2049,7 +2049,7 @@ export default function AdminPage() {
                     <label style={{ color: 'var(--text)', display: 'block', marginBottom: 6 }}>Key colour</label>
                     <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                       {KEY_COLOR_OPTS.map((k) => {
-                        const on = (seg.keyColor || '#00B140') === k.value;
+                        const on = (seg.keyColor || '#FF00FF') === k.value;
                         return (
                           <button key={k.value} type="button" onClick={() => apply({ keyColor: k.value })}
                             style={{
@@ -2067,7 +2067,7 @@ export default function AdminPage() {
                       })}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-                      {(KEY_COLOR_OPTS.find((k) => k.value === (seg.keyColor || '#00B140')) || KEY_COLOR_OPTS[0]).note}
+                      {(KEY_COLOR_OPTS.find((k) => k.value === (seg.keyColor || '#FF00FF')) || KEY_COLOR_OPTS[0]).note}
                     </div>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
@@ -2100,8 +2100,8 @@ export default function AdminPage() {
     return Number.isFinite(n) && n > 0 ? n : null;
   };
   const KEY_COLOR_OPTS = [
+    { value: '#FF00FF', label: 'Magenta (default)', note: 'The default. Magenta almost never occurs in a real photograph, so nothing in the pictures keys away; edges key a little softer than green.' },
     { value: '#00B140', label: 'Green', note: 'Cleanest key. Wrong when the photos contain foliage, grass or green clothing.' },
-    { value: '#FF00FF', label: 'Magenta', note: 'Use when the photos contain green. Almost never occurs in a real photograph; edges key a little softer.' },
     { value: '#0047BB', label: 'Blue', note: 'The classic alternative — but sky, water, denim and eyes are blue, so it trades one collision for another.' },
   ];
   // THE MONTAGE-WIDE BORDER OVERRIDE. Josh 2026-09-08: "i want the Choose Style
@@ -2791,7 +2791,7 @@ export default function AdminPage() {
             fbFrameW: (s.fbFrameW === null || s.fbFrameW === undefined) ? null : Number(s.fbFrameW),
             fbFrameColor: s.fbFrameColor || null,
             // The backdrop colour the montage is meant to be keyed against.
-            keyColor: s.keyColor || '#00B140',
+            keyColor: s.keyColor || '#FF00FF',
             // Montage-wide border override from the style panel. 'edits' (the
             // default) sends null, so nothing changes for an untouched montage.
             atmo: s.atmoOn ? { on: true, intensity: Number(s.atmoI ?? 100), dust: Number(s.atmoDust ?? 100), leak: Number(s.atmoLeak ?? 100) } : null,
