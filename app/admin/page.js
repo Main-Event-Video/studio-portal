@@ -888,6 +888,11 @@ export default function AdminPage() {
   const pcDrag = useRef(null);                        // { id, key } currently dragged
   const [pcOver, setPcOver] = useState(null);         // { key, id, album, side } hovered
   const pcOverRef = useRef(null);                     // same, synchronous (read on drop)
+  // ALBUM drag (whole section by its grip). Separate from the photo drag so the
+  // two can never be confused mid-gesture. Josh: "allow me to click and drag
+  // albums to re-order them."
+  const albumDrag = useRef(null);                     // { album, ids } being dragged
+  const [albumOver, setAlbumOver] = useState(null);   // { gi, side: 'before'|'after' }
   const [pcMsg, setPcMsg] = useState('');
   // Undo / redo for reorder moves. Stacks hold whole-timeline arrangements
   // ({top,albums}); lastArrRef is the currently-applied one. Reset per client.
@@ -1412,6 +1417,37 @@ export default function AdminPage() {
     const o = pcOverRef.current;
     if (o && o.id != null && o.id !== pcDrag.current.id) reorderByDrag(clientId, o.album || null, o.id, o.side);
     else reorderByDrag(clientId, fallbackAlbum || null, null); // nothing hovered → end of that group
+  }
+
+  // Move a whole ALBUM (every photo and video in it, in their order) so it sits
+  // before or after another group. Same machinery as a photo drag: the cached
+  // full timeline is edited locally, the screen updates at once, the save is
+  // queued, and the move goes on the undo stack.
+  async function reorderAlbumByDrag(clientId, drag, targetGroup, side) {
+    albumDrag.current = null; setAlbumOver(null);
+    if (!drag || !drag.ids || !drag.ids.length || !targetGroup || !targetGroup.photos.length) return;
+    let full;
+    try { full = (await ensureFullOrder(clientId)).slice(); }
+    catch { setPcMsg('Could not load the order — try again.'); return; }
+    const before = arrangementFromFlat(full);
+    const moving = new Set(drag.ids);
+    const block = full.filter((x) => moving.has(x.id));
+    const rest = full.filter((x) => !moving.has(x.id));
+    if (!block.length) { fullOrderRef.current = null; fullOrderClientRef.current = null; loadProjPhotos(clientId, true); return; }
+    const tIds = targetGroup.photos.map((ph) => ph.id).filter((id) => !moving.has(id));
+    let ti;
+    if (side === 'before') { ti = rest.findIndex((x) => x.id === tIds[0]); if (ti < 0) ti = 0; }
+    else { ti = rest.findIndex((x) => x.id === tIds[tIds.length - 1]); ti = ti < 0 ? rest.length : ti + 1; }
+    rest.splice(ti, 0, ...block);
+    fullOrderRef.current = rest; fullOrderClientRef.current = clientId;
+    const after = arrangementFromFlat(rest);
+    histClientRef.current = clientId;
+    setUndoStack((st) => [...st, before].slice(-50));
+    setRedoStack([]);
+    lastArrRef.current = after;
+    applyOrderToProjPhotos(rest);
+    if (roOpen && roClientId === clientId) loadReorder(clientId, true);
+    queueSave(clientId, after);
   }
 
   // Load the client's FULL timeline order (photos + videos) once and cache it.
@@ -4092,13 +4128,45 @@ export default function AdminPage() {
                     if (!collapsed && g.photos.some((ph) => ph.key === selKey)) setSelKey(null);
                     setCollapsedAlbums((cs) => ({ ...cs, [ak]: !cs[ak] }));
                   };
+                  const aOver = albumOver && albumOver.gi === gi ? albumOver.side : null;
+                  const aDragging = albumDrag.current && albumDrag.current.album === (g.album || '');
                   return (
                     <section key={`g:${gi}:${g.album}`} style={{
-                      marginBottom: 12, borderRadius: 12, padding: '10px 12px',
+                      marginBottom: 12, borderRadius: 12, padding: '10px 12px', position: 'relative',
                       border: isAlbum ? '1.5px solid #4a3d6b' : '1px solid var(--line)',
                       background: isAlbum ? 'linear-gradient(160deg, rgba(124,92,255,0.07), rgba(124,92,255,0.02))' : 'rgba(127,127,127,0.03)',
-                    }}>
+                      opacity: aDragging ? 0.5 : 1,
+                      // The drop line: a green bar on the edge the album will land on.
+                      boxShadow: aOver === 'before' ? '0 -3px 0 0 #22c55e' : aOver === 'after' ? '0 3px 0 0 #22c55e' : 'none',
+                    }}
+                      onDragOver={(e) => {
+                        if (!albumDrag.current || aDragging) return;
+                        e.preventDefault();
+                        const r = e.currentTarget.getBoundingClientRect();
+                        const side = (e.clientY - r.top) < r.height / 2 ? 'before' : 'after';
+                        if (!albumOver || albumOver.gi !== gi || albumOver.side !== side) setAlbumOver({ gi, side });
+                      }}
+                      onDragLeave={(e) => { if (albumDrag.current && !e.currentTarget.contains(e.relatedTarget)) setAlbumOver((o) => (o && o.gi === gi ? null : o)); }}
+                      onDrop={(e) => {
+                        if (!albumDrag.current) return;
+                        e.preventDefault(); e.stopPropagation();
+                        const r = e.currentTarget.getBoundingClientRect();
+                        const side = (e.clientY - r.top) < r.height / 2 ? 'before' : 'after';
+                        reorderAlbumByDrag(c.id, albumDrag.current, g, side);
+                      }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: collapsed ? 0 : 8 }}>
+                        {/* THE GRIP. Drag this to move the whole album above or below
+                            another. It is its own handle, not the header, so a click
+                            on the name still just opens and closes the album. */}
+                        <span draggable title="Drag to move this album up or down the order"
+                          onDragStart={(e) => {
+                            albumDrag.current = { album: g.album || '', ids: g.photos.map((ph) => ph.id) };
+                            e.dataTransfer.effectAllowed = 'move';
+                            try { e.dataTransfer.setData('text/plain', `album:${g.album || ''}`); } catch { /* older */ }
+                          }}
+                          onDragEnd={() => { albumDrag.current = null; setAlbumOver(null); }}
+                          style={{ cursor: 'grab', color: 'var(--muted)', fontSize: 15, lineHeight: 1, padding: '0 2px', userSelect: 'none', flex: '0 0 auto' }}>
+                          {'\u2807'}</span>
                         <button type="button" onClick={toggleCollapsed}
                           title={collapsed ? 'Show these photos' : 'Hide these photos'}
                           style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', color: 'var(--text)', minWidth: 0 }}>
