@@ -995,11 +995,19 @@ export default function AdminPage() {
       // <video> src changes on every auto-refresh poll and an open preview snaps
       // back to 0:00 (the "previews won't play" bug). Same URL → React reuses the
       // element and playback continues.
+      // …but not forever. The kept URL is presigned for 12 hours; a tab left
+      // open longer than that was holding a dead link, so the previews played
+      // yesterday and not today. Remember when each URL was first seen and let
+      // a fresh one through once it is 11 hours old — one restart per 11h of an
+      // open tab, instead of a preview that never plays again.
+      const now = Date.now();
+      const FRESH_MS = 11 * 60 * 60 * 1000;
       setMontages((prev) => {
-        const prevUrl = new Map(prev.map((m) => [m.id, m.url]));
+        const prevUrl = new Map(prev.map((m) => [m.id, { url: m.url, at: m.urlAt || now }]));
         return montages.map((m) => {
           const old = prevUrl.get(m.id);
-          return (old && m.url) ? { ...m, url: old } : m;
+          const keep = old && old.url && m.url && (now - old.at) < FRESH_MS;
+          return keep ? { ...m, url: old.url, urlAt: old.at } : { ...m, urlAt: now };
         });
       });
     } catch {

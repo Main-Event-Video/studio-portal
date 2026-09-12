@@ -688,12 +688,16 @@ export async function GET(request) {
       watermarked: m.watermarked,
       createdAt: m.created_at,
       // Prefer our permanent R2 copy; fall back to Creatomate's temp URL.
-      url: m.r2_key ? await getViewUrl(m.r2_key, 3600) : m.video_url || null,
+      // 12 hours, not 1: the admin page keeps the first URL it sees for each
+      // render so an open preview does not restart on every poll — which
+      // meant a tab left open past the hour held a link that had expired.
+      // Josh: "I can't play preview exports after a day."
+      url: m.r2_key ? await getViewUrl(m.r2_key, 43200) : m.video_url || null,
       // Force-download URL (Content-Disposition: attachment) so "Download MP4"
       // saves to a folder instead of navigating to the video (cross-origin
       // `download` is ignored by browsers). Only available for our R2 copies.
       downloadUrl: m.r2_key
-        ? await getDownloadUrl(m.r2_key, renderName(m), 3600)
+        ? await getDownloadUrl(m.r2_key, renderName(m), 43200)
         : null,
       archived: !!m.r2_key, // false = still only on Creatomate's 30-day hosting
     }))
