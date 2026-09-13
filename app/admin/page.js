@@ -754,6 +754,10 @@ export default function AdminPage() {
   // Photos whose <img> failed to load — a file the browser cannot show. Keyed
   // by r2 key; the tile explains itself instead of sitting there grey.
   const [brokenImgs, setBrokenImgs] = useState({});
+  // When the strip's signed links were minted. They last 12 hours; a tile that
+  // fails to load after that is an expired link, not a broken photo.
+  const projPhotosAtRef = useRef(0);
+  const photosReloadingRef = useRef(false);
   const [projPhotosClientId, setProjPhotosClientId] = useState(null);
   const [projPhotosLoading, setProjPhotosLoading] = useState(false);
   const [showRef, setShowRef] = useState(false);         // numbered reference strip
@@ -1378,6 +1382,10 @@ export default function AdminPage() {
       const { photos } = await api(`/api/admin/montage/photos?clientId=${clientId}`);
       setProjPhotos((photos || []).filter((p) => !p.video));
       setProjVideos((photos || []).filter((p) => p.video));
+      // Fresh links: whatever was flagged as unloadable gets another chance.
+      projPhotosAtRef.current = Date.now();
+      photosReloadingRef.current = false;
+      setBrokenImgs({});
       setProjPhotosClientId(clientId);
       // Refresh + warm the cached full order (so the first drag is instant too).
       fullOrderRef.current = null; fullOrderClientRef.current = null;
@@ -3994,8 +4002,24 @@ export default function AdminPage() {
                 onDoubleClick={() => setSelKey(isSel ? null : p.key)} title="Drag to reorder · double-click to edit"
                 style={{ border: isSel ? '2px solid #d8b56b' : '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', cursor: 'grab', opacity: pe.removed ? 0.4 : 1, position: 'relative', outline: over ? '2px solid rgba(56,182,255,.5)' : 'none', outlineOffset: '-2px' }}>
                 <div style={{ position: 'relative', aspectRatio: '16 / 9', background: '#000', overflow: 'hidden', containerType: 'size' }}>
-                  <img src={p.url} alt={p.filename} draggable={false} onLoad={noteDims(p.key)} style={{ width: '100%', height: '100%', ...styleFor(pe) }}
-                    onError={() => setBrokenImgs((b) => (b[p.key] ? b : { ...b, [p.key]: true }))} />
+                  <img src={p.url} alt={p.filename} draggable={false}
+                    onLoad={(ev) => { noteDims(p.key)(ev); if (brokenImgs[p.key]) setBrokenImgs((b) => { const n = { ...b }; delete n[p.key]; return n; }); }}
+                    style={{ width: '100%', height: '100%', ...styleFor(pe) }}
+                    onError={() => {
+                      // EXPIRED LINK, NOT A BROKEN PHOTO. The strip's signed links
+                      // last 12 hours; a tab left open past that fails to fetch
+                      // every picture, and on 2026-09-13 this overlay labelled
+                      // dozens of good JPEGs "CAN'T DISPLAY" ("suddenly my edit
+                      // photos is showing dozens of HEIC error images"). If the
+                      // links are old, reload the strip once instead of flagging.
+                      const age = Date.now() - (projPhotosAtRef.current || 0);
+                      if (age > 11 * 60 * 60 * 1000 && !photosReloadingRef.current) {
+                        photosReloadingRef.current = true;
+                        loadProjPhotos(c.id, true);
+                        return;
+                      }
+                      setBrokenImgs((b) => (b[p.key] ? b : { ...b, [p.key]: true }));
+                    }} />
                   {/* A TILE THAT CANNOT SHOW ITS PHOTO SAYS WHY. Josh found two
                       grey ".HEIC" tiles that Fix HEIC could not touch: the
                       objects in storage were 0 bytes — the upload never wrote

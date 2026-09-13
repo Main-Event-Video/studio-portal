@@ -176,8 +176,8 @@ export async function GET(request) {
       // window reopens on the same box
       cropBy: (m.crop_rect && m.crop_rect.by) || 'client',
       cropRect: !isVideo && m.crop_key && m.crop_rect ? m.crop_rect : null,
-      url: await getViewUrl((!isVideo && m.crop_key) || m.r2_key, 3600),
-      originalUrl: (!isVideo && m.crop_key) ? await getViewUrl(m.r2_key, 3600) : null,
+      url: await getViewUrl((!isVideo && m.crop_key) || m.r2_key, 43200),
+      originalUrl: (!isVideo && m.crop_key) ? await getViewUrl(m.r2_key, 43200) : null,
       // A VIDEO downloads under a name that says where it goes. Josh: "I need an
       // easy way to simply download all these video files … add to the existing
       // name the album and photo number." A video has no photo number of its
@@ -185,7 +185,7 @@ export async function GET(request) {
       // of the photo it comes right AFTER — which is exactly where the gap
       // lands in the export — plus the album, with the original name kept at
       // the end so nothing is lost:  Baby-Years_after-12_IMG_4432.mov
-      downloadUrl: await getDownloadUrl(m.r2_key, isVideo ? videoDownloadName(m, slotNo) : m.filename, 3600),
+      downloadUrl: await getDownloadUrl(m.r2_key, isVideo ? videoDownloadName(m, slotNo) : m.filename, 43200),
       };
     })
   );
