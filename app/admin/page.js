@@ -2617,7 +2617,7 @@ export default function AdminPage() {
     try {
       const { photos, sequence } = await api(`/api/admin/montage/photos?montageId=${m.id}`);
       const th = {};
-      for (const p of (photos || [])) th[p.key] = { url: p.url, filename: p.filename };
+      for (const p of (photos || [])) th[p.key] = { url: p.url, filename: p.filename, importSeq: p.importSeq ?? null };
       setRevThumbs(th);
       if (!Array.isArray(sequence)) throw new Error('This render was made before its exact settings were saved, so it cannot be revised — run a fresh draft.');
       setRevSeq(sequence.map((e) => (e.type === 'placeholder'
@@ -2635,7 +2635,7 @@ export default function AdminPage() {
   function revChoose(p) {
     // p = a photo from the client's strip (projPhotos)
     setRevSeq((sq) => {
-      const item = { type: 'photo', r2_key: p.key, url: p.url, filename: p.filename, added: true };
+      const item = { type: 'photo', r2_key: p.key, url: p.url, filename: p.filename, importSeq: p.importSeq ?? null, added: true };
       if (!revPick) return sq;
       if (revPick.mode === 'swap') return sq.map((e, i) => (i === revPick.pos ? { ...item, swapped: true } : e));
       const next = sq.slice(); next.splice(revPick.pos + 1, 0, item); return next;
@@ -4881,6 +4881,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                                     ? <span style={{ fontSize: 10, color: '#00b140', textAlign: 'center', padding: 4 }}>VIDEO<br />{e.name}</span>
                                     : (e.url ? <img src={e.url} alt={e.filename || ''} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <span style={{ fontSize: 10, color: 'var(--muted)' }}>no preview</span>)}
                                   <span style={{ position: 'absolute', top: 3, left: 3, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 5px', borderRadius: 5 }}>{i + 1}</span>
+                                  {e.importSeq != null && <span title={`Import #${String(e.importSeq).padStart(3, '0')} — permanent reference number`} style={{ position: 'absolute', bottom: 3, left: 3, fontSize: 10, fontWeight: 900, letterSpacing: '.3px', background: '#f5a623', color: '#241700', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(e.importSeq).padStart(3, '0')}</span>}
                                   {e.swapped && <span style={{ position: 'absolute', top: 3, right: 3, fontSize: 9, background: '#22c55e', color: '#04180b', padding: '1px 5px', borderRadius: 5, fontWeight: 700 }}>SWAPPED</span>}
                                   {e.added && !e.swapped && <span style={{ position: 'absolute', top: 3, right: 3, fontSize: 9, background: '#22c55e', color: '#04180b', padding: '1px 5px', borderRadius: 5, fontWeight: 700 }}>ADDED</span>}
                                 </div>
@@ -4911,6 +4912,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                                       style={{ position: 'relative', aspectRatio: '16 / 9', background: '#000', borderRadius: 6, overflow: 'hidden', cursor: 'pointer', border: '1px solid var(--line)' }}>
                                       <img src={p.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                                       <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '0 4px', borderRadius: 4 }}>{p.index}</span>
+                                      {p.importSeq != null && <span style={{ position: 'absolute', bottom: 2, left: 2, fontSize: 9, fontWeight: 900, letterSpacing: '.3px', background: '#f5a623', color: '#241700', padding: '0 4px', borderRadius: 4, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(p.importSeq).padStart(3, '0')}</span>}
                                     </div>
                                   ))}
                                 </div>
