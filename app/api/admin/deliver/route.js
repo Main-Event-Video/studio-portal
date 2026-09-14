@@ -177,7 +177,11 @@ export async function POST(request) {
   // studio_cut_renders so the admin status-poll (not just the webhook) can complete
   // it: archive the stamped file, record it, and email the client. A clean cut can
   // never slip out — delivery only happens after the watermark is confirmed on.
-  if (kind === 'rough_cut') {
+  // Josh can send a rough cut AS-IS (no watermark render) — the admin tool's
+  // "Skip the watermark" box. It then takes the immediate path below, recorded
+  // as a rough cut with watermarked:false, so nothing waits on Creatomate.
+  const skipWatermark = kind === 'rough_cut' && body.watermark === false;
+  if (kind === 'rough_cut' && !skipWatermark) {
     const durationSec = Number(body.durationSec) > 0 ? Number(body.durationSec) : null;
     try {
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
@@ -222,7 +226,8 @@ export async function POST(request) {
     }
   }
 
-  // FINAL → clean, full-res, delivered immediately (no render).
+  // FINAL → clean, full-res, delivered immediately (no render). A rough cut with
+  // the watermark skipped comes through here too.
   const record = {
     client_id: client.id,
     kind,

@@ -956,6 +956,10 @@ export default function AdminPage() {
 
   // deliver a cut (step 6)
   const [dKind, setDKind] = useState('rough_cut');
+  // Rough cut WITHOUT the watermark render. Josh 9/14, after a watermark render
+  // hung for two hours with the client waiting: "can we add a button to turn
+  // off the watermark on a rough cut". Off by default; resets after each send.
+  const [dNoWatermark, setDNoWatermark] = useState(false);
   const [dNote, setDNote] = useState('');
   const [dFiles, setDFiles] = useState([]);          // one or more video files staged to send
   const [dPct, setDPct] = useState(0);
@@ -3102,6 +3106,7 @@ export default function AdminPage() {
           sendTo: dSendTo,
           ccClient: dCcClient,
           durationSec,
+          watermark: !dNoWatermark,
         }),
       });
 
@@ -3123,6 +3128,7 @@ export default function AdminPage() {
         );
         loadSentCuts(mClientId);
       }
+      setDNoWatermark(false); // one send at a time; the next rough cut is watermarked again unless asked
       setDFiles([]);
       if (dFileRef.current) dFileRef.current.value = '';
     } catch (err) {
@@ -3169,6 +3175,12 @@ export default function AdminPage() {
                 />
                 Rough cut (auto-watermarked)
               </label>
+              {dKind === 'rough_cut' && (
+                <label className="choice" title="Sends the file exactly as uploaded — no Creatomate render, delivered in seconds. Use when the watermark render is stuck or the cut is going to someone you trust.">
+                  <input type="checkbox" checked={dNoWatermark} onChange={(ev) => setDNoWatermark(ev.target.checked)} />
+                  Skip the watermark — send as-is
+                </label>
+              )}
               <label className="choice">
                 <input
                   type="radio"
