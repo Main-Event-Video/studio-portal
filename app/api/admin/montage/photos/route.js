@@ -125,7 +125,13 @@ export async function GET(request) {
         ? { page: layout[i].page, cell: layout[i].cell, cells: layout[i].cells, cellAspect: layout[i].cellAspect }
         : (focalAspect ? { cellAspect: focalAspect } : {})),
     })));
-    return NextResponse.json({ photos, style: m.style, multipage: !!st.multipage });
+    // The play order as the Revise tool needs it: photos AND video slots, by
+    // the key the client's library knows (sourceKey — the crop, if any, is
+    // re-resolved by finalize). Thumbnails come from `photos` above, by key.
+    const sequence = seq.map((s) => (s && s.type === 'placeholder'
+      ? { type: 'placeholder', name: s.name || 'VIDEO' }
+      : { type: 'photo', r2_key: s.sourceKey || s.r2_key, renderKey: s.r2_key }));
+    return NextResponse.json({ photos, style: m.style, multipage: !!st.multipage, sequence });
   }
 
   // ---- default mode: the client's whole timeline (unchanged) ----

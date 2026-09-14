@@ -45,7 +45,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { montageId, full = true } = body || {};
+  const { montageId, full = true, sequence: revised = null } = body || {};
   if (!montageId) return NextResponse.json({ error: 'Missing montageId' }, { status: 400 });
   const wantFull = full !== false;
 
@@ -58,7 +58,7 @@ export async function POST(request) {
   if (findErr || !src) return NextResponse.json({ error: 'Render not found' }, { status: 404 });
 
   const params = (src.params && typeof src.params === 'object') ? src.params : {};
-  const seq = Array.isArray(params.renderSequence) ? params.renderSequence : null;
+  let seq = Array.isArray(params.renderSequence) ? params.renderSequence : null;
   if (!seq || !seq.length) {
     return NextResponse.json(
       { error: 'This render was made before Export Final existed, so its exact settings weren’t saved. Run a fresh draft and the final will be available on it.' },
@@ -66,6 +66,64 @@ export async function POST(request) {
     );
   }
   if (!STYLES[src.style]) return NextResponse.json({ error: 'Unknown style on this render' }, { status: 400 });
+
+  // ---- REVISION: the same render with photos swapped, removed or added ----
+  // Josh 9/14: "client wants to change 1 image in a low rez clip. I want to
+  // open that exact clip - keep all the transitions exactly the same but swap
+  // an image or add or remove an image." The admin sends the edited order as a
+  // list of { r2_key } / { type:'placeholder', name }. A key that was in the
+  // original snapshot keeps its snapshotted edits verbatim (so a swap or a
+  // removal changes nothing else); a key that is new to this render must belong
+  // to the client and gets its CURRENT Edit Photos settings, the same way a
+  // fresh draft would. Everything else — style, pace, cards, key colour,
+  // border, neon, background — is the snapshot's, untouched.
+  let isRevision = false;
+  if (Array.isArray(revised) && revised.length) {
+    const byKey = new Map();
+    for (const e of seq) if (e && e.type === 'photo') { byKey.set(e.sourceKey || e.r2_key, e); byKey.set(e.r2_key, e); }
+    const newKeys = [...new Set(revised.filter((r) => r && r.r2_key && !byKey.has(r.r2_key)).map((r) => r.r2_key))];
+    let mediaByKey = new Map();
+    let pePhotos = {};
+    if (newKeys.length) {
+      const { data: rows } = await db.from('studio_media').select('r2_key, crop_key').eq('client_id', src.client_id).in('r2_key', newKeys);
+      for (const r of (rows || [])) mediaByKey.set(r.r2_key, r);
+      const { data: cl } = await db.from('studio_clients').select('photo_edits').eq('id', src.client_id).single();
+      const pe = cl && cl.photo_edits && typeof cl.photo_edits === 'object' ? cl.photo_edits : {};
+      pePhotos = pe.photos && typeof pe.photos === 'object' ? pe.photos : {};
+    }
+    // Border comes from the snapshot's Choose Style setting, like every other photo.
+    const sb = params.styleBorder && params.styleBorder.mode === 'custom'
+      ? { on: true, w: Number(params.styleBorder.w) || 1.2, color: params.styleBorder.color || '#FFFFFF', at: 0 } : null;
+    const out = [];
+    for (const r of revised) {
+      if (!r) continue;
+      if (r.type === 'placeholder') { out.push({ type: 'placeholder', name: r.name || 'VIDEO' }); continue; }
+      if (!r.r2_key) continue;
+      const known = byKey.get(r.r2_key);
+      if (known) { out.push({ ...known }); continue; }
+      const m = mediaByKey.get(r.r2_key);
+      if (!m) return NextResponse.json({ error: `A photo in the revision is not one of this client's uploads (${r.r2_key})` }, { status: 400 });
+      const e = pePhotos[r.r2_key] || {};
+      out.push({
+        type: 'photo', r2_key: m.crop_key || m.r2_key, sourceKey: m.r2_key, clientCropped: !!m.crop_key, usingCrop: !!m.crop_key,
+        framing: ['top', 'center', 'bottom'].includes(e.anchor) ? e.anchor : 'top',
+        fit: e.fit === 'fill' ? 'fill' : e.fit === 'fit' ? 'fit' : null,
+        size: Math.min(140, Math.max(60, Number(e.size) || 100)),
+        colorCorrect: !!e.colorCorrect,
+        mode: ['color', 'bw', 'sepia'].includes(e.mode) ? e.mode : 'color',
+        contrast: Number.isFinite(Number(e.contrast)) ? Math.min(200, Math.max(50, Math.round(Number(e.contrast)))) : 100,
+        saturation: Number.isFinite(Number(e.saturation)) ? Math.min(200, Math.max(0, Math.round(Number(e.saturation)))) : 100,
+        posX: Number.isFinite(Number(e.posX)) ? Number(e.posX) : null,
+        posY: Number.isFinite(Number(e.posY)) ? Number(e.posY) : null,
+        border: sb,
+      });
+    }
+    while (out.length && out[0].type === 'placeholder') out.shift();
+    while (out.length && out[out.length - 1].type === 'placeholder') out.pop();
+    if (!out.some((e) => e.type === 'photo')) return NextResponse.json({ error: 'A revision needs at least one photo' }, { status: 400 });
+    seq = out;
+    isRevision = true;
+  }
 
   // New row FIRST so the webhook has something to update.
   const photoCount = seq.filter((s) => s && s.type === 'photo').length;
@@ -86,7 +144,11 @@ export async function POST(request) {
       // (copying the label here would freeze the two apart).
       params: (() => {
         const { viewed, starred, hidden, label, ...settings } = params || {};
-        return { ...settings, rerenderOf: src.id };
+        // A revision carries ITS OWN sequence (so its exports rebuild from the
+        // revised photos) and is named as a revision rather than a re-export.
+        return isRevision
+          ? { ...settings, renderSequence: seq, revisionOf: src.id }
+          : { ...settings, rerenderOf: src.id };
       })(),
     })
     .select('id')

@@ -2597,6 +2597,71 @@ export default function AdminPage() {
 
   // framing adjustments
   const [adjFor, setAdjFor] = useState(null); // montage row being adjusted
+  // REVISE A RENDER. Josh 9/14: "client wants to change 1 image in a low rez
+  // clip. I want to open that exact clip - keep all the transitions exactly the
+  // same but swap an image or add or remove an image." The render's own
+  // snapshot is opened as a strip; swap / remove / insert edit a local copy of
+  // the play order; Render revision sends it to finalize, which keeps every
+  // snapshotted photo's edits and every render setting, and builds a new row.
+  const [revFor, setRevFor] = useState(null);      // montage row being revised
+  const [revSeq, setRevSeq] = useState([]);        // [{ type:'photo', r2_key, url, filename } | { type:'placeholder', name }]
+  const [revThumbs, setRevThumbs] = useState({});  // r2_key -> { url, filename } for the snapshot's photos
+  const [revLoading, setRevLoading] = useState(false);
+  const [revPick, setRevPick] = useState(null);    // { pos, mode: 'swap' | 'insert' } — the library picker is open for this slot
+  const [revBusy, setRevBusy] = useState(false);
+  const [revMsg, setRevMsg] = useState('');
+
+  async function openRevise(m) {
+    if (revFor?.id === m.id) { setRevFor(null); return; }
+    setRevFor(m); setRevPick(null); setRevMsg(''); setRevLoading(true); setRevSeq([]);
+    try {
+      const { photos, sequence } = await api(`/api/admin/montage/photos?montageId=${m.id}`);
+      const th = {};
+      for (const p of (photos || [])) th[p.key] = { url: p.url, filename: p.filename };
+      setRevThumbs(th);
+      if (!Array.isArray(sequence)) throw new Error('This render was made before its exact settings were saved, so it cannot be revised — run a fresh draft.');
+      setRevSeq(sequence.map((e) => (e.type === 'placeholder'
+        ? { type: 'placeholder', name: e.name }
+        : { type: 'photo', r2_key: e.r2_key, ...(th[e.renderKey] || th[e.r2_key] || {}) })));
+      // The library picker draws on the client's Edit Photos strip.
+      if (m.clientId) loadProjPhotos(m.clientId);
+    } catch (e) {
+      setRevMsg(e.message || 'Could not open this render.');
+    } finally {
+      setRevLoading(false);
+    }
+  }
+  function revRemove(pos) { setRevSeq((sq) => sq.filter((_, i) => i !== pos)); setRevPick(null); }
+  function revChoose(p) {
+    // p = a photo from the client's strip (projPhotos)
+    setRevSeq((sq) => {
+      const item = { type: 'photo', r2_key: p.key, url: p.url, filename: p.filename, added: true };
+      if (!revPick) return sq;
+      if (revPick.mode === 'swap') return sq.map((e, i) => (i === revPick.pos ? { ...item, swapped: true } : e));
+      const next = sq.slice(); next.splice(revPick.pos + 1, 0, item); return next;
+    });
+    setRevPick(null);
+  }
+  async function renderRevision(full) {
+    if (!revFor) return;
+    const photos = revSeq.filter((e) => e.type === 'photo').length;
+    if (!photos) { setRevMsg('A revision needs at least one photo.'); return; }
+    if (!window.confirm(`Render this revision as a ${full ? 'full-resolution' : 'low-res draft'} (${photos} photos)? This starts a new render (uses credits); the original is kept.`)) return;
+    setRevBusy(true); setRevMsg('');
+    try {
+      await api('/api/admin/montage/finalize', {
+        method: 'POST',
+        body: JSON.stringify({ montageId: revFor.id, full: !!full, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
+      });
+      setRevMsg('Revision started — it will appear in the list as a new render.');
+      setRevFor(null);
+      loadMontages();
+    } catch (e) {
+      setRevMsg(e.message || 'Could not start the revision.');
+    } finally {
+      setRevBusy(false);
+    }
+  }
   const [adjPhotos, setAdjPhotos] = useState([]);
   const [adjMap, setAdjMap] = useState({});
   const [adjSpeed, setAdjSpeed] = useState('');
@@ -4790,6 +4855,9 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         <button type="button" className="linklike" onClick={() => rerenderMontage(m.id, true)}>Export Full Rez</button>
                       )}
                       {' '}·{' '}
+                      <button type="button" className="linklike" title="Open this render's exact photo list: swap, remove or add photos, then render it again with every other setting unchanged"
+                        onClick={() => openRevise(m)}>{revFor?.id === m.id ? 'Close revise' : 'Revise'}</button>
+                      {' '}·{' '}
                       <button type="button" className="linklike" title={m.starred ? 'Unstar' : 'Star as a keeper'} style={{ color: m.starred ? '#f5b301' : 'var(--muted)', fontWeight: 600 }} onClick={() => reviewMontage(m.id, { starred: !m.starred })}>{m.starred ? '★ Starred' : '☆ Star'}</button>
                       {!m.archived && (
                         <span style={{ color: 'var(--muted)' }}>
@@ -4797,6 +4865,66 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         </span>
                       )}
                     </p>
+                    {revFor?.id === m.id && (
+                      <div style={{ marginTop: 10, padding: '14px 0', borderTop: '1px solid var(--line)' }}>
+                        <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
+                          This render's photos, in order. <strong>Swap</strong> keeps the slot (and every transition) exactly as it was;
+                          <strong> Remove</strong> and <strong>Add after</strong> shift the photos that follow by one slot. Style, pace, cards,
+                          key colour, border and neon are kept from this render. The original is never changed.
+                        </p>
+                        {revLoading ? <p style={{ fontSize: 13 }}>Opening…</p> : (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {revSeq.map((e, i) => (
+                              <div key={`rv:${i}:${e.r2_key || e.name}`} style={{ width: 132, border: `1px solid ${e.added ? '#22c55e' : 'var(--line)'}`, borderRadius: 8, overflow: 'hidden', background: e.type === 'placeholder' ? 'repeating-linear-gradient(135deg,#0d1a12,#0d1a12 8px,#0a140e 8px,#0a140e 16px)' : '#000' }}>
+                                <div style={{ position: 'relative', aspectRatio: '16 / 9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  {e.type === 'placeholder'
+                                    ? <span style={{ fontSize: 10, color: '#00b140', textAlign: 'center', padding: 4 }}>VIDEO<br />{e.name}</span>
+                                    : (e.url ? <img src={e.url} alt={e.filename || ''} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <span style={{ fontSize: 10, color: 'var(--muted)' }}>no preview</span>)}
+                                  <span style={{ position: 'absolute', top: 3, left: 3, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 5px', borderRadius: 5 }}>{i + 1}</span>
+                                  {e.swapped && <span style={{ position: 'absolute', top: 3, right: 3, fontSize: 9, background: '#22c55e', color: '#04180b', padding: '1px 5px', borderRadius: 5, fontWeight: 700 }}>SWAPPED</span>}
+                                  {e.added && !e.swapped && <span style={{ position: 'absolute', top: 3, right: 3, fontSize: 9, background: '#22c55e', color: '#04180b', padding: '1px 5px', borderRadius: 5, fontWeight: 700 }}>ADDED</span>}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 5px', fontSize: 10.5 }}>
+                                  {e.type === 'photo'
+                                    ? <button type="button" className="linklike" style={{ fontSize: 10.5 }} onClick={() => setRevPick({ pos: i, mode: 'swap' })}>Swap</button>
+                                    : <span />}
+                                  <button type="button" className="linklike" style={{ fontSize: 10.5, color: '#ff8fab' }} onClick={() => revRemove(i)}>Remove</button>
+                                  <button type="button" className="linklike" style={{ fontSize: 10.5 }} onClick={() => setRevPick({ pos: i, mode: 'insert' })}>Add after</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {revPick && (
+                          <div style={{ marginTop: 10, border: '1px solid var(--blue)', borderRadius: 10, padding: 10, background: 'rgba(61,123,255,0.06)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 12 }}>
+                              <strong>{revPick.mode === 'swap' ? `Pick the photo to put in slot ${revPick.pos + 1}` : `Pick the photo to add after slot ${revPick.pos + 1}`}</strong>
+                              <span style={{ color: 'var(--muted)' }}>from this client's photos (their white numbers)</span>
+                              <button type="button" className="linklike" style={{ marginLeft: 'auto', fontSize: 12 }} onClick={() => setRevPick(null)}>Cancel</button>
+                            </div>
+                            {projPhotosLoading || projPhotosClientId !== m.clientId
+                              ? <p style={{ fontSize: 12, color: 'var(--muted)' }}>Loading this client's photos…</p>
+                              : (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
+                                  {projPhotos.map((p) => (
+                                    <div key={`rp:${p.key}`} onClick={() => revChoose(p)} title={p.filename}
+                                      style={{ position: 'relative', aspectRatio: '16 / 9', background: '#000', borderRadius: 6, overflow: 'hidden', cursor: 'pointer', border: '1px solid var(--line)' }}>
+                                      <img src={p.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                      <span style={{ position: 'absolute', top: 2, left: 2, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '0 4px', borderRadius: 4 }}>{p.index}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, fontSize: 13 }}>
+                          <button type="button" className="btn-primary" disabled={revBusy || revLoading} onClick={() => renderRevision(false)}>Render revision — low rez</button>
+                          <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>Render revision — full rez</button>
+                          <span style={{ color: 'var(--muted)' }}>{revSeq.filter((e) => e.type === 'photo').length} photos</span>
+                          {revMsg && <span style={{ color: /could not|cannot|needs/i.test(revMsg) ? '#f5a623' : 'var(--muted)' }}>{revMsg}</span>}
+                        </div>
+                      </div>
+                    )}
                     {adjFor?.id === m.id && (
                       <div style={{ marginTop: 10, padding: '14px 0', borderTop: '1px solid var(--line)' }}>
                         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
