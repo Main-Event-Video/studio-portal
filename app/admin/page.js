@@ -1202,12 +1202,17 @@ export default function AdminPage() {
         return;
       }
     } catch { /* keep trying */ }
-    if (attempt >= 45) { // ~3 minutes
-      setDMsg('Still watermarking — taking longer than usual. It will deliver on its own when the render finishes; reopen this tool later to confirm.');
+    // A 9-minute cut renders in ~5 minutes and then takes a while to copy, so
+    // the poll (which DRIVES completion) keeps going for 20 minutes: every 4s
+    // for the first 3, then every 15s.
+    if (attempt >= 45 + 68) { // ~3 min + ~17 min
+      setDMsg('Still watermarking after 20 minutes — it will deliver on its own when the render finishes; reopen this tool later to confirm, or resend with "Skip the watermark".');
       return;
     }
-    setDMsg('Watermarking… this can take a minute or two. Leave this open and it delivers automatically when done.');
-    setTimeout(() => pollCutStatus(cutRenderId, clientId, attempt + 1), 4000);
+    setDMsg(attempt < 45
+      ? 'Watermarking… this can take a minute or two. Leave this open and it delivers automatically when done.'
+      : 'Still watermarking — a long cut takes several minutes to render and copy. Leave this open; it delivers automatically when done.');
+    setTimeout(() => pollCutStatus(cutRenderId, clientId, attempt + 1), attempt < 45 ? 4000 : 15000);
   }
 
   // Client file manager. Reload after each change so the view can't drift.

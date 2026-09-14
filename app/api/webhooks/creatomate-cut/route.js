@@ -11,7 +11,7 @@ import { completeCutRender } from '@/lib/completeCutRender';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 300; // copying a long cut into R2 can take minutes
 
 export async function POST(request) {
   let body;
