@@ -2610,6 +2610,23 @@ export default function AdminPage() {
   const [revPick, setRevPick] = useState(null);    // { pos, mode: 'swap' | 'insert' } — the library picker is open for this slot
   const [revBusy, setRevBusy] = useState(false);
   const [revMsg, setRevMsg] = useState('');
+  // Drag-to-reorder inside the Revise strip — local only, same gesture and the
+  // same green landing bar as Edit Photos. Josh: "can I reorder the images the
+  // way we can in the edit photo with the click and drag and the green side
+  // panel shows where it will land?"
+  const revDrag = useRef(null);                    // index being dragged
+  const [revOver, setRevOver] = useState(null);    // { pos, side: 'before' | 'after' }
+  function revMove(from, pos, side) {
+    setRevSeq((sq) => {
+      if (from == null || from < 0 || from >= sq.length) return sq;
+      const next = sq.slice();
+      const [moved] = next.splice(from, 1);
+      let ti = pos > from ? pos - 1 : pos;
+      if (side === 'after') ti += 1;
+      next.splice(Math.max(0, Math.min(next.length, ti)), 0, moved);
+      return next;
+    });
+  }
 
   async function openRevise(m) {
     if (revFor?.id === m.id) { setRevFor(null); return; }
@@ -4868,14 +4885,38 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     {revFor?.id === m.id && (
                       <div style={{ marginTop: 10, padding: '14px 0', borderTop: '1px solid var(--line)' }}>
                         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
-                          This render's photos, in order. <strong>Swap</strong> keeps the slot (and every transition) exactly as it was;
-                          <strong> Remove</strong> and <strong>Add after</strong> shift the photos that follow by one slot. Style, pace, cards,
+                          This render's photos, in order — drag to reorder. <strong>Swap</strong> keeps the slot (and every transition) exactly as it was;
+                          <strong> Remove</strong>, <strong>Add after</strong> and a drag shift the photos in between by one slot. Style, pace, cards,
                           key colour, border and neon are kept from this render. The original is never changed.
                         </p>
                         {revLoading ? <p style={{ fontSize: 13 }}>Opening…</p> : (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                            {revSeq.map((e, i) => (
-                              <div key={`rv:${i}:${e.r2_key || e.name}`} style={{ width: 132, border: `1px solid ${e.added ? '#22c55e' : 'var(--line)'}`, borderRadius: 8, overflow: 'hidden', background: e.type === 'placeholder' ? 'repeating-linear-gradient(135deg,#0d1a12,#0d1a12 8px,#0a140e 8px,#0a140e 16px)' : '#000' }}>
+                            {revSeq.map((e, i) => {
+                              const over = revOver && revOver.pos === i && revDrag.current != null && revDrag.current !== i ? revOver.side : null;
+                              return (
+                              <div key={`rv:${i}:${e.r2_key || e.name}`} draggable
+                                onDragStart={(ev) => { revDrag.current = i; ev.dataTransfer.effectAllowed = 'move'; try { ev.dataTransfer.setData('text/plain', String(i)); } catch { /* older */ } }}
+                                onDragEnd={() => { revDrag.current = null; setRevOver(null); }}
+                                onDragOver={(ev) => {
+                                  if (revDrag.current == null || revDrag.current === i) return;
+                                  ev.preventDefault();
+                                  const r = ev.currentTarget.getBoundingClientRect();
+                                  const side = (ev.clientX - r.left) < r.width / 2 ? 'before' : 'after';
+                                  if (!revOver || revOver.pos !== i || revOver.side !== side) setRevOver({ pos: i, side });
+                                }}
+                                onDrop={(ev) => {
+                                  if (revDrag.current == null) return;
+                                  ev.preventDefault(); ev.stopPropagation();
+                                  const r = ev.currentTarget.getBoundingClientRect();
+                                  const side = (ev.clientX - r.left) < r.width / 2 ? 'before' : 'after';
+                                  revMove(revDrag.current, i, side);
+                                  revDrag.current = null; setRevOver(null);
+                                }}
+                                title="Drag to reorder"
+                                style={{ width: 132, position: 'relative', cursor: 'grab', border: `1px solid ${e.added ? '#22c55e' : 'var(--line)'}`, borderRadius: 8, overflow: 'hidden', background: e.type === 'placeholder' ? 'repeating-linear-gradient(135deg,#0d1a12,#0d1a12 8px,#0a140e 8px,#0a140e 16px)' : '#000',
+                                  outline: over ? '2px solid rgba(56,182,255,.5)' : 'none', outlineOffset: '-2px' }}>
+                                {over && <span style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 7, borderRadius: '8px 0 0 8px', background: over === 'before' ? '#22c55e' : '#38b6ff', boxShadow: over === 'before' ? '0 0 8px #22c55e' : 'none', zIndex: 7 }} />}
+                                {over && <span style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: 7, borderRadius: '0 8px 8px 0', background: over === 'after' ? '#22c55e' : '#38b6ff', boxShadow: over === 'after' ? '0 0 8px #22c55e' : 'none', zIndex: 7 }} />}
                                 <div style={{ position: 'relative', aspectRatio: '16 / 9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                   {e.type === 'placeholder'
                                     ? <span style={{ fontSize: 10, color: '#00b140', textAlign: 'center', padding: 4 }}>VIDEO<br />{e.name}</span>
@@ -4893,7 +4934,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                                   <button type="button" className="linklike" style={{ fontSize: 10.5 }} onClick={() => setRevPick({ pos: i, mode: 'insert' })}>Add after</button>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                         {revPick && (
