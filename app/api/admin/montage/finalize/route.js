@@ -125,6 +125,26 @@ export async function POST(request) {
     isRevision = true;
   }
 
+  // A REVISION IS A NEW PIECE OF WORK, so it takes a NEW number. The first
+  // revisions inherited the source's stamped `seq` along with its settings and
+  // showed up in the list wearing the old number (Josh: "the new clip adopted
+  // the same number as the previous version - it should be a whole new clip").
+  // Same rule as a fresh draft: one higher than the highest primary in use.
+  let nextSeq = null;
+  if (isRevision) {
+    nextSeq = 1;
+    try {
+      const { data: prior } = await db.from('studio_montages').select('params').eq('client_id', src.client_id);
+      let maxStored = 0, primaryCount = 0;
+      for (const p of prior || []) {
+        if (p?.params?.rerenderOf) continue;
+        primaryCount++;
+        const n = Number(p?.params?.seq); if (Number.isFinite(n)) maxStored = Math.max(maxStored, n);
+      }
+      nextSeq = Math.max(maxStored, primaryCount) + 1;
+    } catch { /* leave at 1 */ }
+  }
+
   // New row FIRST so the webhook has something to update.
   const photoCount = seq.filter((s) => s && s.type === 'photo').length;
   const { data: row, error: insErr } = await db
@@ -143,12 +163,15 @@ export async function POST(request) {
       // rerenderOf at read time so renaming the draft renames the export too
       // (copying the label here would freeze the two apart).
       params: (() => {
-        const { viewed, starred, hidden, label, ...settings } = params || {};
+        const { viewed, starred, hidden, label, seq: srcSeq, ...settings } = params || {};
         // A revision carries ITS OWN sequence (so its exports rebuild from the
-        // revised photos) and is named as a revision rather than a re-export.
+        // revised photos), its OWN number, and the source's name with " R" so
+        // the two are tellable apart in the list. A re-export keeps inheriting
+        // the source's number (### / ###HR) exactly as before.
         return isRevision
-          ? { ...settings, renderSequence: seq, revisionOf: src.id }
-          : { ...settings, rerenderOf: src.id };
+          ? { ...settings, renderSequence: seq, revisionOf: src.id, seq: nextSeq,
+              ...(typeof label === 'string' && label.trim() ? { label: `${label.trim()} R` } : {}) }
+          : { ...settings, seq: srcSeq, rerenderOf: src.id };
       })(),
     })
     .select('id')
