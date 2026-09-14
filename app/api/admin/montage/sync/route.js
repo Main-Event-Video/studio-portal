@@ -8,6 +8,7 @@ import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getRender } from '@/lib/creatomate';
 import { putFile } from '@/lib/r2';
+import { stampMp4Color } from '@/lib/mp4Color';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,7 +49,10 @@ export async function POST(request) {
       try {
         const res = await fetch(render.url);
         if (res.ok) {
-          const buf = Buffer.from(await res.arrayBuffer());
+          // Creatomate writes NO colour tags, and Chrome on a Mac then guesses
+          // wrong (a purple bikini played blue). Stamp BT.709 into the container
+          // as the file is archived — pixels untouched. See lib/mp4Color.js.
+          const buf = stampMp4Color(Buffer.from(await res.arrayBuffer()));
           const key = `studio/${m.client_id}/montages/${m.id}.mp4`;
           await putFile(key, buf, 'video/mp4');
           r2Key = key;
