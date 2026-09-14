@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
+import { requestFaceDetection } from '@/lib/faceJob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,5 +62,6 @@ export async function POST(request) {
     await db.from('studio_clients').update({ photo_edits: { ...pe, photos } }).eq('id', clientId);
   }
 
+  requestFaceDetection(clientId).catch(() => {}); // new pixels, new eyes
   return NextResponse.json({ ok: true, newKey });
 }

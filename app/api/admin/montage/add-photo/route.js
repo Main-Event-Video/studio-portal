@@ -13,6 +13,7 @@ import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getObjectBuffer, putFile, deleteFile, objectSize, getViewUrl } from '@/lib/r2';
 import { isHeic, anyImageToJpeg, toJpgName, toJpgKey } from '@/lib/heic';
+import { requestFaceDetection } from '@/lib/faceJob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,6 +58,8 @@ export async function POST(request) {
   }).select('id').single();
   if (error || !row) return NextResponse.json({ error: 'Could not save the photo', detail: error?.message }, { status: 500 });
 
+  // Eyes for the crop: start the face job now rather than wait for tonight.
+  requestFaceDetection(client.id).catch(() => {});
   const url = await getViewUrl(finalKey, 43200);
   return NextResponse.json({ ok: true, key: finalKey, filename: finalName, url });
 }

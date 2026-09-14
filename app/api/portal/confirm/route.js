@@ -5,6 +5,7 @@ import { getClientByToken } from '@/lib/portal';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
 import { getObjectBuffer, putFile, deleteFile, objectSize } from '@/lib/r2';
 import { isHeic, anyImageToJpeg, toJpgName, toJpgKey } from '@/lib/heic';
+import { requestFaceDetection } from '@/lib/faceJob';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -104,5 +105,7 @@ export async function POST(request) {
   if (error) {
     return NextResponse.json({ error: 'Could not save file record', detail: error.message }, { status: 500 });
   }
+  // A burst of uploads makes one request a minute at most; GitHub queues the rest.
+  if ((finalType || '').startsWith('image/')) requestFaceDetection(client.id).catch(() => {});
   return NextResponse.json({ ok: true, converted, filename: finalName, contentType: finalType });
 }
