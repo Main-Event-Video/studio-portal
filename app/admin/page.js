@@ -2614,6 +2614,28 @@ export default function AdminPage() {
   // same green landing bar as Edit Photos. Josh: "can I reorder the images the
   // way we can in the edit photo with the click and drag and the green side
   // panel shows where it will land?"
+  // Upload a brand-new photo straight into the slot being swapped / added. It
+  // becomes a real upload in the client's library (end of the loose photos),
+  // so it has an import number and any montage can use it later.
+  const revUploadRef = useRef(null);
+  const [revUploading, setRevUploading] = useState(false);
+  async function revUpload(clientId, file) {
+    if (!file || !revPick) return;
+    if (!file.type || !file.type.startsWith('image/')) { setRevMsg('That is not an image file.'); return; }
+    setRevUploading(true); setRevMsg('');
+    try {
+      const { url, key } = await api('/api/admin/upload-url', { method: 'POST', body: JSON.stringify({ clientId, contentType: file.type }) });
+      const put = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+      if (!put.ok) throw new Error('Upload to storage failed');
+      const r = await api('/api/admin/montage/add-photo', { method: 'POST', body: JSON.stringify({ clientId, key, filename: file.name, contentType: file.type, sizeBytes: file.size }) });
+      revChoose({ key: r.key, url: r.url, filename: r.filename, importSeq: null });
+      loadProjPhotos(clientId, true); // it is in the library now
+    } catch (e) {
+      setRevMsg(`Upload failed: ${e.message}`);
+    } finally {
+      setRevUploading(false);
+    }
+  }
   const revDrag = useRef(null);                    // index being dragged
   const [revOver, setRevOver] = useState(null);    // { pos, side: 'before' | 'after' }
   function revMove(from, pos, side) {
@@ -4943,6 +4965,12 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 12 }}>
                               <strong>{revPick.mode === 'swap' ? `Pick the photo to put in slot ${revPick.pos + 1}` : `Pick the photo to add after slot ${revPick.pos + 1}`}</strong>
                               <span style={{ color: 'var(--muted)' }}>from this client's photos (their white numbers)</span>
+                              <span style={{ color: 'var(--muted)' }}>· or</span>
+                              <button type="button" className="btn-ghost" style={{ padding: '3px 10px', fontSize: 11.5 }} disabled={revUploading}
+                                title="Upload a new photo from your computer into this slot. It is added to the client's photos too."
+                                onClick={() => { if (revUploadRef.current) revUploadRef.current.click(); }}>{revUploading ? 'Uploading…' : 'Upload a new photo'}</button>
+                              <input ref={revUploadRef} type="file" accept="image/*,.heic,.heif" style={{ display: 'none' }}
+                                onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; if (f) revUpload(m.clientId, f); }} />
                               <button type="button" className="linklike" style={{ marginLeft: 'auto', fontSize: 12 }} onClick={() => setRevPick(null)}>Cancel</button>
                             </div>
                             {projPhotosLoading || projPhotosClientId !== m.clientId
