@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabaseAdmin';
 import { getClientByToken } from '@/lib/portal';
 import { verifySession, SESSION_COOKIE } from '@/lib/session';
 import { getObjectBuffer, putFile, deleteFile, objectSize } from '@/lib/r2';
-import { isHeic, anyImageToJpeg, toJpgName, toJpgKey } from '@/lib/heic';
+import { isHeic, anyImageToJpeg, toJpgName, toJpgKey, toSrgb } from '@/lib/heic';
 import { requestFaceDetection } from '@/lib/faceJob';
 
 export const runtime = 'nodejs';
@@ -79,6 +79,24 @@ export async function POST(request) {
       // It'll show as an unpreviewable tile, but nothing is destroyed, and the
       // convert-heic backfill can be re-run over it later.
       console.error('HEIC conversion failed for', key, e?.message || e);
+    }
+  }
+
+  // COLOUR: a JPEG/PNG/WebP with a non-sRGB profile (iPhone = Display P3) is
+  // re-encoded to true sRGB IN PLACE (same key) so Creatomate renders the real
+  // colours. See toSrgb in lib/heic.js. Failure keeps the original.
+  if (!converted && /^image\/(jpeg|png|webp)$/i.test(finalType || '')) {
+    try {
+      const buf = await getObjectBuffer(finalKey);
+      const r = await toSrgb(buf);
+      if (r.changed) {
+        await putFile(finalKey, r.buffer, 'image/jpeg');
+        finalType = 'image/jpeg';
+        finalSize = r.buffer.length;
+        console.log('[toSrgb] converted', finalKey, 'from', r.profile);
+      }
+    } catch (e) {
+      console.error('[toSrgb] failed for', finalKey, e?.message || e);
     }
   }
 

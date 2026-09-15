@@ -12,7 +12,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getObjectBuffer, putFile, deleteFile, objectSize, getViewUrl } from '@/lib/r2';
-import { isHeic, anyImageToJpeg, toJpgName, toJpgKey } from '@/lib/heic';
+import { isHeic, anyImageToJpeg, toJpgName, toJpgKey, toSrgb } from '@/lib/heic';
 import { requestFaceDetection } from '@/lib/faceJob';
 
 export const runtime = 'nodejs';
@@ -50,6 +50,13 @@ export async function POST(request) {
     } catch (e) {
       return NextResponse.json({ error: `Could not convert ${filename}: ${e?.message || e}` }, { status: 422 });
     }
+  } else if (/^image\/(jpeg|png|webp)$/i.test(finalType || '')) {
+    // Non-sRGB profile (iPhone Display P3) → true sRGB in place, so Creatomate
+    // renders the real colours. See toSrgb in lib/heic.js. Failure keeps the original.
+    try {
+      const r = await toSrgb(await getObjectBuffer(key));
+      if (r.changed) { await putFile(key, r.buffer, 'image/jpeg'); finalType = 'image/jpeg'; finalSize = r.buffer.length; }
+    } catch (e) { console.error('[toSrgb] failed for', key, e?.message || e); }
   }
 
   const { data: row, error } = await db.from('studio_media').insert({

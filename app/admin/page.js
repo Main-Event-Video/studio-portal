@@ -3883,6 +3883,27 @@ export default function AdminPage() {
                 }}>
                 {heicFix.busy ? 'Fixing HEIC…' : 'Fix HEIC photos'}
               </button>
+              {' · '}
+              <button type="button" className="linklike" disabled={heicFix.busy}
+                title="Re-saves photos that carry an iPhone Display P3 colour profile as true sRGB so the montage shows their real colours (pink stays pink). Only this client. Re-render afterwards."
+                onClick={async () => {
+                  setHeicFix({ busy: true, msg: 'Fixing colours…' });
+                  try {
+                    const r = await api('/api/admin/fix-colour', { method: 'POST', body: JSON.stringify({ clientId: c.id, limit: 50 }) });
+                    const n = (r.converted || []).length, f = (r.failed || []).length, left = r.remaining || 0;
+                    const bits = [];
+                    bits.push(n ? `Colour-fixed ${n} (${(r.converted || []).map((x) => x.filename).join(', ')})` : `Nothing to fix (${r.skipped || 0} already sRGB)`);
+                    if (f) bits.push(`${f} failed (${(r.failed || []).map((x) => `${x.filename}: ${x.error}`).join('; ')})`);
+                    if (left > 0) bits.push(`${left} not checked yet — press again`);
+                    if (n) bits.push('re-render to see it');
+                    setHeicFix({ busy: false, msg: bits.join(' · ') });
+                    if (n) loadProjPhotos(c.id, true);
+                  } catch (e) {
+                    setHeicFix({ busy: false, msg: `Fix colours failed: ${e.message}` });
+                  }
+                }}>
+                {heicFix.busy ? 'Fixing…' : 'Fix colours (P3 → sRGB)'}
+              </button>
               {heicFix.msg && <span style={{ marginLeft: 8, color: heicFix.msg.includes('failed') ? '#f5a623' : 'var(--muted)' }}>{heicFix.msg}</span>}
             </>
           )}
