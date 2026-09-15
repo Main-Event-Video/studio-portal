@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getViewUrl, getDownloadUrl, resolveBackground } from '@/lib/r2';
-import { buildMontageSource, STYLES, styleNeedsDims, styleNeedsFaces, normalizeKeyColor, keyAssetFor } from '@/lib/montage';
+import { buildMontageSource, applyMattePass, STYLES, styleNeedsDims, styleNeedsFaces, normalizeKeyColor, keyAssetFor } from '@/lib/montage';
 import { borderIsOn } from '@/lib/photoBorder';
 import { createRender } from '@/lib/creatomate';
 
@@ -45,9 +45,11 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { montageId, full = true, sequence: revised = null } = body || {};
+  const { montageId, full = true, sequence: revised = null, matte = false } = body || {};
+  // MATTE PASS: a full-res luma matte of this render (see applyMattePass). Always full-res, never watermarked.
+  const wantMatte = matte === true;
   if (!montageId) return NextResponse.json({ error: 'Missing montageId' }, { status: 400 });
-  const wantFull = full !== false;
+  const wantFull = full !== false || wantMatte;
 
   const db = createServiceClient();
   const { data: src, error: findErr } = await db
@@ -171,7 +173,7 @@ export async function POST(request) {
         return isRevision
           ? { ...settings, renderSequence: seq, revisionOf: src.id, seq: nextSeq,
               ...(typeof label === 'string' && label.trim() ? { label: `${label.trim()} R` } : {}) }
-          : { ...settings, seq: srcSeq, rerenderOf: src.id };
+          : { ...settings, seq: srcSeq, rerenderOf: src.id, ...(wantMatte ? { matte: true } : {}) };
       })(),
     })
     .select('id')
@@ -291,6 +293,8 @@ export async function POST(request) {
       frameColor: params.fbFrameColor ?? null,
       stillsOpts: params.stills || null,           // MEvid Stills: the draft's picks/screens
     });
+
+    if (wantMatte) applyMattePass(source, KEY);
 
     const render = await createRender({
       source,

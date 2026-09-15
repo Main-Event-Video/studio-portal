@@ -647,7 +647,7 @@ export async function GET(request) {
   const cp = (s) => String(s || '').replace(/[^A-Za-z0-9]+/g, '');
   // The number prefix: ### for a low-rez/draft, ###HR for a full-rez export — same
   // number, so a high-rez file sorts right next to the draft it came from.
-  const seqLabel = (m) => String(seqMap.get(m.id) || 1).padStart(3, '0') + (m.watermarked ? '' : 'HR');
+  const seqLabel = (m) => String(seqMap.get(m.id) || 1).padStart(3, '0') + (m.watermarked ? '' : 'HR') + (m.params?.matte ? 'M' : '');
   // Strip only what a filesystem actually objects to, and collapse runs of
   // whitespace. Spaces are kept: the studio names these things in plain English
   // ("001HR_The New Taylors Name") and mangling that into TheNewTaylorsName

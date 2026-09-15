@@ -2827,17 +2827,17 @@ export default function AdminPage() {
   // settings (style, pace, cards, green-screen, and each photo's edits as they
   // were snapshotted). full=true → 1920×1080 no watermark; full=false → low-res
   // watermarked draft. Creates a new render row (uses Creatomate credits).
-  async function rerenderMontage(id, full) {
-    const label = full ? 'full-resolution (1920×1080, no watermark)' : 'low-resolution draft';
+  async function rerenderMontage(id, full, matte = false) {
+    const label = matte ? 'MATTE PASS (full-res black & white luma matte — photos white, key backdrop black; use as a track matte instead of keying)' : full ? 'full-resolution (1920×1080, no watermark)' : 'low-resolution draft';
     if (!window.confirm(`Export a ${label} version with the exact same settings? This starts a new render (uses credits).`)) return;
     setMMsg('');
     setMErr(false);
     try {
       await api('/api/admin/montage/finalize', {
         method: 'POST',
-        body: JSON.stringify({ montageId: id, full: !!full }),
+        body: JSON.stringify({ montageId: id, full: !!full, matte: !!matte }),
       });
-      setMMsg(`${full ? 'Full-res' : 'Low-res'} render started — it’ll appear below when ready.`);
+      setMMsg(`${matte ? 'Matte pass' : full ? 'Full-res' : 'Low-res'} render started — it’ll appear below when ready.`);
       loadMontages();
     } catch (err) {
       setMErr(true);
@@ -4914,6 +4914,11 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                       ) : (
                         <button type="button" className="linklike" onClick={() => rerenderMontage(m.id, true)}>Export Full Rez</button>
                       )}
+                      {!m.params?.matte && (<>
+                        {' '}·{' '}
+                        <button type="button" className="linklike" title="Render this montage again as a black & white luma matte (photos white, key backdrop black, same motion). Drop it on the timeline as a track matte — no chroma key, any colour clothing."
+                          onClick={() => rerenderMontage(m.id, true, true)}>Matte pass</button>
+                      </>)}
                       {' '}·{' '}
                       <button type="button" className="linklike" title="Open this render's exact photo list: swap, remove or add photos, then render it again with every other setting unchanged"
                         onClick={() => openRevise(m)}>{revFor?.id === m.id ? 'Close revise' : 'Revise'}</button>
