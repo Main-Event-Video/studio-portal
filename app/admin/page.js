@@ -2613,6 +2613,7 @@ export default function AdminPage() {
   const [revMsg, setRevMsg] = useState('');
   const [revKey, setRevKey] = useState('#FF00FF');   // key colour for the revision (Josh 9/15)
   const [batchBusy, setBatchBusy] = useState(false);   // batch alpha export in flight
+  const [numGridOpen, setNumGridOpen] = useState(false); // the pick-by-number grid in the alpha panel
   const [batchDownloaded, setBatchDownloaded] = useState(false); // Step 2 pressed → highlight Step 3
   const [alphaPanelOpen, setAlphaPanelOpen] = useState(null);    // null = automatic (open when starred/ready), true/false = the arrow
   const [revModeState, setRevMode] = useState('normal'); // 'normal' | 'alpha' (colour + matte pair) | 'matte' (matte only)
@@ -4839,6 +4840,61 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                       }}>{batchBusy ? 'Starting…' : `Export all starred with alpha (★ ${starred.length})`}</button>
                     <span style={{ color: 'var(--muted)' }}>{starred.length ? 'full rez, colour + matte, per starred render' : 'nothing starred yet — click ★ Star on the renders you want to deliver'}</span>
                   </div>
+                  {/* PICK BY NUMBER. Josh 9/16: "rather than have to scroll through to
+                      find the numbers, can I have a grid of all the numbers that a
+                      file was made of that folds down. I want to just select /
+                      highlight all the numbers I used, select and then hit the export
+                      with alpha." One chip per render number in this project; a click
+                      stars or unstars it (so the grid and the ★ on the cards are one
+                      selection, and Step 1 above works unchanged). */}
+                  {(() => {
+                    const byNum = new Map();
+                    for (const m of allRows) {
+                      if (m.matte || m.hidden) continue;
+                      const num = String(m.seq || '').replace(/HR$/, '');
+                      if (!num) continue;
+                      const cur = byNum.get(num);
+                      // Prefer the low-rez draft as the chip's target (that is the
+                      // number on the file he cut with); an HR export stands in when
+                      // there is no draft.
+                      if (!cur || (cur.seq.endsWith('HR') && !String(m.seq).endsWith('HR'))) byNum.set(num, m);
+                    }
+                    const chips = [...byNum.entries()].sort((a, b) => Number(a[0]) - Number(b[0]));
+                    if (!chips.length) return null;
+                    const starredNums = chips.filter(([, m]) => m.starred).length;
+                    return (
+                      <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: numGridOpen ? '8px 10px 10px' : '6px 10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', fontSize: 12.5 }}
+                          onClick={() => setNumGridOpen((v) => !v)} title={numGridOpen ? 'Fold the numbers away' : 'Show every render number to pick from'}>
+                          <span style={{ display: 'inline-block', transition: 'transform 0.15s', transform: numGridOpen ? 'rotate(90deg)' : 'rotate(0deg)', color: 'var(--muted)' }}>▶</span>
+                          <strong>Pick by number</strong>
+                          <span style={{ color: 'var(--muted)' }}>{chips.length} renders · {starredNums} selected — click the numbers you cut with, then Export above</span>
+                        </div>
+                        {numGridOpen && (
+                          <>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                              {chips.map(([num, m]) => (
+                                <button key={`num:${num}`} type="button" onClick={() => reviewMontage(m.id, { starred: !m.starred })}
+                                  title={`${m.label || m.title || ''} — ${m.starred ? 'selected (click to unselect)' : 'click to select'}`}
+                                  style={{
+                                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, fontWeight: 800,
+                                    padding: '4px 9px', borderRadius: 7, cursor: 'pointer',
+                                    border: `1px solid ${m.starred ? '#f5b301' : 'var(--line)'}`,
+                                    background: m.starred ? 'rgba(245,179,1,0.18)' : 'transparent',
+                                    color: m.starred ? '#f5b301' : 'var(--muted)',
+                                  }}>{m.starred ? '★ ' : ''}{num}</button>
+                              ))}
+                            </div>
+                            <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11.5 }}>
+                              <button type="button" className="linklike" style={{ fontSize: 11.5 }} disabled={!starredNums}
+                                onClick={() => chips.filter(([, m]) => m.starred).forEach(([, m]) => reviewMontage(m.id, { starred: false }))}>Clear selection</button>
+                              <span style={{ color: 'var(--muted)' }}>Selected numbers are the starred renders — the same ★ you see on the cards.</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {/* STEP 2 — download finished pairs */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
                     {step(2, 'Download', false)}
