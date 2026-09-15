@@ -2613,6 +2613,7 @@ export default function AdminPage() {
   const [revMsg, setRevMsg] = useState('');
   const [revKey, setRevKey] = useState('#FF00FF');   // key colour for the revision (Josh 9/15)
   const [batchBusy, setBatchBusy] = useState(false);   // batch alpha export in flight
+  const [batchDownloaded, setBatchDownloaded] = useState(false); // Step 2 pressed → highlight Step 3
   const [revModeState, setRevMode] = useState('normal'); // 'normal' | 'alpha' (colour + matte pair) | 'matte' (matte only)
   // Drag-to-reorder inside the Revise strip — local only, same gesture and the
   // same green landing bar as Edit Photos. Josh: "can I reorder the images the
@@ -4790,40 +4791,61 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             const starred = allRows.filter((m) => m.starred && !m.hidden && !m.matte);
             const pairsReady = allRows.filter((m) => m.alphaPair && !m.matte && ready(m) && ready(allRows.find((x) => x.alphaPair === m.alphaPair && x.matte)));
             const pairsPending = allRows.filter((m) => m.alphaPair && !m.matte && !pairsReady.includes(m)).length;
-            if (!starred.length && !pairsReady.length && !pairsPending) return null;
+            if (!allRows.length) return null;
+            const step = (n, label, done) => (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 800, color: done ? '#22c55e' : 'var(--text)' }}>
+                <span style={{ width: 22, height: 22, borderRadius: '50%', background: done ? '#22c55e' : 'var(--blue)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>{done ? '✓' : n}</span>{label}
+              </span>
+            );
             return (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', fontSize: 13, margin: '8px 0 4px', padding: '8px 10px', border: '1px solid var(--line)', borderRadius: 10 }}>
-                <span style={{ color: 'var(--muted)', fontWeight: 700 }}>Batch alpha</span>
-                {starred.length > 0 && (
-                  <button type="button" className="linklike" style={{ fontWeight: 700 }} disabled={batchBusy}
-                    title="Starts an Export with alpha (colour + matte, full rez, uses credits) for EVERY starred render in this project"
-                    onClick={async () => {
-                      if (!window.confirm(`Export with alpha for ${starred.length} starred render${starred.length === 1 ? '' : 's'}? That is ${starred.length * 2} full-res renders (uses credits).`)) return;
-                      setBatchBusy(true); let ok = 0; const errs = [];
-                      for (const m of starred) {
-                        try { await api('/api/admin/montage/finalize', { method: 'POST', body: JSON.stringify({ montageId: m.id, full: true, alpha: true }) }); ok++; setMMsg(`Alpha export started: ${ok} of ${starred.length}…`); }
-                        catch (e) { errs.push(`${m.seq}: ${e.message}`); }
-                      }
-                      setBatchBusy(false);
-                      setMMsg(`Alpha exports started for ${ok} render${ok === 1 ? '' : 's'}${errs.length ? ` · ${errs.length} failed (${errs.join('; ')})` : ''}. When the pairs finish, use "Download all alpha pairs".`);
-                      loadMontages();
-                    }}>{batchBusy ? 'Starting…' : `Export all starred with alpha (★ ${starred.length})`}</button>
-                )}
-                {pairsPending > 0 && <span style={{ color: 'var(--muted)' }}>{pairsPending} pair{pairsPending === 1 ? '' : 's'} still rendering</span>}
-                {pairsReady.length > 0 && (
-                  <button type="button" className="linklike" style={{ fontWeight: 700, color: '#22c55e' }}
-                    title="Downloads every finished pair (colour + matte) to Downloads, then double-click Alpha Merge.command once — it merges all of them."
-                    onClick={() => {
-                      const files = [];
-                      for (const m of pairsReady) { files.push(m); files.push(allRows.find((x) => x.alphaPair === m.alphaPair && x.matte)); }
-                      files.forEach((v, i) => setTimeout(() => {
-                        const a = document.createElement('a');
-                        a.href = v.downloadUrl || v.url; a.download = ''; a.rel = 'noopener';
-                        document.body.appendChild(a); a.click(); a.remove();
-                      }, i * 1500));
-                      setMMsg(`Downloading ${files.length} files (${pairsReady.length} pairs). If Chrome asks to allow multiple downloads, click Allow. Then double-click Alpha Merge.command once — it merges every pair in Downloads.`);
-                    }}>Download all alpha pairs ({pairsReady.length} ready · {pairsReady.length * 2} files)</button>
-                )}
+              <div style={{ margin: '10px 0 6px', padding: '12px 14px', border: '1px solid var(--line)', borderRadius: 12, fontSize: 13 }}>
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>Alpha export — three steps <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(star the keepers first)</span></div>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {/* STEP 1 — start the full-rez pairs */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+                    {step(1, 'Render', false)}
+                    <button type="button" className="btn-primary" disabled={batchBusy || !starred.length}
+                      title="Starts an Export with alpha (colour + matte, full rez, uses credits) for EVERY starred render in this project"
+                      onClick={async () => {
+                        if (!window.confirm(`Export with alpha for ${starred.length} starred render${starred.length === 1 ? '' : 's'}? That is ${starred.length * 2} full-res renders (uses credits).`)) return;
+                        setBatchBusy(true); let ok = 0; const errs = [];
+                        for (const m of starred) {
+                          try { await api('/api/admin/montage/finalize', { method: 'POST', body: JSON.stringify({ montageId: m.id, full: true, alpha: true }) }); ok++; setMMsg(`Alpha export started: ${ok} of ${starred.length}…`); }
+                          catch (e) { errs.push(`${m.seq}: ${e.message}`); }
+                        }
+                        setBatchBusy(false);
+                        setMMsg(`Step 1 done — ${ok} pair${ok === 1 ? '' : 's'} rendering${errs.length ? ` · ${errs.length} failed (${errs.join('; ')})` : ''}. When "ready" shows in Step 2, download them.`);
+                        loadMontages();
+                      }}>{batchBusy ? 'Starting…' : `Export all starred with alpha (★ ${starred.length})`}</button>
+                    <span style={{ color: 'var(--muted)' }}>{starred.length ? 'full rez, colour + matte, per starred render' : 'nothing starred yet — click ★ Star on the renders you want to deliver'}</span>
+                  </div>
+                  {/* STEP 2 — download finished pairs */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+                    {step(2, 'Download', false)}
+                    <button type="button" className="btn-primary" disabled={!pairsReady.length}
+                      title="Downloads every finished pair (colour + matte) to Downloads. If Chrome asks to allow multiple downloads, click Allow."
+                      onClick={() => {
+                        const files = [];
+                        for (const m of pairsReady) { files.push(m); files.push(allRows.find((x) => x.alphaPair === m.alphaPair && x.matte)); }
+                        files.forEach((v, i) => setTimeout(() => {
+                          const a = document.createElement('a');
+                          a.href = v.downloadUrl || v.url; a.download = ''; a.rel = 'noopener';
+                          document.body.appendChild(a); a.click(); a.remove();
+                        }, i * 1500));
+                        setBatchDownloaded(true);
+                        setMMsg(`Step 2 done — downloading ${files.length} files (${pairsReady.length} pair${pairsReady.length === 1 ? '' : 's'}). If Chrome asks to allow multiple downloads, click Allow. Then Step 3: click Alpha Merge in the Dock.`);
+                      }}>{`Download all alpha pairs (${pairsReady.length} ready · ${pairsReady.length * 2} files)`}</button>
+                    {pairsPending > 0 && <span style={{ color: 'var(--muted)' }}>{pairsPending} pair{pairsPending === 1 ? '' : 's'} still rendering — the page refreshes itself</span>}
+                    {!pairsPending && !pairsReady.length && <span style={{ color: 'var(--muted)' }}>nothing finished yet</span>}
+                  </div>
+                  {/* STEP 3 — merge on the Mac */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+                    {step(3, 'Merge', false)}
+                    <span style={{ padding: '6px 12px', borderRadius: 8, background: batchDownloaded ? 'rgba(34,197,94,0.18)' : 'transparent', border: `1px solid ${batchDownloaded ? '#22c55e' : 'var(--line)'}`, fontWeight: batchDownloaded ? 800 : 400 }}>
+                      {batchDownloaded ? '▶ Now click Alpha Merge in the Dock' : 'Click Alpha Merge in the Dock'} — it merges every pair in Downloads; import the <code>_ALPHA.mov</code> files into Premiere (no key).
+                    </span>
+                  </div>
+                </div>
               </div>
             );
           })()}
