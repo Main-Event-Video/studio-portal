@@ -2614,6 +2614,7 @@ export default function AdminPage() {
   const [revKey, setRevKey] = useState('#FF00FF');   // key colour for the revision (Josh 9/15)
   const [batchBusy, setBatchBusy] = useState(false);   // batch alpha export in flight
   const [batchDownloaded, setBatchDownloaded] = useState(false); // Step 2 pressed → highlight Step 3
+  const [alphaPanelOpen, setAlphaPanelOpen] = useState(null);    // null = automatic (open when starred/ready), true/false = the arrow
   const [revModeState, setRevMode] = useState('normal'); // 'normal' | 'alpha' (colour + matte pair) | 'matte' (matte only)
   // Drag-to-reorder inside the Revise strip — local only, same gesture and the
   // same green landing bar as Edit Photos. Josh: "can I reorder the images the
@@ -4803,10 +4804,23 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 <span style={{ width: 22, height: 22, borderRadius: '50%', background: done ? '#22c55e' : 'var(--blue)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>{done ? '✓' : n}</span>{label}
               </span>
             );
+            // Folded by default (Josh 9/16); opens itself when something is starred
+            // or a pair is in flight/ready, and the arrow toggles it either way.
+            const autoOpen = starred.length > 0 || pairsReady.length > 0 || pairsPending > 0;
+            const open = alphaPanelOpen === null ? autoOpen : alphaPanelOpen;
             return (
-              <div style={{ margin: '10px 0 6px', padding: '12px 14px', border: '1px solid var(--line)', borderRadius: 12, fontSize: 13 }}>
-                <div style={{ fontWeight: 800, marginBottom: 8 }}>Alpha export — three steps <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(star the keepers first)</span></div>
-                <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ margin: '10px 0 6px', padding: open ? '12px 14px' : '8px 14px', border: '1px solid var(--line)', borderRadius: 12, fontSize: 13 }}>
+                <div style={{ fontWeight: 800, marginBottom: open ? 8 : 0, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => setAlphaPanelOpen(!open)} title={open ? 'Fold away' : 'Show the three steps'}>
+                  <span style={{ display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', color: 'var(--muted)' }}>▶</span>
+                  Alpha export — three steps
+                  <span style={{ color: 'var(--muted)', fontWeight: 400 }}>
+                    {starred.length ? `★ ${starred.length} starred` : '(star the keepers first)'}
+                    {pairsReady.length ? ` · ${pairsReady.length} ready to download` : ''}
+                    {pairsPending ? ` · ${pairsPending} rendering` : ''}
+                  </span>
+                </div>
+                {open && <div style={{ display: 'grid', gap: 10 }}>
                   {/* STEP 1 — start the full-rez pairs */}
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
                     {step(1, 'Render', false)}
@@ -4851,7 +4865,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                       {batchDownloaded ? '▶ Now click Alpha Merge in the Dock' : 'Click Alpha Merge in the Dock'} — it merges every pair in Downloads; import the <code>_ALPHA.mov</code> files into Premiere (no key).
                     </span>
                   </div>
-                </div>
+                </div>}
               </div>
             );
           })()}
