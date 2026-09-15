@@ -83,7 +83,7 @@ async function postMontage(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null, styleBorder = null, atmo = null, neon = null, stills = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null, styleBorder = null, atmo = null, neon = null, stills = null, alphaPair = null, alphaRole = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -355,6 +355,9 @@ async function postMontage(request) {
         // SNAPSHOTTED so Export Full Rez re-renders in the same colour, and so a
         // montage keyed green last month stays green when it is re-exported.
         keyColor: KEY,
+        // GENERATE WITH ALPHA (Josh 9/16): the admin tags a draft as the colour pass
+        // of a low-rez alpha pair and immediately starts its matte via finalize.
+        ...(typeof alphaPair === 'string' && alphaPair ? { alphaPair, alphaRole: alphaRole === 'matte' ? 'matte' : 'color' } : {}),
         // Kept for display only — the resolved border is already baked into
         // renderSequence, so finalize needs nothing from this.
         styleBorder: (styleBorder && typeof styleBorder === 'object') ? styleBorder : null,

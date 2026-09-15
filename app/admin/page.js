@@ -2835,7 +2835,7 @@ export default function AdminPage() {
   // were snapshotted). full=true → 1920×1080 no watermark; full=false → low-res
   // watermarked draft. Creates a new render row (uses Creatomate credits).
   async function rerenderMontage(id, full, matte = false, alpha = false) {
-    const label = alpha ? 'WITH ALPHA — two full-res passes (colour over black + matte). When both are ready, download the pair and run Alpha Merge to get the .mov with alpha' : matte ? 'MATTE PASS (full-res black & white luma matte — photos white, key backdrop black; use as a track matte instead of keying)' : full ? 'full-resolution (1920×1080, no watermark)' : 'low-resolution draft';
+    const label = alpha ? `WITH ALPHA — two ${full ? 'full-res' : 'LOW-REZ (half size, ~¼ credits)'} passes (colour over black + matte). When both are ready, download the pair and run Alpha Merge to get the .mov with alpha` : matte ? 'MATTE PASS (full-res black & white luma matte — photos white, key backdrop black; use as a track matte instead of keying)' : full ? 'full-resolution (1920×1080, no watermark)' : 'low-resolution draft';
     if (!window.confirm(`Export a ${label} version with the exact same settings? This starts a new render (uses credits).`)) return;
     setMMsg('');
     setMErr(false);
@@ -2844,7 +2844,7 @@ export default function AdminPage() {
         method: 'POST',
         body: JSON.stringify({ montageId: id, full: !!full, matte: !!matte, alpha: !!alpha }),
       });
-      setMMsg(`${alpha ? 'Alpha export (colour + matte passes)' : matte ? 'Matte pass' : full ? 'Full-res' : 'Low-res'} render started — it’ll appear below when ready.`);
+      setMMsg(`${alpha ? `${full ? 'Full-rez' : 'Low-rez'} alpha pair (colour + matte passes)` : matte ? 'Matte pass' : full ? 'Full-res' : 'Low-res'} render started — it’ll appear below when ready.`);
       loadMontages();
     } catch (err) {
       setMErr(true);
@@ -2873,10 +2873,12 @@ export default function AdminPage() {
     const builtAll = [];
     for (const s of plan) {
       try {
+        const alphaPairForSeg = ((s.keyColor || '#000000') === '#000000' && s.autoAlpha !== false) ? (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`) : null;
         const r = await api('/api/admin/montage', {
           method: 'POST',
           body: JSON.stringify({
             clientId: c.id,
+            ...(alphaPairForSeg ? { alphaPair: alphaPairForSeg, alphaRole: 'color' } : {}),
             style: s.style,
             title: mTitle.trim(),
             subtitle: mSubtitle.trim() || null,
@@ -2944,6 +2946,12 @@ export default function AdminPage() {
         });
         if (r && r.built) builtAll.push(r.built);
         ok++;
+        // GENERATE WITH ALPHA: an Alpha-key draft gets its low-rez MATTE companion
+        // started right away, so the pair merges into a small .mov to cut with.
+        if (alphaPairForSeg && r && r.montageId) {
+          try { await api('/api/admin/montage/finalize', { method: 'POST', body: JSON.stringify({ montageId: r.montageId, full: false, matte: true, alphaPair: alphaPairForSeg, alphaRole: 'matte' }) }); }
+          catch (err) { errs.push(`matte pass for ${s.style}: ${err.message}`); }
+        }
       } catch (err) {
         errs.push(err.message);
       }
@@ -4921,7 +4929,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     ? <span className="pill">low rez</span>
                     : <span className="pill" style={{ background: '#22c55e', color: '#05230f', borderColor: '#22c55e', fontWeight: 800, letterSpacing: '.03em' }}>HIGH REZ</span>}
                   {m.matte && <span className="pill" style={{ background: '#e5e7eb', color: '#111', borderColor: '#e5e7eb', fontWeight: 800 }}>MATTE PASS</span>}
-                  {m.alphaPair && !m.matte && <span className="pill" style={{ background: '#111', color: '#fff', borderColor: '#444', fontWeight: 800 }}>ALPHA · colour pass</span>}
+                  {m.alphaPair && !m.matte && <span className="pill" style={{ background: '#111', color: '#fff', borderColor: '#444', fontWeight: 800 }}>ALPHA · colour pass{m.watermarked ? ' · low rez' : ''}</span>}
                   {m.keyColor && !m.matte && <span className="pill" title="Key colour this render was built against"><span aria-hidden="true" style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: m.keyColor, marginRight: 5, verticalAlign: 'middle', border: '1px solid var(--line)' }} />{(KEY_COLOR_OPTS.find((k) => k.value === m.keyColor) || {}).label?.replace(' (default)', '') || m.keyColor}</span>}
                   {m.starred && <span className="pill" style={{ color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
                   {m.includeCards === false && <span className="pill">no cards</span>}
@@ -4975,6 +4983,10 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         <button type="button" className="linklike" style={{ fontWeight: 700 }}
                           title="Two full-res renders: the colour pass over BLACK + the matte pass (photos white / backdrop black). When both are ready, 'Download alpha pair' appears on the colour pass — then double-click tools/Alpha Merge.command to get one .mov with a real alpha channel for Premiere. No chroma key, any colour clothing."
                           onClick={() => rerenderMontage(m.id, true, false, true)}>Export with alpha</button>
+                        {' '}·{' '}
+                        <button type="button" className="linklike"
+                          title="Same two passes at HALF size (~¼ the credits) — merge them for a small .mov with alpha to cut with, then Replace Footage with the full-rez alpha at the end."
+                          onClick={() => rerenderMontage(m.id, false, false, true)}>Low rez with alpha</button>
                       </>)}
                       {(() => {
                         // The colour pass of an alpha pair: offer both files once the matte sibling is done.

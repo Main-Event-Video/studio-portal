@@ -54,13 +54,16 @@ export async function POST(request) {
   // (The merge cannot run here: it needs ffmpeg and minutes of CPU per montage.)
   if (body && body.alpha === true) {
     const pair = randomUUID();
-    const base = { ...body, alpha: false, full: true, keyColor: '#000000', alphaPair: pair };
+    // full:false = a LOW-REZ pair (both passes at half size, watermarked colour) to
+    // cut with; full:true (default) = the delivery pair.
+    const lowRez = body.full === false;
+    const base = { ...body, alpha: false, full: !lowRez, keyColor: '#000000', alphaPair: pair };
     const r1 = await finalizeOne({ ...base, matte: false, alphaRole: 'color' });
     if (r1.status !== 200) return r1;
     const j1 = await r1.json();
     // The matte pass is a re-render OF THE COLOUR PASS (same number → ###HRM,
     // same photos, same black key), never a second revision with its own number.
-    const r2 = await finalizeOne({ montageId: j1.montageId, full: true, matte: true, alphaPair: pair, alphaRole: 'matte' });
+    const r2 = await finalizeOne({ montageId: j1.montageId, full: !lowRez, matte: true, alphaPair: pair, alphaRole: 'matte' });
     if (r2.status !== 200) return r2;
     const j2 = await r2.json();
     return NextResponse.json({ ok: true, alphaPair: pair, color: j1, matte: j2 });
@@ -73,7 +76,9 @@ async function finalizeOne(body) {
   // MATTE PASS: a full-res luma matte of this render (see applyMattePass). Always full-res, never watermarked.
   const wantMatte = matte === true;
   if (!montageId) return NextResponse.json({ error: 'Missing montageId' }, { status: 400 });
-  const wantFull = full !== false || wantMatte;
+  // A matte-only pass is always full-res; the matte of an ALPHA PAIR follows the
+  // pair's size (so a low-rez pair merges into a small file to cut with).
+  const wantFull = (wantMatte && !alphaPair) ? true : full !== false;
 
   const db = createServiceClient();
   const { data: src, error: findErr } = await db

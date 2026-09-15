@@ -2,9 +2,9 @@
 # ALPHA MERGE — joins an "Export with alpha" pair from the Studio Portal into ONE
 # QuickTime file with a real alpha channel that Premiere reads natively.
 #
-#   ###HR_<name>.mp4   the COLOUR pass (rendered over black)
-#   ###HRM_<name>.mp4  the MATTE pass  (photos white, backdrop black)
-#   →  ###_<name>_ALPHA.mov   Animation codec (qtrle, ARGB) + the original audio
+#   ###HR_<name>.mp4  + ###HRM_<name>.mp4   (full rez)  →  ###HR_<name>_ALPHA.mov
+#   ###_<name>.mp4    + ###M_<name>.mp4     (low rez)   →  ###_<name>_ALPHA.mov
+#   Animation codec (qtrle, ARGB), premultiplied, + the original audio
 #
 # WHY ANIMATION, NOT PRORES: Premiere ignored the alpha in every ProRes 4444
 # ffmpeg produced (tested 9/15: straight, premultiplied, 8-bit alpha, Apple
@@ -35,25 +35,35 @@ fi
 
 shopt -s nullglob
 found=0
-for color in "$DIR"/[0-9][0-9][0-9]HR_*.mp4; do
+FP="$(dirname "$FF")/ffprobe"; [ -x "$FP" ] || FP="$(command -v ffprobe 2>/dev/null || true)"
+# Pairs come in two sizes: FULL REZ  ###HR_<name>.mp4 + ###HRM_<name>.mp4  →  ###HR_<name>_ALPHA.mov
+#                          LOW REZ   ###_<name>.mp4   + ###M_<name>.mp4    →  ###_<name>_ALPHA.mov
+for color in "$DIR"/[0-9][0-9][0-9]HR_*.mp4 "$DIR"/[0-9][0-9][0-9]_*.mp4; do
   base="$(basename "$color")"
   num="${base:0:3}"
-  rest="${base#*HR_}"                 # "<name>.mp4" — or "<name> (1).mp4" when the browser de-duplicated
+  case "$base" in
+    ???HR_*) tag="HR"; rest="${base#???HR_}" ;;
+    *)       tag="";   rest="${base#???_}" ;;
+  esac
   stem="${rest%.mp4}"
-  stem="$(printf '%s' "$stem" | sed -E 's/ \([0-9]+\)$//')"   # drop a trailing " (1)"
+  stem="$(printf '%s' "$stem" | sed -E 's/ \([0-9]+\)$//')"   # drop a trailing " (1)" the browser added
+  case "$stem" in *_ALPHA) continue ;; esac
   # the matte may carry its own " (n)" — take the newest that matches
-  matte="$(ls -t "$DIR/${num}HRM_${stem}"*.mp4 2>/dev/null | head -1)"
-  out="$DIR/${num}_${stem}_ALPHA.mov"
+  matte="$(ls -t "$DIR/${num}${tag}M_${stem}"*.mp4 2>/dev/null | head -1)"
+  out="$DIR/${num}${tag}_${stem}_ALPHA.mov"
   [ -n "$matte" ] && [ -f "$matte" ] || continue
   found=$((found+1))
   if [ -f "$out" ]; then echo "✓ already merged: $(basename "$out")"; continue; fi
-  echo "▶ merging $num …  ($(basename "$color") + $(basename "$matte"))"
+  # scale the matte to the colour pass's exact size (low-rez pairs are half size)
+  dims="1920:1080"
+  if [ -n "$FP" ]; then d="$("$FP" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$color" 2>/dev/null | tr ',' ':')"; case "$d" in [0-9]*:[0-9]*) dims="$d" ;; esac; fi
+  echo "▶ merging ${num}${tag} …  ($(basename "$color") + $(basename "$matte"))  ${dims}"
   "$FF" -v error -stats -y -i "$color" -i "$matte" \
-    -filter_complex "[1:v]format=gray,scale=1920:1080,split[m1][m2];[0:v]format=gbrp[c];[c][m1]premultiply=inplace=0[pm];[pm][m2]alphamerge,format=argb[out]" \
+    -filter_complex "[1:v]format=gray,scale=${dims},split[m1][m2];[0:v]format=gbrp[c];[c][m1]premultiply=inplace=0[pm];[pm][m2]alphamerge,format=argb[out]" \
     -map "[out]" -map "0:a?" -c:v qtrle -pix_fmt argb -c:a pcm_s16le "$out" \
-    && echo "✓ wrote $(basename "$out")" || { echo "✗ merge failed for $num"; rm -f "$out"; }
+    && echo "✓ wrote $(basename "$out")" || { echo "✗ merge failed for ${num}${tag}"; rm -f "$out"; }
 done
 if [ "$found" -eq 0 ]; then
-  echo "No pairs found in $DIR — need both ###HR_<name>.mp4 and ###HRM_<name>.mp4 from 'Download alpha pair'."
+  echo "No pairs found in $DIR — need a pair from 'Download alpha pair' (###HR_ + ###HRM_, or ###_ + ###M_ for low rez) — got them from 'Download alpha pair'."
 fi
 echo; echo "Done. The _ALPHA.mov files are in $DIR — import into Premiere, drop above your backdrop. No key needed."
