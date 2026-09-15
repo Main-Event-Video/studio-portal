@@ -2610,6 +2610,8 @@ export default function AdminPage() {
   const [revPick, setRevPick] = useState(null);    // { pos, mode: 'swap' | 'insert' } — the library picker is open for this slot
   const [revBusy, setRevBusy] = useState(false);
   const [revMsg, setRevMsg] = useState('');
+  const [revKey, setRevKey] = useState('#FF00FF');   // key colour for the revision (Josh 9/15)
+  const [revMatte, setRevMatte] = useState(false);   // render the revision as a matte pass
   // Drag-to-reorder inside the Revise strip — local only, same gesture and the
   // same green landing bar as Edit Photos. Josh: "can I reorder the images the
   // way we can in the edit photo with the click and drag and the green side
@@ -2653,6 +2655,7 @@ export default function AdminPage() {
   async function openRevise(m) {
     if (revFor?.id === m.id) { setRevFor(null); return; }
     setRevFor(m); setRevPick(null); setRevMsg(''); setRevLoading(true); setRevSeq([]);
+    setRevKey((m.params && m.params.keyColor) || '#FF00FF'); setRevMatte(false);
     try {
       const { photos, sequence } = await api(`/api/admin/montage/photos?montageId=${m.id}`);
       const th = {};
@@ -2685,12 +2688,13 @@ export default function AdminPage() {
     if (!revFor) return;
     const photos = revSeq.filter((e) => e.type === 'photo').length;
     if (!photos) { setRevMsg('A revision needs at least one photo.'); return; }
-    if (!window.confirm(`Render this revision as a ${full ? 'full-resolution' : 'low-res draft'} (${photos} photos)? This starts a new render (uses credits); the original is kept.`)) return;
+    const what = revMatte ? 'MATTE PASS (full-res, photos white / key black)' : full ? 'full-resolution' : 'low-res draft';
+    if (!window.confirm(`Render this revision as a ${what} (${photos} photos, key ${(KEY_COLOR_OPTS.find((k) => k.value === revKey) || {}).label || revKey})? This starts a new render (uses credits); the original is kept.`)) return;
     setRevBusy(true); setRevMsg('');
     try {
       await api('/api/admin/montage/finalize', {
         method: 'POST',
-        body: JSON.stringify({ montageId: revFor.id, full: !!full, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
+        body: JSON.stringify({ montageId: revFor.id, full: !!full || revMatte, matte: !!revMatte, keyColor: revKey, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
       });
       setRevMsg('Revision started — it will appear in the list as a new render.');
       setRevFor(null);
@@ -4935,7 +4939,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
                           This render's photos, in order — drag to reorder. <strong>Swap</strong> keeps the slot (and every transition) exactly as it was;
                           <strong> Remove</strong>, <strong>Add after</strong> and a drag shift the photos in between by one slot. Style, pace, cards,
-                          key colour, border and neon are kept from this render. The original is never changed.
+                          border and neon are kept from this render; the key colour can be changed below, or render it as a matte pass. The original is never changed.
                         </p>
                         {revLoading ? <p style={{ fontSize: 13 }}>Opening…</p> : (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -5015,9 +5019,33 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                               )}
                           </div>
                         )}
+                        {/* KEY COLOUR + MATTE for the revision (Josh 9/15: "under Revise could you also
+                            add Change key color or Matte option"). Key defaults to the render's own. */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 12, fontSize: 13 }}>
+                          <span style={{ color: 'var(--muted)' }}>Key colour</span>
+                          {KEY_COLOR_OPTS.map((k) => {
+                            const on = revKey === k.value;
+                            return (
+                              <button key={k.value} type="button" onClick={() => setRevKey(k.value)} title={k.note}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: on ? 700 : 400,
+                                  border: `${on ? 2 : 1}px solid ${on ? 'var(--blue)' : 'var(--line)'}`, background: on ? 'rgba(61,123,255,0.14)' : 'transparent', color: on ? 'var(--text)' : 'var(--muted)' }}>
+                                <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 3, background: k.value, flex: '0 0 auto' }} />
+                                {k.label.replace(' (default)', '')}
+                              </button>
+                            );
+                          })}
+                          <label className="choice" style={{ color: 'var(--text)', marginLeft: 6 }} title="Renders a black & white luma matte instead of the picture: photos white, key backdrop black, same motion. Use as a track matte — no chroma key.">
+                            <input type="checkbox" checked={revMatte} onChange={(e) => setRevMatte(e.target.checked)} />
+                            Matte pass (full rez)
+                          </label>
+                        </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, fontSize: 13 }}>
-                          <button type="button" className="btn-primary" disabled={revBusy || revLoading} onClick={() => renderRevision(false)}>Render revision — low rez</button>
-                          <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>Render revision — full rez</button>
+                          {revMatte ? (
+                            <button type="button" className="btn-primary" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>Render revision — matte pass</button>
+                          ) : (<>
+                            <button type="button" className="btn-primary" disabled={revBusy || revLoading} onClick={() => renderRevision(false)}>Render revision — low rez</button>
+                            <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>Render revision — full rez</button>
+                          </>)}
                           <span style={{ color: 'var(--muted)' }}>{revSeq.filter((e) => e.type === 'photo').length} photos</span>
                           {revMsg && <span style={{ color: /could not|cannot|needs/i.test(revMsg) ? '#f5a623' : 'var(--muted)' }}>{revMsg}</span>}
                         </div>

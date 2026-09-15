@@ -45,7 +45,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { montageId, full = true, sequence: revised = null, matte = false } = body || {};
+  const { montageId, full = true, sequence: revised = null, matte = false, keyColor: keyOverride = null } = body || {};
   // MATTE PASS: a full-res luma matte of this render (see applyMattePass). Always full-res, never watermarked.
   const wantMatte = matte === true;
   if (!montageId) return NextResponse.json({ error: 'Missing montageId' }, { status: 400 });
@@ -59,7 +59,11 @@ export async function POST(request) {
     .single();
   if (findErr || !src) return NextResponse.json({ error: 'Render not found' }, { status: 404 });
 
-  const params = (src.params && typeof src.params === 'object') ? src.params : {};
+  const params = (src.params && typeof src.params === 'object') ? { ...src.params } : {};
+  // KEY COLOUR OVERRIDE (Josh 9/15, from the Revise panel): re-render the same
+  // montage against a different key. Snapshotted into the new row's params so
+  // its own exports keep the new colour. Anything not a valid hex is ignored.
+  if (typeof keyOverride === 'string' && /^#[0-9A-F]{6}$/i.test(keyOverride.trim())) params.keyColor = keyOverride.trim().toUpperCase();
   let seq = Array.isArray(params.renderSequence) ? params.renderSequence : null;
   if (!seq || !seq.length) {
     return NextResponse.json(
