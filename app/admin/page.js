@@ -739,7 +739,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#FF00FF', bgBlur: '0', sbMode: 'none', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#000000', bgBlur: '0', sbMode: 'none', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -2066,7 +2066,7 @@ export default function AdminPage() {
                     <label style={{ color: 'var(--text)', display: 'block', marginBottom: 6 }}>Key colour</label>
                     <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                       {KEY_COLOR_OPTS.map((k) => {
-                        const on = (seg.keyColor || '#FF00FF') === k.value;
+                        const on = (seg.keyColor || '#000000') === k.value;
                         return (
                           <button key={k.value} type="button" onClick={() => apply({ keyColor: k.value })}
                             style={{
@@ -2084,7 +2084,7 @@ export default function AdminPage() {
                       })}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-                      {(KEY_COLOR_OPTS.find((k) => k.value === (seg.keyColor || '#FF00FF')) || KEY_COLOR_OPTS[0]).note}
+                      {(KEY_COLOR_OPTS.find((k) => k.value === (seg.keyColor || '#000000')) || KEY_COLOR_OPTS[0]).note}
                     </div>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
@@ -2117,7 +2117,8 @@ export default function AdminPage() {
     return Number.isFinite(n) && n > 0 ? n : null;
   };
   const KEY_COLOR_OPTS = [
-    { value: '#FF00FF', label: 'Magenta (default)', note: 'The default. Magenta almost never occurs in a real photograph, so nothing in the pictures keys away; edges key a little softer than green.' },
+    { value: '#000000', label: 'Alpha (default)', note: 'The default. Renders over black; "Export with alpha" then makes a colour pass + a matte pass that merge into one .mov with a true alpha channel — no chroma key, any colour clothing. Drafts just show a black backdrop.' },
+    { value: '#FF00FF', label: 'Magenta', note: 'Magenta almost never occurs in a real photograph, so nothing in the pictures keys away; edges key a little softer than green.' },
     { value: '#00B140', label: 'Green', note: 'Cleanest key. Wrong when the photos contain foliage, grass or green clothing.' },
     { value: '#0047BB', label: 'Blue', note: 'The classic alternative — but sky, water, denim and eyes are blue, so it trades one collision for another.' },
   ];
@@ -2611,7 +2612,7 @@ export default function AdminPage() {
   const [revBusy, setRevBusy] = useState(false);
   const [revMsg, setRevMsg] = useState('');
   const [revKey, setRevKey] = useState('#FF00FF');   // key colour for the revision (Josh 9/15)
-  const [revMatte, setRevMatte] = useState(false);   // render the revision as a matte pass
+  const [revModeState, setRevMode] = useState('normal'); // 'normal' | 'alpha' (colour + matte pair) | 'matte' (matte only)
   // Drag-to-reorder inside the Revise strip — local only, same gesture and the
   // same green landing bar as Edit Photos. Josh: "can I reorder the images the
   // way we can in the edit photo with the click and drag and the green side
@@ -2655,7 +2656,7 @@ export default function AdminPage() {
   async function openRevise(m) {
     if (revFor?.id === m.id) { setRevFor(null); return; }
     setRevFor(m); setRevPick(null); setRevMsg(''); setRevLoading(true); setRevSeq([]);
-    setRevKey((m.params && m.params.keyColor) || '#FF00FF'); setRevMatte(false);
+    setRevKey(m.keyColor || '#000000'); setRevMode('normal');
     try {
       const { photos, sequence } = await api(`/api/admin/montage/photos?montageId=${m.id}`);
       const th = {};
@@ -2684,17 +2685,18 @@ export default function AdminPage() {
     });
     setRevPick(null);
   }
-  async function renderRevision(full) {
+  async function renderRevision(full, modeArg = null) {
     if (!revFor) return;
+    const revMode = modeArg || revModeState; // explicit mode wins (the alpha button passes it)
     const photos = revSeq.filter((e) => e.type === 'photo').length;
     if (!photos) { setRevMsg('A revision needs at least one photo.'); return; }
-    const what = revMatte ? 'MATTE PASS (full-res, photos white / key black)' : full ? 'full-resolution' : 'low-res draft';
-    if (!window.confirm(`Render this revision as a ${what} (${photos} photos, key ${(KEY_COLOR_OPTS.find((k) => k.value === revKey) || {}).label || revKey})? This starts a new render (uses credits); the original is kept.`)) return;
+    const what = revMode === 'alpha' ? 'WITH ALPHA (two full-res passes: colour over black + matte)' : revMode === 'matte' ? 'MATTE PASS (full-res, photos white / key black)' : full ? 'full-resolution' : 'low-res draft';
+    if (!window.confirm(`Render this revision as a ${what} (${photos} photos${revMode === 'alpha' ? '' : `, key ${(KEY_COLOR_OPTS.find((k) => k.value === revKey) || {}).label || revKey}`})? This starts a new render (uses credits); the original is kept.`)) return;
     setRevBusy(true); setRevMsg('');
     try {
       await api('/api/admin/montage/finalize', {
         method: 'POST',
-        body: JSON.stringify({ montageId: revFor.id, full: !!full || revMatte, matte: !!revMatte, keyColor: revKey, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
+        body: JSON.stringify({ montageId: revFor.id, full: !!full || revMode !== 'normal', matte: revMode === 'matte', alpha: revMode === 'alpha', keyColor: revKey, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
       });
       setRevMsg('Revision started — it will appear in the list as a new render.');
       setRevFor(null);
@@ -2831,17 +2833,17 @@ export default function AdminPage() {
   // settings (style, pace, cards, green-screen, and each photo's edits as they
   // were snapshotted). full=true → 1920×1080 no watermark; full=false → low-res
   // watermarked draft. Creates a new render row (uses Creatomate credits).
-  async function rerenderMontage(id, full, matte = false) {
-    const label = matte ? 'MATTE PASS (full-res black & white luma matte — photos white, key backdrop black; use as a track matte instead of keying)' : full ? 'full-resolution (1920×1080, no watermark)' : 'low-resolution draft';
+  async function rerenderMontage(id, full, matte = false, alpha = false) {
+    const label = alpha ? 'WITH ALPHA — two full-res passes (colour over black + matte). When both are ready, download the pair and run Alpha Merge to get the .mov with alpha' : matte ? 'MATTE PASS (full-res black & white luma matte — photos white, key backdrop black; use as a track matte instead of keying)' : full ? 'full-resolution (1920×1080, no watermark)' : 'low-resolution draft';
     if (!window.confirm(`Export a ${label} version with the exact same settings? This starts a new render (uses credits).`)) return;
     setMMsg('');
     setMErr(false);
     try {
       await api('/api/admin/montage/finalize', {
         method: 'POST',
-        body: JSON.stringify({ montageId: id, full: !!full, matte: !!matte }),
+        body: JSON.stringify({ montageId: id, full: !!full, matte: !!matte, alpha: !!alpha }),
       });
-      setMMsg(`${matte ? 'Matte pass' : full ? 'Full-res' : 'Low-res'} render started — it’ll appear below when ready.`);
+      setMMsg(`${alpha ? 'Alpha export (colour + matte passes)' : matte ? 'Matte pass' : full ? 'Full-res' : 'Low-res'} render started — it’ll appear below when ready.`);
       loadMontages();
     } catch (err) {
       setMErr(true);
@@ -2916,7 +2918,7 @@ export default function AdminPage() {
             fbFrameW: (s.fbFrameW === null || s.fbFrameW === undefined) ? null : Number(s.fbFrameW),
             fbFrameColor: s.fbFrameColor || null,
             // The backdrop colour the montage is meant to be keyed against.
-            keyColor: s.keyColor || '#FF00FF',
+            keyColor: s.keyColor || '#000000',
             // Montage-wide border override from the style panel. 'edits' (the
             // default) sends null, so nothing changes for an untouched montage.
             atmo: s.atmoOn ? { on: true, intensity: Number(s.atmoI ?? 100), dust: Number(s.atmoDust ?? 100), leak: Number(s.atmoLeak ?? 100) } : null,
@@ -4871,6 +4873,9 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                   {m.watermarked
                     ? <span className="pill">low rez</span>
                     : <span className="pill" style={{ background: '#22c55e', color: '#05230f', borderColor: '#22c55e', fontWeight: 800, letterSpacing: '.03em' }}>HIGH REZ</span>}
+                  {m.matte && <span className="pill" style={{ background: '#e5e7eb', color: '#111', borderColor: '#e5e7eb', fontWeight: 800 }}>MATTE PASS</span>}
+                  {m.alphaPair && !m.matte && <span className="pill" style={{ background: '#111', color: '#fff', borderColor: '#444', fontWeight: 800 }}>ALPHA · colour pass</span>}
+                  {m.keyColor && !m.matte && <span className="pill" title="Key colour this render was built against"><span aria-hidden="true" style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: m.keyColor, marginRight: 5, verticalAlign: 'middle', border: '1px solid var(--line)' }} />{(KEY_COLOR_OPTS.find((k) => k.value === m.keyColor) || {}).label?.replace(' (default)', '') || m.keyColor}</span>}
                   {m.starred && <span className="pill" style={{ color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
                   {m.includeCards === false && <span className="pill">no cards</span>}
                   {m.hidden && <span className="pill">hidden</span>}
@@ -4918,11 +4923,33 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                       ) : (
                         <button type="button" className="linklike" onClick={() => rerenderMontage(m.id, true)}>Export Full Rez</button>
                       )}
-                      {!m.params?.matte && (<>
+                      {!m.matte && (<>
                         {' '}·{' '}
-                        <button type="button" className="linklike" title="Render this montage again as a black & white luma matte (photos white, key backdrop black, same motion). Drop it on the timeline as a track matte — no chroma key, any colour clothing."
-                          onClick={() => rerenderMontage(m.id, true, true)}>Matte pass</button>
+                        <button type="button" className="linklike" style={{ fontWeight: 700 }}
+                          title="Two full-res renders: the colour pass over BLACK + the matte pass (photos white / backdrop black). When both are ready, 'Download alpha pair' appears on the colour pass — then double-click tools/Alpha Merge.command to get one .mov with a real alpha channel for Premiere. No chroma key, any colour clothing."
+                          onClick={() => rerenderMontage(m.id, true, false, true)}>Export with alpha</button>
                       </>)}
+                      {(() => {
+                        // The colour pass of an alpha pair: offer both files once the matte sibling is done.
+                        if (!m.alphaPair || m.matte) return null;
+                        const sib = montages.find((x) => x.alphaPair === m.alphaPair && x.matte);
+                        if (!sib) return <span style={{ color: 'var(--muted)' }}>{' '}· matte pass not started</span>;
+                        const ready = (x) => x && (x.downloadUrl || x.url) && x.status !== 'queued' && x.status !== 'rendering' && x.status !== 'failed';
+                        if (!ready(m) || !ready(sib)) return <span style={{ color: 'var(--muted)' }}>{' '}· alpha pair: {ready(m) ? 'colour ready' : 'colour rendering'} / {ready(sib) ? 'matte ready' : sib.status === 'failed' ? 'matte FAILED' : 'matte rendering'}</span>;
+                        return (<>
+                          {' '}·{' '}
+                          <button type="button" className="linklike" style={{ fontWeight: 700, color: '#22c55e' }}
+                            title="Downloads both files (###HR colour + ###HRM matte) to your Downloads folder. Then double-click tools/Alpha Merge.command in the studio-portal folder — it finds every pair in Downloads and writes ###_ALPHA.mov next to them."
+                            onClick={() => {
+                              [m, sib].forEach((v, i) => setTimeout(() => {
+                                const a = document.createElement('a');
+                                a.href = v.downloadUrl || v.url; a.download = ''; a.rel = 'noopener';
+                                document.body.appendChild(a); a.click(); a.remove();
+                              }, i * 1500));
+                              setMMsg('Alpha pair downloading (2 files). Next: double-click "Alpha Merge.command" in the studio-portal/tools folder — it writes the .mov with alpha into Downloads.');
+                            }}>Download alpha pair (2 files)</button>
+                        </>);
+                      })()}
                       {' '}·{' '}
                       <button type="button" className="linklike" title="Open this render's exact photo list: swap, remove or add photos, then render it again with every other setting unchanged"
                         onClick={() => openRevise(m)}>{revFor?.id === m.id ? 'Close revise' : 'Revise'}</button>
@@ -5034,17 +5061,20 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                               </button>
                             );
                           })}
-                          <label className="choice" style={{ color: 'var(--text)', marginLeft: 6 }} title="Renders a black & white luma matte instead of the picture: photos white, key backdrop black, same motion. Use as a track matte — no chroma key.">
-                            <input type="checkbox" checked={revMatte} onChange={(e) => setRevMatte(e.target.checked)} />
-                            Matte pass (full rez)
+                          <label className="choice" style={{ color: 'var(--text)', marginLeft: 6 }} title="Renders a black & white luma matte only (photos white, key backdrop black). Use as a track matte.">
+                            <input type="checkbox" checked={revModeState === 'matte'} onChange={(e) => setRevMode(e.target.checked ? 'matte' : 'normal')} />
+                            Matte pass only
                           </label>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, fontSize: 13 }}>
-                          {revMatte ? (
-                            <button type="button" className="btn-primary" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>Render revision — matte pass</button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, fontSize: 13, flexWrap: 'wrap' }}>
+                          <button type="button" className="btn-primary" disabled={revBusy || revLoading}
+                            title="Two full-res renders: the colour pass over black + the matte pass. Download the pair, run Alpha Merge → one .mov with a real alpha channel."
+                            onClick={() => renderRevision(true, 'alpha')}>Render revision — with alpha</button>
+                          {revModeState === 'matte' ? (
+                            <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>Render revision — matte pass</button>
                           ) : (<>
-                            <button type="button" className="btn-primary" disabled={revBusy || revLoading} onClick={() => renderRevision(false)}>Render revision — low rez</button>
-                            <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>Render revision — full rez</button>
+                            <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(false)}>low rez</button>
+                            <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>full rez (no alpha)</button>
                           </>)}
                           <span style={{ color: 'var(--muted)' }}>{revSeq.filter((e) => e.type === 'photo').length} photos</span>
                           {revMsg && <span style={{ color: /could not|cannot|needs/i.test(revMsg) ? '#f5a623' : 'var(--muted)' }}>{revMsg}</span>}

@@ -12,6 +12,7 @@ import { getViewUrl, getDownloadUrl, resolveBackground } from '@/lib/r2';
 import { buildMontageSource, applyMattePass, STYLES, styleNeedsDims, styleNeedsFaces, normalizeKeyColor, keyAssetFor } from '@/lib/montage';
 import { borderIsOn } from '@/lib/photoBorder';
 import { createRender } from '@/lib/creatomate';
+import { randomUUID } from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,7 +46,30 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { montageId, full = true, sequence: revised = null, matte = false, keyColor: keyOverride = null } = body || {};
+  // EXPORT WITH ALPHA (Josh 9/15): two full-res renders started together and
+  // linked by params.alphaPair — the COLOUR pass over a BLACK backdrop (so
+  // dissolves never tint) and the MATTE pass (photos white / backdrop black).
+  // Josh downloads the pair and runs tools/Alpha Merge.command, which joins them
+  // into one Animation-codec .mov with a real alpha channel for Premiere.
+  // (The merge cannot run here: it needs ffmpeg and minutes of CPU per montage.)
+  if (body && body.alpha === true) {
+    const pair = randomUUID();
+    const base = { ...body, alpha: false, full: true, keyColor: '#000000', alphaPair: pair };
+    const r1 = await finalizeOne({ ...base, matte: false, alphaRole: 'color' });
+    if (r1.status !== 200) return r1;
+    const j1 = await r1.json();
+    // The matte pass is a re-render OF THE COLOUR PASS (same number → ###HRM,
+    // same photos, same black key), never a second revision with its own number.
+    const r2 = await finalizeOne({ montageId: j1.montageId, full: true, matte: true, alphaPair: pair, alphaRole: 'matte' });
+    if (r2.status !== 200) return r2;
+    const j2 = await r2.json();
+    return NextResponse.json({ ok: true, alphaPair: pair, color: j1, matte: j2 });
+  }
+  return finalizeOne(body || {});
+}
+
+async function finalizeOne(body) {
+  const { montageId, full = true, sequence: revised = null, matte = false, keyColor: keyOverride = null, alphaPair = null, alphaRole = null } = body || {};
   // MATTE PASS: a full-res luma matte of this render (see applyMattePass). Always full-res, never watermarked.
   const wantMatte = matte === true;
   if (!montageId) return NextResponse.json({ error: 'Missing montageId' }, { status: 400 });
@@ -174,10 +198,11 @@ export async function POST(request) {
         // revised photos), its OWN number, and the source's name with " R" so
         // the two are tellable apart in the list. A re-export keeps inheriting
         // the source's number (### / ###HR) exactly as before.
+        const alphaTag = alphaPair ? { alphaPair, alphaRole: alphaRole || (wantMatte ? 'matte' : 'color') } : {};
         return isRevision
-          ? { ...settings, renderSequence: seq, revisionOf: src.id, seq: nextSeq,
+          ? { ...settings, ...alphaTag, ...(wantMatte ? { matte: true } : {}), renderSequence: seq, revisionOf: src.id, seq: nextSeq,
               ...(typeof label === 'string' && label.trim() ? { label: `${label.trim()} R` } : {}) }
-          : { ...settings, seq: srcSeq, rerenderOf: src.id, ...(wantMatte ? { matte: true } : {}) };
+          : { ...settings, ...alphaTag, seq: srcSeq, rerenderOf: src.id, ...(wantMatte ? { matte: true } : {}) };
       })(),
     })
     .select('id')

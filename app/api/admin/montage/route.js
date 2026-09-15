@@ -612,10 +612,14 @@ export async function GET(request) {
     for (const r of primaries) {
       if (!seqMap.has(r.id)) { while (claimed.has(next)) next++; seqMap.set(r.id, next); claimed.add(next); next++; }
     }
+    const byId = new Map(rows.map((r) => [r.id, r]));
     for (const r of rows) {                 // re-renders inherit their source's number
       if (seqMap.has(r.id)) continue;
-      const srcId = r.params?.rerenderOf;
-      if (srcId && seqMap.has(srcId)) seqMap.set(r.id, seqMap.get(srcId));
+      // Walk the rerenderOf chain to a numbered ancestor (a matte pass is a
+      // re-render of the colour pass, which is itself a re-render/revision).
+      let cur = r, found = null, hops = 0;
+      while (cur && hops < 8) { const sid = cur.params?.rerenderOf; if (!sid) break; if (seqMap.has(sid)) { found = seqMap.get(sid); break; } cur = byId.get(sid); hops++; }
+      if (found != null) seqMap.set(r.id, found);
       else { while (claimed.has(next)) next++; seqMap.set(r.id, next); claimed.add(next); next++; }
     }
     for (const r of rows) {                 // version, creation order, per variant
@@ -694,6 +698,10 @@ export async function GET(request) {
       includeCards: m.params?.includeCards !== false,
       greenScreen: m.params?.greenScreen !== false,
       hidden: m.params?.hidden === true,
+      keyColor: m.params?.keyColor || null,      // the key this render was built against (null = green, pre-setting)
+      matte: m.params?.matte === true,            // a matte pass (photos white / key black)
+      alphaPair: m.params?.alphaPair || null,     // Export-with-alpha pair id (colour + matte share it)
+      alphaRole: m.params?.alphaRole || null,     // 'color' | 'matte'
       viewed: m.params?.viewed === true,
       starred: m.params?.starred === true,
       status: m.status,
