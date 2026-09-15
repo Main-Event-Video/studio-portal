@@ -2818,14 +2818,20 @@ export default function AdminPage() {
     // Show the change at once. The list is re-fetched every few seconds, and a
     // fetch that STARTED before the save landed can arrive after it and put
     // the old name back for one poll — which reads as "it didn't save".
-    if (patch.label !== undefined) {
-      const v = String(patch.label || '').trim().slice(0, 80) || null;
-      setMontages((prev) => prev.map((m) => (m.id === id ? { ...m, label: v } : m)));
-    }
+    // Same for star / hide / viewed (Josh 9/16: "there is a delay" on the star):
+    // flip it in the list immediately, save in the background, and only put it
+    // back if the save fails.
+    const local = {};
+    if (patch.label !== undefined) local.label = String(patch.label || '').trim().slice(0, 80) || null;
+    for (const k of ['starred', 'hidden', 'viewed']) if (patch[k] !== undefined) local[k] = !!patch[k];
+    let before = null;
+    setMontages((prev) => prev.map((m) => { if (m.id !== id) return m; before = m; return { ...m, ...local }; }));
     try {
       await apiParams('/api/admin/montage/review', { method: 'POST', body: JSON.stringify({ montageId: id, ...patch }) });
-      loadMontages();
+      // No full reload: the periodic poll picks up anything else, and a reload
+      // here is what made the star feel slow.
     } catch (err) {
+      if (before) setMontages((prev) => prev.map((m) => (m.id === id ? { ...m, ...Object.fromEntries(Object.keys(local).map((k) => [k, before[k]])) } : m)));
       setMErr(true);
       setMMsg(err.message);
     }
