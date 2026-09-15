@@ -38,10 +38,13 @@ found=0
 for color in "$DIR"/[0-9][0-9][0-9]HR_*.mp4; do
   base="$(basename "$color")"
   num="${base:0:3}"
-  rest="${base#*HR_}"                 # "<name>.mp4"
-  matte="$DIR/${num}HRM_${rest}"
-  out="$DIR/${num}_${rest%.mp4}_ALPHA.mov"
-  [ -f "$matte" ] || continue
+  rest="${base#*HR_}"                 # "<name>.mp4" — or "<name> (1).mp4" when the browser de-duplicated
+  stem="${rest%.mp4}"
+  stem="$(printf '%s' "$stem" | sed -E 's/ \([0-9]+\)$//')"   # drop a trailing " (1)"
+  # the matte may carry its own " (n)" — take the newest that matches
+  matte="$(ls -t "$DIR/${num}HRM_${stem}"*.mp4 2>/dev/null | head -1)"
+  out="$DIR/${num}_${stem}_ALPHA.mov"
+  [ -n "$matte" ] && [ -f "$matte" ] || continue
   found=$((found+1))
   if [ -f "$out" ]; then echo "✓ already merged: $(basename "$out")"; continue; fi
   echo "▶ merging $num …  ($(basename "$color") + $(basename "$matte"))"
