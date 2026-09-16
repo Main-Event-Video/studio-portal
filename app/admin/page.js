@@ -2673,7 +2673,8 @@ export default function AdminPage() {
     setMMsg(`Step 2 done — downloading ${files.filter(Boolean).length} files (${pairs.length} pair${pairs.length === 1 ? '' : 's'}). If Chrome asks to allow multiple downloads, click Allow. Then Step 3: click Alpha Merge in the Dock.`);
   }
   const [batchDownloaded, setBatchDownloaded] = useState(false); // Step 2 pressed → highlight Step 3
-  const [alphaPanelOpen, setAlphaPanelOpen] = useState(null);    // null = automatic (open when starred/ready), true/false = the arrow
+  const [alphaPanelOpen, setAlphaPanelOpen] = useState(null);
+  const [planOpen, setPlanOpen] = useState(true);            // the "New montage details" pill in Finish    // null = automatic (open when starred/ready), true/false = the arrow
   const [revModeState, setRevMode] = useState('normal'); // 'normal' | 'alpha' (colour + matte pair) | 'matte' (matte only)
   // Drag-to-reorder inside the Revise strip — local only, same gesture and the
   // same green landing bar as Edit Photos. Josh: "can I reorder the images the
@@ -4691,7 +4692,16 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
         <input ref={bgFileRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm" style={{ display: 'none' }}
           onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; uploadBackground(f, bgTargetSeg.current); }} />
         {montageStep === 3 && (<>
-        {/* Segment plan */}
+        {/* Segment plan — one closeable "New montage details" pill (Josh 9/16) that holds
+            every segment plus the Generate / Add segment buttons. */}
+        <div style={{ border: `1px solid ${planOpen ? 'var(--line)' : 'var(--blue)'}`, borderRadius: planOpen ? 12 : 999, padding: planOpen ? '12px 14px' : '7px 16px', display: planOpen ? 'block' : 'inline-block', background: planOpen ? 'transparent' : 'rgba(61,123,255,0.10)' }}>
+        <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', marginBottom: planOpen ? 12 : 0 }}
+          onClick={() => setPlanOpen((v) => !v)} title={planOpen ? 'Fold away' : 'Show the montage details'}>
+          <span style={{ display: 'inline-block', transition: 'transform 0.15s', transform: planOpen ? 'rotate(90deg)' : 'rotate(0deg)', color: 'var(--muted)' }}>▶</span>
+          NEW MONTAGE DETAILS
+          {!planOpen && <span style={{ color: 'var(--muted)', fontWeight: 400, letterSpacing: 0 }}>{segments.length} segment{segments.length === 1 ? '' : 's'}</span>}
+        </div>
+        {planOpen && (<>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {segments.map((s, idx) => {
             const N = projPhotos.length;
@@ -4710,7 +4720,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '-12px -12px 14px', padding: '9px 12px', background: 'linear-gradient(var(--blue), var(--blue)) 0 0 / 132px 3px no-repeat, var(--panel-2)', borderBottom: '1px solid var(--line)', borderRadius: '8px 8px 0 0' }}>
                   <strong style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: '50%', alignItems: 'center', justifyContent: 'center', fontSize: 12, background: 'var(--blue)', color: '#fff', fontWeight: 800 }}>{idx + 1}</span>
-                    Segment {idx + 1}
+                    {segments.length === 1 ? 'Montage' : `Segment ${idx + 1}`}
                   </strong>
                   {segments.length > 1 && (
                     <button type="button" className="linklike" onClick={() => removeSegment(s.key)}>Remove</button>
@@ -4822,6 +4832,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             {genBusy ? 'Queuing…' : `Generate ${segments.length} segment${segments.length === 1 ? '' : 's'}`}
           </button>
         </div>
+        </>)}
+        </div>
         {NEW_STYLES.length > 0 && (
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
             <button type="button" className="btn-ghost" disabled={genBusy} onClick={() => draftNewStyles(c)}>
@@ -4896,15 +4908,15 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             );
             // Folded by default (Josh 9/16); opens itself when something is starred
             // or a pair is in flight/ready, and the arrow toggles it either way.
-            const autoOpen = starred.length > 0 || pairsReady.length > 0 || pairsPending > 0;
-            const open = alphaPanelOpen === null ? autoOpen : alphaPanelOpen;
+            // Closed by default (Josh 9/16: "make this a pill when closed. default closed").
+            const open = alphaPanelOpen === true;
             return (
-              <div style={{ margin: '10px 0 6px', padding: open ? '12px 14px' : '8px 14px', border: '1px solid var(--line)', borderRadius: 12, fontSize: 13 }}>
-                <div style={{ fontWeight: 800, marginBottom: open ? 8 : 0, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}
+              <div style={{ margin: '10px 0 6px', padding: open ? '12px 14px' : '7px 16px', border: `1px solid ${open ? 'var(--line)' : 'var(--blue)'}`, borderRadius: open ? 12 : 999, fontSize: 13, display: open ? 'block' : 'inline-block', background: open ? 'transparent' : 'rgba(61,123,255,0.10)' }}>
+                <div style={{ fontWeight: 800, marginBottom: open ? 8 : 0, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', letterSpacing: '0.06em' }}
                   onClick={() => setAlphaPanelOpen(!open)} title={open ? 'Fold away' : 'Show the three steps'}>
                   <span style={{ display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', color: 'var(--muted)' }}>▶</span>
-                  Alpha export — three steps
-                  <span style={{ color: 'var(--muted)', fontWeight: 400 }}>
+                  FINISHING ALPHA EXPORT
+                  <span style={{ color: 'var(--muted)', fontWeight: 400, letterSpacing: 0 }}>
                     {starred.length ? `★ ${starred.length} starred` : '(star the keepers first)'}
                     {pairsReady.length ? ` · ${pairsReady.length} ready to download` : ''}
                     {pairsPending ? ` · ${pairsPending} rendering` : ''}
@@ -4953,11 +4965,13 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     if (!chips.length) return null;
                     const starredNums = chips.filter(([, m]) => m.starred).length;
                     return (
-                      <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: numGridOpen ? '8px 10px 10px' : '6px 10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', fontSize: 12.5 }}
+                      <div style={{ border: `1px solid ${numGridOpen ? '#f5b301' : 'var(--line)'}`, borderRadius: 10, padding: numGridOpen ? '8px 10px 10px' : '6px 10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none', fontSize: 12.5 }}
                           onClick={() => setNumGridOpen((v) => !v)} title={numGridOpen ? 'Fold the numbers away' : 'Show every render number to pick from'}>
-                          <span style={{ display: 'inline-block', transition: 'transform 0.15s', transform: numGridOpen ? 'rotate(90deg)' : 'rotate(0deg)', color: 'var(--muted)' }}>▶</span>
-                          <strong>Pick by number</strong>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 999, border: '1px solid #f5b301', background: 'rgba(245,179,1,0.18)', color: '#f5b301', fontWeight: 800, fontSize: 13 }}>
+                            <span style={{ display: 'inline-block', transition: 'transform 0.15s', transform: numGridOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+                            ★ Pick by number
+                          </span>
                           <span style={{ color: 'var(--muted)' }}>{chips.length} renders · {starredNums} selected — click the numbers you cut with, then Export above</span>
                         </div>
                         {numGridOpen && (
