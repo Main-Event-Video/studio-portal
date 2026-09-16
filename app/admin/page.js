@@ -4938,6 +4938,12 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     <button type="button" className="btn-primary" disabled={!pairsReady.length}
                       title="Downloads every finished pair (colour + matte) to Downloads. If Chrome asks to allow multiple downloads, click Allow."
                       onClick={() => downloadPairs(pairsReady)}>{`Download new alpha pairs (${pairsReady.length} new · ${pairsReady.length * 2} files)`}</button>
+                    {pairsReady.length > 0 && (
+                      <button type="button" className="linklike" style={{ fontSize: 12, color: 'var(--muted)' }}
+                        title="Marks every pair listed as already in your Downloads, without downloading anything. Use once for pairs taken before this button existed, or for a batch you handled by hand."
+                        onClick={() => { for (const m of pairsReady) reviewMontage(m.id, { alphaDownloaded: true }); setMMsg(`Marked ${pairsReady.length} pair${pairsReady.length === 1 ? '' : 's'} as already downloaded. New pairs from here on will be the only ones offered.`); }}>
+                        {`already have these ${pairsReady.length} — don’t download`}</button>
+                    )}
                     {pairsOld > 0 && (
                       <button type="button" className="linklike" style={{ fontSize: 12 }}
                         title="Downloads every finished pair again, including the ones already taken"
