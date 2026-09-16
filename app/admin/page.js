@@ -4835,7 +4835,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             // already processed"); the small link below offers everything again.
             const pairsReady = pairsDone.filter((m) => !m.alphaDownloadedAt);
             const pairsOld = pairsDone.length - pairsReady.length;
-            const pairsPending = allRows.filter((m) => m.alphaPair && !m.matte && !pairsReady.includes(m)).length;
+            const pairsPending = allRows.filter((m) => m.alphaPair && !m.matte && !pairsDone.includes(m)).length;
             if (!allRows.length) return null;
             const step = (n, label, done) => (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 800, color: done ? '#22c55e' : 'var(--text)' }}>
