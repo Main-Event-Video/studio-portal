@@ -54,8 +54,21 @@ export async function POST(request) {
 
   const db = createServiceClient();
   let rows;
-  try { rows = await loadHeicRows(db, clientId); } catch (e) {
-    return NextResponse.json({ error: 'Could not scan', detail: String(e.message || e) }, { status: 500 });
+  // ONE PHOTO, BY KEY, WHATEVER IT IS CALLED. The scan above only finds rows
+  // whose name or type says HEIC. A phone can hand over a HEIC under a .jpg
+  // name (The Taylors, import #065, 9/16) — the browser cannot show it and
+  // "Fix HEIC photos" walks straight past it. Given a key, this converts that
+  // one row from its real bytes, name be damned; anyImageToJpeg sniffs them.
+  if (body?.key) {
+    const { data: one, error: oneErr } = await db.from('studio_media')
+      .select('id, client_id, r2_key, filename, content_type').eq('r2_key', String(body.key)).maybeSingle();
+    if (oneErr || !one) return NextResponse.json({ error: 'Photo not found' }, { status: 404 });
+    if (clientId && one.client_id !== clientId) return NextResponse.json({ error: 'Photo belongs to another client' }, { status: 400 });
+    rows = [one];
+  } else {
+    try { rows = await loadHeicRows(db, clientId); } catch (e) {
+      return NextResponse.json({ error: 'Could not scan', detail: String(e.message || e) }, { status: 500 });
+    }
   }
 
   const started = Date.now();

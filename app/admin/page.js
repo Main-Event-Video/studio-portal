@@ -754,6 +754,7 @@ export default function AdminPage() {
   // Photos whose <img> failed to load — a file the browser cannot show. Keyed
   // by r2 key; the tile explains itself instead of sitting there grey.
   const [brokenImgs, setBrokenImgs] = useState({});
+  const [fixingKey, setFixingKey] = useState(null);   // per-tile "Fix this photo" in flight
   // When the strip's signed links were minted. They last 12 hours; a tile that
   // fails to load after that is an expired link, not a broken photo.
   const projPhotosAtRef = useRef(0);
@@ -4197,7 +4198,23 @@ export default function AdminPage() {
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                       gap: 3, padding: '6px 8px', textAlign: 'center', background: 'rgba(120,20,20,0.55)', color: '#ffd7d7', fontSize: 10, lineHeight: 1.3, pointerEvents: 'none' }}>
                       <strong style={{ fontSize: 10.5, letterSpacing: '.04em' }}>{p.sizeBytes === 0 ? 'EMPTY UPLOAD' : 'CAN\u2019T DISPLAY'}</strong>
-                      <span>{p.sizeBytes === 0 ? 'Nothing was received — ask the client to re-send this photo' : 'Try Fix HEIC photos; if it stays, ask the client to re-send it'}</span>
+                      <span>{p.sizeBytes === 0 ? 'Nothing was received — ask the client to re-send this photo' : 'Not a format the browser can show'}</span>
+                      {p.sizeBytes !== 0 && (
+                        <button type="button" className="btn-primary" style={{ pointerEvents: 'auto', marginTop: 4, padding: '3px 9px', fontSize: 10.5 }}
+                          disabled={fixingKey === p.key}
+                          title="Reads the file's real bytes (whatever it is named) and re-saves it as a JPEG"
+                          onClick={async (ev) => {
+                            ev.stopPropagation();
+                            setFixingKey(p.key);
+                            try {
+                              const r = await api('/api/admin/convert-heic', { method: 'POST', body: JSON.stringify({ clientId: c.id, key: p.key }) });
+                              const f = (r.failed || [])[0];
+                              if (f) setMMsg(`Could not fix ${p.filename}: ${f.error} — ask the client to re-send it.`);
+                              else { setMMsg(`Fixed ${p.filename}.`); setBrokenImgs((b) => { const n = { ...b }; delete n[p.key]; return n; }); loadProjPhotos(c.id, true); }
+                            } catch (e) { setMMsg(`Could not fix ${p.filename}: ${e.message}`); }
+                            setFixingKey(null);
+                          }}>{fixingKey === p.key ? 'Fixing…' : 'Fix this photo'}</button>
+                      )}
                     </div>
                   )}
                 </div>
