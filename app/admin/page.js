@@ -4696,9 +4696,9 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             every segment plus the Generate / Add segment buttons. */}
         <div style={{ border: `1px solid ${planOpen ? 'var(--line)' : 'var(--blue)'}`, borderRadius: planOpen ? 12 : 999, padding: planOpen ? '12px 14px' : '7px 16px', display: planOpen ? 'block' : 'inline-block', background: planOpen ? 'transparent' : 'rgba(61,123,255,0.10)' }}>
         <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', marginBottom: planOpen ? 12 : 0 }}
-          onClick={() => setPlanOpen((v) => !v)} title={planOpen ? 'Fold away' : 'Show the montage details'}>
+          onClick={() => setPlanOpen((v) => !v)} title={planOpen ? 'Fold away' : 'Show the new-montage settings'}>
           <span style={{ display: 'inline-block', transition: 'transform 0.15s', transform: planOpen ? 'rotate(90deg)' : 'rotate(0deg)', color: 'var(--muted)' }}>▶</span>
-          NEW MONTAGE DETAILS
+          CREATE A NEW MONTAGE
           {!planOpen && <span style={{ color: 'var(--muted)', fontWeight: 400, letterSpacing: 0 }}>{segments.length} segment{segments.length === 1 ? '' : 's'}</span>}
         </div>
         {planOpen && (<>
