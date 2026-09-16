@@ -705,6 +705,10 @@ export async function GET(request) {
       matte: m.params?.matte === true,            // a matte pass (photos white / key black)
       alphaPair: m.params?.alphaPair || null,     // Export-with-alpha pair id (colour + matte share it)
       alphaRole: m.params?.alphaRole || null,     // 'color' | 'matte'
+      alphaDownloadedAt: m.params?.alphaDownloadedAt || null, // set by "Download all alpha pairs"
+      // Another PRIMARY render of this client shares this number (a revision
+      // that inherited its source's ### before revisions got their own).
+      sharedNumber: !m.params?.rerenderOf && (data || []).some((o) => o.id !== m.id && o.client_id === m.client_id && !o.params?.rerenderOf && !o.params?.matte && seqMap.get(o.id) === seqMap.get(m.id)),
       viewed: m.params?.viewed === true,
       starred: m.params?.starred === true,
       status: m.status,

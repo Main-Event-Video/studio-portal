@@ -2615,6 +2615,21 @@ export default function AdminPage() {
   const [revKey, setRevKey] = useState('#FF00FF');   // key colour for the revision (Josh 9/15)
   const [batchBusy, setBatchBusy] = useState(false);   // batch alpha export in flight
   const [numGridOpen, setNumGridOpen] = useState(false); // the pick-by-number grid in the alpha panel
+  // Hand over a set of finished alpha pairs (colour + matte each), spaced so
+  // Chrome does not drop one, and mark each pair downloaded so the next
+  // "Download new" only offers what is new.
+  function downloadPairs(pairs) {
+    const files = [];
+    for (const m of pairs) { files.push(m); files.push(montages.find((x) => x.alphaPair === m.alphaPair && x.matte)); }
+    files.filter(Boolean).forEach((v, i) => setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = v.downloadUrl || v.url; a.download = ''; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+    }, i * 1500));
+    for (const m of pairs) reviewMontage(m.id, { alphaDownloaded: true });
+    setBatchDownloaded(true);
+    setMMsg(`Step 2 done — downloading ${files.filter(Boolean).length} files (${pairs.length} pair${pairs.length === 1 ? '' : 's'}). If Chrome asks to allow multiple downloads, click Allow. Then Step 3: click Alpha Merge in the Dock.`);
+  }
   const [batchDownloaded, setBatchDownloaded] = useState(false); // Step 2 pressed → highlight Step 3
   const [alphaPanelOpen, setAlphaPanelOpen] = useState(null);    // null = automatic (open when starred/ready), true/false = the arrow
   const [revModeState, setRevMode] = useState('normal'); // 'normal' | 'alpha' (colour + matte pair) | 'matte' (matte only)
@@ -2827,6 +2842,7 @@ export default function AdminPage() {
     const local = {};
     if (patch.label !== undefined) local.label = String(patch.label || '').trim().slice(0, 80) || null;
     for (const k of ['starred', 'hidden', 'viewed']) if (patch[k] !== undefined) local[k] = !!patch[k];
+    if (patch.alphaDownloaded !== undefined) local.alphaDownloadedAt = patch.alphaDownloaded ? new Date().toISOString() : null;
     let before = null;
     setMontages((prev) => prev.map((m) => { if (m.id !== id) return m; before = m; return { ...m, ...local }; }));
     try {
@@ -4814,7 +4830,11 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
           {(() => {
             const ready = (x) => x && (x.downloadUrl || x.url) && x.status !== 'queued' && x.status !== 'rendering' && x.status !== 'failed';
             const starred = allRows.filter((m) => m.starred && !m.hidden && !m.matte);
-            const pairsReady = allRows.filter((m) => m.alphaPair && !m.matte && ready(m) && ready(allRows.find((x) => x.alphaPair === m.alphaPair && x.matte)));
+            const pairsDone = allRows.filter((m) => m.alphaPair && !m.matte && ready(m) && ready(allRows.find((x) => x.alphaPair === m.alphaPair && x.matte)));
+            // Only pairs not yet handed over (Josh: "how do I clear what has
+            // already processed"); the small link below offers everything again.
+            const pairsReady = pairsDone.filter((m) => !m.alphaDownloadedAt);
+            const pairsOld = pairsDone.length - pairsReady.length;
             const pairsPending = allRows.filter((m) => m.alphaPair && !m.matte && !pairsReady.includes(m)).length;
             if (!allRows.length) return null;
             const step = (n, label, done) => (
@@ -4917,17 +4937,12 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     {step(2, 'Download', false)}
                     <button type="button" className="btn-primary" disabled={!pairsReady.length}
                       title="Downloads every finished pair (colour + matte) to Downloads. If Chrome asks to allow multiple downloads, click Allow."
-                      onClick={() => {
-                        const files = [];
-                        for (const m of pairsReady) { files.push(m); files.push(allRows.find((x) => x.alphaPair === m.alphaPair && x.matte)); }
-                        files.forEach((v, i) => setTimeout(() => {
-                          const a = document.createElement('a');
-                          a.href = v.downloadUrl || v.url; a.download = ''; a.rel = 'noopener';
-                          document.body.appendChild(a); a.click(); a.remove();
-                        }, i * 1500));
-                        setBatchDownloaded(true);
-                        setMMsg(`Step 2 done — downloading ${files.length} files (${pairsReady.length} pair${pairsReady.length === 1 ? '' : 's'}). If Chrome asks to allow multiple downloads, click Allow. Then Step 3: click Alpha Merge in the Dock.`);
-                      }}>{`Download all alpha pairs (${pairsReady.length} ready · ${pairsReady.length * 2} files)`}</button>
+                      onClick={() => downloadPairs(pairsReady)}>{`Download new alpha pairs (${pairsReady.length} new · ${pairsReady.length * 2} files)`}</button>
+                    {pairsOld > 0 && (
+                      <button type="button" className="linklike" style={{ fontSize: 12 }}
+                        title="Downloads every finished pair again, including the ones already taken"
+                        onClick={() => downloadPairs(pairsDone)}>{`download all ${pairsDone.length} again`}</button>
+                    )}
                     {pairsPending > 0 && <span style={{ color: 'var(--muted)' }}>{pairsPending} pair{pairsPending === 1 ? '' : 's'} still rendering — the page refreshes itself</span>}
                     {!pairsPending && !pairsReady.length && <span style={{ color: 'var(--muted)' }}>nothing finished yet</span>}
                   </div>
@@ -5127,6 +5142,14 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                       {' '}·{' '}
                       <button type="button" className="linklike" title="Open this render's exact photo list: swap, remove or add photos, then render it again with every other setting unchanged"
                         onClick={() => openRevise(m)}>{revFor?.id === m.id ? 'Close revise' : 'Revise'}</button>
+                      {m.sharedNumber && (
+                        <>
+                          {' '}·{' '}
+                          <button type="button" className="linklike" style={{ color: '#f5a623' }}
+                            title="Another render in this project has the same number, so the pick-by-number grid and the file names cannot tell them apart. This gives THIS one the next free number."
+                            onClick={async () => { await reviewMontage(m.id, { renumber: true }); loadMontages(); }}>⚠ shares a number — give it a new one</button>
+                        </>
+                      )}
                       {' '}·{' '}
                       <button type="button" className="linklike" title={m.starred ? 'Unstar' : 'Star as a keeper'} style={{ color: m.starred ? '#f5b301' : 'var(--muted)', fontWeight: 600 }} onClick={() => reviewMontage(m.id, { starred: !m.starred })}>{m.starred ? '★ Starred' : '☆ Star'}</button>
                       {!m.archived && (
