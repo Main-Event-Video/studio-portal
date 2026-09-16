@@ -716,6 +716,7 @@ export async function GET(request) {
       sharedNumber: !m.params?.rerenderOf && (data || []).some((o) => o.id !== m.id && o.client_id === m.client_id && !o.params?.rerenderOf && !o.params?.matte && seqMap.get(o.id) === seqMap.get(m.id)),
       viewed: m.params?.viewed === true,
       starred: m.params?.starred === true,
+      forAlpha: m.params?.forAlpha === true,
       status: m.status,
       error: m.error,
       photoCount: m.photo_count,

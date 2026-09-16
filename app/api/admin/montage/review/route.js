@@ -25,7 +25,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Bad request' }, { status: 400 });
   }
-  const { montageId, viewed, starred, label, alphaDownloaded, renumber } = body || {};
+  const { montageId, viewed, starred, forAlpha, label, alphaDownloaded, renumber } = body || {};
   if (!montageId) return NextResponse.json({ error: 'Missing montageId' }, { status: 400 });
 
   const db = createServiceClient();
@@ -39,6 +39,9 @@ export async function POST(request) {
   const next = { ...(m.params || {}) };
   if (viewed !== undefined) next.viewed = !!viewed;
   if (starred !== undefined) next.starred = !!starred;
+  // Two markers (Josh 9/16): 👍 starred = "we like it"; forAlpha = "finish this one
+  // as an alpha export" — the alpha panel works only from forAlpha.
+  if (forAlpha !== undefined) next.forAlpha = !!forAlpha;
   // "Download all alpha pairs" remembers what it has already handed over, so
   // the button only offers what is new. Josh 9/16: "how do I clear what has
   // already processed to make another clip."
@@ -71,5 +74,5 @@ export async function POST(request) {
     .eq('id', montageId);
   if (error) return NextResponse.json({ error: 'Could not update', detail: error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, viewed: next.viewed === true, starred: next.starred === true, label: next.label || null });
+  return NextResponse.json({ ok: true, viewed: next.viewed === true, starred: next.starred === true, forAlpha: next.forAlpha === true, label: next.label || null });
 }

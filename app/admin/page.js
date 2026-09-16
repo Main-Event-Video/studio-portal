@@ -2884,7 +2884,7 @@ export default function AdminPage() {
     // back if the save fails.
     const local = {};
     if (patch.label !== undefined) local.label = String(patch.label || '').trim().slice(0, 80) || null;
-    for (const k of ['starred', 'hidden', 'viewed']) if (patch[k] !== undefined) local[k] = !!patch[k];
+    for (const k of ['starred', 'forAlpha', 'hidden', 'viewed']) if (patch[k] !== undefined) local[k] = !!patch[k];
     if (patch.alphaDownloaded !== undefined) local.alphaDownloadedAt = patch.alphaDownloaded ? new Date().toISOString() : null;
     let before = null;
     setMontages((prev) => prev.map((m) => { if (m.id !== id) return m; before = m; return { ...m, ...local }; }));
@@ -4889,7 +4889,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
               Alpha Merge.command merges everything in Downloads in one go. */}
           {(() => {
             const ready = (x) => x && (x.downloadUrl || x.url) && x.status !== 'queued' && x.status !== 'rendering' && x.status !== 'failed';
-            const starred = allRows.filter((m) => m.starred && !m.hidden && !m.matte);
+            const starred = allRows.filter((m) => m.forAlpha && !m.hidden && !m.matte);
             // "Deliverables": a finished KEYABLE pair (colour + matte both ready) or a
             // finished FINISHED-LOOK full-rez single file. Both come down in Step 2.
             const pairsDone = allRows.filter((m) => !m.matte && ready(m) && (
@@ -4917,7 +4917,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                   <span style={{ display: 'inline-block', transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', color: 'var(--muted)' }}>▶</span>
                   FINISHING ALPHA EXPORT
                   <span style={{ color: 'var(--muted)', fontWeight: 400, letterSpacing: 0 }}>
-                    {starred.length ? `★ ${starred.length} starred` : '(star the keepers first)'}
+                    {starred.length ? `${starred.length} marked For Alpha Finish` : '(mark renders "For Alpha Finish" first)'}
                     {pairsReady.length ? ` · ${pairsReady.length} ready to download` : ''}
                     {pairsPending ? ` · ${pairsPending} rendering` : ''}
                   </span>
@@ -4927,10 +4927,10 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
                     {step(1, 'Render', false)}
                     <button type="button" className="btn-primary" disabled={batchBusy || !starred.length}
-                      title="Full rez for EVERY starred render in this project: a colour + matte pair for Keyable ones, one file for Background included. Uses credits."
+                      title="Full rez for EVERY render marked For Alpha Finish in this project: a colour + matte pair for Keyable ones, one file for Background included. Uses credits."
                       onClick={async () => {
                         const nk = starred.filter(renderIsKeyable).length, nf = starred.length - nk;
-                        if (!window.confirm(`Export full rez for ${starred.length} starred render${starred.length === 1 ? '' : 's'}? ${nk ? `${nk} keyable → ${nk * 2} renders (colour + matte)` : ''}${nk && nf ? ', ' : ''}${nf ? `${nf} background included → ${nf} render${nf === 1 ? '' : 's'}` : ''}. Uses credits.`)) return;
+                        if (!window.confirm(`Export full rez for ${starred.length} marked render${starred.length === 1 ? '' : 's'}? ${nk ? `${nk} keyable → ${nk * 2} renders (colour + matte)` : ''}${nk && nf ? ', ' : ''}${nf ? `${nf} background included → ${nf} render${nf === 1 ? '' : 's'}` : ''}. Uses credits.`)) return;
                         setBatchBusy(true); let ok = 0; const errs = [];
                         for (const m of starred) {
                           try { await api('/api/admin/montage/finalize', { method: 'POST', body: JSON.stringify({ montageId: m.id, full: true, alpha: renderIsKeyable(m) }) }); ok++; setMMsg(`Export started: ${ok} of ${starred.length}…`); }
@@ -4939,8 +4939,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         setBatchBusy(false);
                         setMMsg(`Step 1 done — ${ok} render${ok === 1 ? '' : 's'} started${errs.length ? ` · ${errs.length} failed (${errs.join('; ')})` : ''}. When "new" shows in Step 2, download them.`);
                         loadMontages();
-                      }}>{batchBusy ? 'Starting…' : `Export all starred — full rez (★ ${starred.length})`}</button>
-                    <span style={{ color: 'var(--muted)' }}>{starred.length ? 'pairs for Keyable renders, single files for Background included' : 'nothing starred yet — pick numbers below or click ★ Star on the cards'}</span>
+                      }}>{batchBusy ? 'Starting…' : `Export all For Alpha Finish — full rez (${starred.length})`}</button>
+                    <span style={{ color: 'var(--muted)' }}>{starred.length ? 'pairs for Keyable renders, single files for Background included' : 'nothing marked yet — pick numbers below or click "For Alpha Finish" on the cards'}</span>
                   </div>
                   {/* PICK BY NUMBER. Josh 9/16: "rather than have to scroll through to
                       find the numbers, can I have a grid of all the numbers that a
@@ -4963,14 +4963,14 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     }
                     const chips = [...byNum.entries()].sort((a, b) => Number(a[0]) - Number(b[0]));
                     if (!chips.length) return null;
-                    const starredNums = chips.filter(([, m]) => m.starred).length;
+                    const starredNums = chips.filter(([, m]) => m.forAlpha).length;
                     return (
-                      <div style={{ border: `1px solid ${numGridOpen ? '#f5b301' : 'var(--line)'}`, borderRadius: 10, padding: numGridOpen ? '8px 10px 10px' : '6px 10px' }}>
+                      <div style={{ border: `1px solid ${numGridOpen ? 'var(--blue)' : 'var(--line)'}`, borderRadius: 10, padding: numGridOpen ? '8px 10px 10px' : '6px 10px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none', fontSize: 12.5 }}
                           onClick={() => setNumGridOpen((v) => !v)} title={numGridOpen ? 'Fold the numbers away' : 'Show every render number to pick from'}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 999, border: '1px solid #f5b301', background: 'rgba(245,179,1,0.18)', color: '#f5b301', fontWeight: 800, fontSize: 13 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 999, border: '1px solid var(--blue)', background: 'rgba(61,123,255,0.18)', color: '#cfe0ff', fontWeight: 800, fontSize: 13 }}>
                             <span style={{ display: 'inline-block', transition: 'transform 0.15s', transform: numGridOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-                            ★ Pick by number
+                            ◆ Pick by number
                           </span>
                           <span style={{ color: 'var(--muted)' }}>{chips.length} renders · {starredNums} selected — click the numbers you cut with, then Export above</span>
                         </div>
@@ -4978,21 +4978,21 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                           <>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                               {chips.map(([num, m]) => (
-                                <button key={`num:${num}`} type="button" onClick={() => reviewMontage(m.id, { starred: !m.starred })}
-                                  title={`${m.label || m.title || ''} — ${m.starred ? 'selected (click to unselect)' : 'click to select'}`}
+                                <button key={`num:${num}`} type="button" onClick={() => reviewMontage(m.id, { forAlpha: !m.forAlpha })}
+                                  title={`${m.label || m.title || ''} — ${m.forAlpha ? 'For Alpha Finish (click to unmark)' : 'click to mark For Alpha Finish'}`}
                                   style={{
                                     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, fontWeight: 800,
                                     padding: '4px 9px', borderRadius: 7, cursor: 'pointer',
-                                    border: `1px solid ${m.starred ? '#f5b301' : 'var(--line)'}`,
-                                    background: m.starred ? 'rgba(245,179,1,0.18)' : 'transparent',
-                                    color: m.starred ? '#f5b301' : 'var(--muted)',
-                                  }}>{m.starred ? '★ ' : ''}{num}</button>
+                                    border: `1px solid ${m.forAlpha ? 'var(--blue)' : 'var(--line)'}`,
+                                    background: m.forAlpha ? 'rgba(61,123,255,0.18)' : 'transparent',
+                                    color: m.forAlpha ? '#cfe0ff' : 'var(--muted)',
+                                  }}>{m.forAlpha ? '◆ ' : ''}{m.starred ? '👍' : ''}{num}</button>
                               ))}
                             </div>
                             <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11.5 }}>
                               <button type="button" className="linklike" style={{ fontSize: 11.5 }} disabled={!starredNums}
-                                onClick={() => chips.filter(([, m]) => m.starred).forEach(([, m]) => reviewMontage(m.id, { starred: false }))}>Clear selection</button>
-                              <span style={{ color: 'var(--muted)' }}>Selected numbers are the starred renders — the same ★ you see on the cards.</span>
+                                onClick={() => chips.filter(([, m]) => m.forAlpha).forEach(([, m]) => reviewMontage(m.id, { forAlpha: false }))}>Clear selection</button>
+                              <span style={{ color: 'var(--muted)' }}>Blue = For Alpha Finish (same as the button on the cards). 👍 shows the ones you liked.</span>
                             </div>
                           </>
                         )}
@@ -5135,7 +5135,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                   {m.matte && <span className="pill" style={{ background: '#e5e7eb', color: '#111', borderColor: '#e5e7eb', fontWeight: 800 }}>MATTE PASS</span>}
                   {m.alphaPair && !m.matte && <span className="pill" style={{ background: '#111', color: '#fff', borderColor: '#444', fontWeight: 800 }}>ALPHA · colour pass{m.watermarked ? ' · low rez' : ''}</span>}
                   {m.keyColor && !m.matte && <span className="pill" title="Key colour this render was built against"><span aria-hidden="true" style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: m.keyColor, marginRight: 5, verticalAlign: 'middle', border: '1px solid var(--line)' }} />{(KEY_COLOR_OPTS.find((k) => k.value === m.keyColor) || {}).label?.replace(' (default)', '') || m.keyColor}</span>}
-                  {m.starred && <span className="pill" style={{ color: '#f5b301', borderColor: '#f5b301' }}>★ starred</span>}
+                  {m.starred && <span className="pill" style={{ color: '#f5b301', borderColor: '#f5b301' }}>👍 liked</span>}
+                  {m.forAlpha && <span className="pill" style={{ color: '#cfe0ff', borderColor: 'var(--blue)', background: 'rgba(61,123,255,0.16)' }}>◆ For Alpha Finish</span>}
                   {m.includeCards === false && <span className="pill">no cards</span>}
                   {m.hidden && <span className="pill">hidden</span>}
                   <span>{m.style} · {m.photoSeconds ? `${m.photoSeconds}s/photo` : 'default pace'} · {m.photoCount} photos{m.photoSpec ? ` · #${m.photoSpec}` : ''}</span>
@@ -5217,7 +5218,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         </>
                       )}
                       {' '}·{' '}
-                      <button type="button" className="linklike" title={m.starred ? 'Unstar' : 'Star as a keeper'} style={{ color: m.starred ? '#f5b301' : 'var(--muted)', fontWeight: 600 }} onClick={() => reviewMontage(m.id, { starred: !m.starred })}>{m.starred ? '★ Starred' : '☆ Star'}</button>
+                      <button type="button" className="linklike" title={m.starred ? 'Un-like' : 'We like this one'} style={{ color: m.starred ? '#f5b301' : 'var(--muted)', fontWeight: 600 }} onClick={() => reviewMontage(m.id, { starred: !m.starred })}>{m.starred ? '👍 Liked' : '👍 Like'}</button>
+                      {!m.matte && <button type="button" className="linklike" title={m.forAlpha ? 'Unmark — leave it out of the alpha export' : 'Mark it for the full-rez alpha export (Finishing Alpha Export panel)'} style={{ color: m.forAlpha ? '#cfe0ff' : 'var(--muted)', fontWeight: 600 }} onClick={() => reviewMontage(m.id, { forAlpha: !m.forAlpha })}>{m.forAlpha ? '◆ For Alpha Finish ✓' : '◇ For Alpha Finish'}</button>}
                       {!m.archived && (
                         <span style={{ color: 'var(--muted)' }}>
                           {' '}· not yet archived to our storage — this copy expires in ~30 days, download it
