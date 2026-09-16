@@ -2064,8 +2064,34 @@ export default function AdminPage() {
                       (Creatomate outputs jpg/png/gif/mp4 only, so no alpha export), so
                       the colour itself is the setting. It applies to EVERY style. */}
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
-                    <label style={{ color: 'var(--text)', display: 'block', marginBottom: 6 }}>Key colour</label>
-                    <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                    <label style={{ color: 'var(--text)', display: 'block', marginBottom: 6 }}>Delivery</label>
+                    {(() => {
+                      const locked = FINISHED_ONLY.has(seg.style);
+                      const cur = deliveryOf(seg);
+                      const opt = (val, title, sub) => {
+                        const on = cur === val;
+                        return (
+                          <button type="button" disabled={locked} onClick={() => apply({ delivery: val })}
+                            style={{ flex: 1, minWidth: 180, textAlign: 'left', padding: '8px 11px', borderRadius: 9, cursor: locked ? 'default' : 'pointer',
+                              border: `${on ? 2 : 1}px solid ${on ? 'var(--blue)' : 'var(--line)'}`, background: on ? 'rgba(61,123,255,0.10)' : 'transparent',
+                              color: 'var(--text)', opacity: locked && !on ? 0.4 : 1 }}>
+                            <strong style={{ fontSize: 12.5 }}>{title}</strong>
+                            <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{sub}</span>
+                          </button>
+                        );
+                      };
+                      return (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          {opt('keyable', 'Keyable', 'Transparent around the photos. Low rez and full rez come as a colour + matte pair → Alpha Merge → one .mov with alpha for Premiere.')}
+                          {opt('finished', 'Background included', locked ? 'This style is the picture, edge to edge — always one file.' : 'The montage is the picture, edge to edge. Always one file, never a matte.')}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  {deliveryOf(seg) === 'keyable' && (
+                  <details style={{ marginTop: 8 }}>
+                    <summary style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>Advanced: chroma key instead of alpha</summary>
+                    <div style={{ marginTop: 6, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                       {KEY_COLOR_OPTS.map((k) => {
                         const on = (seg.keyColor || '#000000') === k.value;
                         return (
@@ -2087,7 +2113,8 @@ export default function AdminPage() {
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
                       {(KEY_COLOR_OPTS.find((k) => k.value === (seg.keyColor || '#000000')) || KEY_COLOR_OPTS[0]).note}
                     </div>
-                  </div>
+                  </details>
+                  )}
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                     Default keeps the style’s own backdrop. Green screen is keyable. Blurred blow-up puts a
                     soft, enlarged copy of each photo behind itself, changing on every cut — it is Framed Box’s
@@ -2117,8 +2144,23 @@ export default function AdminPage() {
     const n = parseInt(s.bgBlur ?? '0', 10);
     return Number.isFinite(n) && n > 0 ? n : null;
   };
+  // DELIVERY (Josh 9/16, replacing the key-colour dropdown as the thing you
+  // choose): KEYABLE = transparent around the photos, exports as an alpha
+  // pair; FINISHED LOOK = the montage is the picture, exports as one file.
+  // Mirrors `finishedOnly` in lib/montage.js STYLES — keep in step by hand.
+  // "anything keyable should default keyable, and vice versa": the default is
+  // derived from the style (and an imported backdrop makes it Finished); the
+  // segment only stores a value when Josh overrides it.
+  const FINISHED_ONLY = new Set(['duotone', 'duotone_pastel', 'duotone2', 'collage_classic', 'collage_featured', 'gallery150', 'epic_vintage', 'trendy', 'glass']);
+  const deliveryOf = (seg) => {
+    if (FINISHED_ONLY.has(seg.style)) return 'finished';
+    if (seg.delivery === 'finished' || seg.delivery === 'keyable') return seg.delivery;
+    return ['photoblur', 'soft_focus', 'linen', 'gradient', 'library', 'image'].includes(seg.bgMode) ? 'finished' : 'keyable';
+  };
+  // A render's delivery: stored on new renders; inferred for older ones.
+  const renderIsKeyable = (m) => (m.delivery ? m.delivery === 'keyable' : ((m.keyColor || '#000000') === '#000000' && !FINISHED_ONLY.has(m.style)));
   const KEY_COLOR_OPTS = [
-    { value: '#000000', label: 'Alpha (default)', note: 'The default. Renders over black; "Export with alpha" then makes a colour pass + a matte pass that merge into one .mov with a true alpha channel — no chroma key, any colour clothing. Drafts just show a black backdrop.' },
+    { value: '#000000', label: 'Alpha (default)', note: 'The default for Keyable. Renders over black; exports come as a colour pass + matte pass that Alpha Merge turns into one .mov with a true alpha channel — no chroma key, any colour clothing.' },
     { value: '#FF00FF', label: 'Magenta', note: 'Magenta almost never occurs in a real photograph, so nothing in the pictures keys away; edges key a little softer than green.' },
     { value: '#00B140', label: 'Green', note: 'Cleanest key. Wrong when the photos contain foliage, grass or green clothing.' },
     { value: '#0047BB', label: 'Blue', note: 'The classic alternative — but sky, water, denim and eyes are blue, so it trades one collision for another.' },
@@ -2710,13 +2752,13 @@ export default function AdminPage() {
     const revMode = modeArg || revModeState; // explicit mode wins (the alpha button passes it)
     const photos = revSeq.filter((e) => e.type === 'photo').length;
     if (!photos) { setRevMsg('A revision needs at least one photo.'); return; }
-    const what = revMode === 'alpha' ? 'WITH ALPHA (two full-res passes: colour over black + matte)' : revMode === 'matte' ? 'MATTE PASS (full-res, photos white / key black)' : full ? 'full-resolution' : 'low-res draft';
-    if (!window.confirm(`Render this revision as a ${what} (${photos} photos${revMode === 'alpha' ? '' : `, key ${(KEY_COLOR_OPTS.find((k) => k.value === revKey) || {}).label || revKey}`})? This starts a new render (uses credits); the original is kept.`)) return;
+    const what = revMode === 'alpha' ? `${full ? 'full-rez' : 'low-rez'} keyable pair (colour + matte)` : revMode === 'matte' ? 'matte pass' : full ? 'full-rez file' : 'low-rez file';
+    if (!window.confirm(`Render this revision as a ${what} (${photos} photos)? This starts ${revMode === 'alpha' ? 'two renders' : 'a new render'} (uses credits); the original is kept.`)) return;
     setRevBusy(true); setRevMsg('');
     try {
       await api('/api/admin/montage/finalize', {
         method: 'POST',
-        body: JSON.stringify({ montageId: revFor.id, full: !!full || revMode !== 'normal', matte: revMode === 'matte', alpha: revMode === 'alpha', keyColor: revKey, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
+        body: JSON.stringify({ montageId: revFor.id, full: !!full || revMode === 'matte', matte: revMode === 'matte', alpha: revMode === 'alpha', keyColor: revKey, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
       });
       setRevMsg('Revision started — it will appear in the list as a new render.');
       setRevFor(null);
@@ -2899,7 +2941,10 @@ export default function AdminPage() {
     const builtAll = [];
     for (const s of plan) {
       try {
-        const alphaPairForSeg = ((s.keyColor || '#000000') === '#000000' && s.autoAlpha !== false) ? (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`) : null;
+        const segDelivery = deliveryOf(s);
+        // A low-rez alpha pair only for a Keyable segment on the Alpha key; a
+        // Background-included segment (or a chroma key) is one file.
+        const alphaPairForSeg = (segDelivery === 'keyable' && (s.keyColor || '#000000') === '#000000' && s.autoAlpha !== false) ? (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`) : null;
         const r = await api('/api/admin/montage', {
           method: 'POST',
           body: JSON.stringify({
@@ -2917,7 +2962,9 @@ export default function AdminPage() {
             })(),
             photoSpec: s.photos.trim() || null,
             includeCards: s.cards,
-            greenScreen: s.green !== false,
+            // Key-colour bookends only make sense on a keyable montage; a finished
+            // look starts and ends on its own pictures.
+            greenScreen: segDelivery === 'keyable' ? s.green !== false : false,
             background: s.bgMode === 'green'
               ? { green: true }
               : s.bgMode === 'photoblur'
@@ -2947,7 +2994,8 @@ export default function AdminPage() {
             fbFrameW: (s.fbFrameW === null || s.fbFrameW === undefined) ? null : Number(s.fbFrameW),
             fbFrameColor: s.fbFrameColor || null,
             // The backdrop colour the montage is meant to be keyed against.
-            keyColor: s.keyColor || '#000000',
+            keyColor: segDelivery === 'keyable' ? (s.keyColor || '#000000') : '#000000',
+            delivery: segDelivery,
             // Montage-wide border override from the style panel. 'edits' (the
             // default) sends null, so nothing changes for an untouched montage.
             atmo: s.atmoOn ? { on: true, intensity: Number(s.atmoI ?? 100), dust: Number(s.atmoDust ?? 100), leak: Number(s.atmoLeak ?? 100) } : null,
@@ -4830,12 +4878,16 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
           {(() => {
             const ready = (x) => x && (x.downloadUrl || x.url) && x.status !== 'queued' && x.status !== 'rendering' && x.status !== 'failed';
             const starred = allRows.filter((m) => m.starred && !m.hidden && !m.matte);
-            const pairsDone = allRows.filter((m) => m.alphaPair && !m.matte && ready(m) && ready(allRows.find((x) => x.alphaPair === m.alphaPair && x.matte)));
+            // "Deliverables": a finished KEYABLE pair (colour + matte both ready) or a
+            // finished FINISHED-LOOK full-rez single file. Both come down in Step 2.
+            const pairsDone = allRows.filter((m) => !m.matte && ready(m) && (
+              (m.alphaPair && ready(allRows.find((x) => x.alphaPair === m.alphaPair && x.matte)))
+              || (!renderIsKeyable(m) && !m.watermarked)));
             // Only pairs not yet handed over (Josh: "how do I clear what has
             // already processed"); the small link below offers everything again.
             const pairsReady = pairsDone.filter((m) => !m.alphaDownloadedAt);
             const pairsOld = pairsDone.length - pairsReady.length;
-            const pairsPending = allRows.filter((m) => m.alphaPair && !m.matte && !pairsDone.includes(m)).length;
+            const pairsPending = allRows.filter((m) => !m.matte && !pairsDone.includes(m) && (m.alphaPair || (!renderIsKeyable(m) && !m.watermarked && m.status !== 'failed'))).length;
             if (!allRows.length) return null;
             const step = (n, label, done) => (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 800, color: done ? '#22c55e' : 'var(--text)' }}>
@@ -4863,19 +4915,20 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
                     {step(1, 'Render', false)}
                     <button type="button" className="btn-primary" disabled={batchBusy || !starred.length}
-                      title="Starts an Export with alpha (colour + matte, full rez, uses credits) for EVERY starred render in this project"
+                      title="Full rez for EVERY starred render in this project: a colour + matte pair for Keyable ones, one file for Background included. Uses credits."
                       onClick={async () => {
-                        if (!window.confirm(`Export with alpha for ${starred.length} starred render${starred.length === 1 ? '' : 's'}? That is ${starred.length * 2} full-res renders (uses credits).`)) return;
+                        const nk = starred.filter(renderIsKeyable).length, nf = starred.length - nk;
+                        if (!window.confirm(`Export full rez for ${starred.length} starred render${starred.length === 1 ? '' : 's'}? ${nk ? `${nk} keyable → ${nk * 2} renders (colour + matte)` : ''}${nk && nf ? ', ' : ''}${nf ? `${nf} background included → ${nf} render${nf === 1 ? '' : 's'}` : ''}. Uses credits.`)) return;
                         setBatchBusy(true); let ok = 0; const errs = [];
                         for (const m of starred) {
-                          try { await api('/api/admin/montage/finalize', { method: 'POST', body: JSON.stringify({ montageId: m.id, full: true, alpha: true }) }); ok++; setMMsg(`Alpha export started: ${ok} of ${starred.length}…`); }
+                          try { await api('/api/admin/montage/finalize', { method: 'POST', body: JSON.stringify({ montageId: m.id, full: true, alpha: renderIsKeyable(m) }) }); ok++; setMMsg(`Export started: ${ok} of ${starred.length}…`); }
                           catch (e) { errs.push(`${m.seq}: ${e.message}`); }
                         }
                         setBatchBusy(false);
-                        setMMsg(`Step 1 done — ${ok} pair${ok === 1 ? '' : 's'} rendering${errs.length ? ` · ${errs.length} failed (${errs.join('; ')})` : ''}. When "ready" shows in Step 2, download them.`);
+                        setMMsg(`Step 1 done — ${ok} render${ok === 1 ? '' : 's'} started${errs.length ? ` · ${errs.length} failed (${errs.join('; ')})` : ''}. When "new" shows in Step 2, download them.`);
                         loadMontages();
-                      }}>{batchBusy ? 'Starting…' : `Export all starred with alpha (★ ${starred.length})`}</button>
-                    <span style={{ color: 'var(--muted)' }}>{starred.length ? 'full rez, colour + matte, per starred render' : 'nothing starred yet — click ★ Star on the renders you want to deliver'}</span>
+                      }}>{batchBusy ? 'Starting…' : `Export all starred — full rez (★ ${starred.length})`}</button>
+                    <span style={{ color: 'var(--muted)' }}>{starred.length ? 'pairs for Keyable renders, single files for Background included' : 'nothing starred yet — pick numbers below or click ★ Star on the cards'}</span>
                   </div>
                   {/* PICK BY NUMBER. Josh 9/16: "rather than have to scroll through to
                       find the numbers, can I have a grid of all the numbers that a
@@ -4937,7 +4990,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                     {step(2, 'Download', false)}
                     <button type="button" className="btn-primary" disabled={!pairsReady.length}
                       title="Downloads every finished pair (colour + matte) to Downloads. If Chrome asks to allow multiple downloads, click Allow."
-                      onClick={() => downloadPairs(pairsReady)}>{`Download new alpha pairs (${pairsReady.length} new · ${pairsReady.length * 2} files)`}</button>
+                      onClick={() => downloadPairs(pairsReady)}>{`Download new (${pairsReady.length} new · ${pairsReady.reduce((n, x) => n + (x.alphaPair ? 2 : 1), 0)} files)`}</button>
                     {pairsReady.length > 0 && (
                       <button type="button" className="linklike" style={{ fontSize: 12, color: 'var(--muted)' }}
                         title="Marks every pair listed as already in your Downloads, without downloading anything. Use once for pairs taken before this button existed, or for a batch you handled by hand."
@@ -4949,6 +5002,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         title="Downloads every finished pair again, including the ones already taken"
                         onClick={() => downloadPairs(pairsDone)}>{`download all ${pairsDone.length} again`}</button>
                     )}
+                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>Keyable → 2 files each; Background included → 1 file (Alpha Merge ignores those).</span>
                     {pairsPending > 0 && <span style={{ color: 'var(--muted)' }}>{pairsPending} pair{pairsPending === 1 ? '' : 's'} still rendering — the page refreshes itself</span>}
                     {!pairsPending && !pairsReady.length && <span style={{ color: 'var(--muted)' }}>nothing finished yet</span>}
                   </div>
@@ -5103,48 +5157,40 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         {showVid[m.id] ? 'Hide Preview' : 'Show Preview'}
                       </button>
                       {' '}·{' '}
-                      {m.watermarked ? (
-                        <a href={m.downloadUrl || m.url} download>Export Low Rez</a>
-                      ) : (
-                        <button type="button" className="linklike" onClick={() => rerenderMontage(m.id, false)}>Export Low Rez</button>
-                      )}
-                      {' '}·{' '}
-                      {!m.watermarked ? (
-                        <a href={m.downloadUrl || m.url} download>Export Full Rez</a>
-                      ) : (
-                        <button type="button" className="linklike" onClick={() => rerenderMontage(m.id, true)}>Export Full Rez</button>
-                      )}
-                      {!m.matte && (<>
-                        {' '}·{' '}
-                        <button type="button" className="linklike" style={{ fontWeight: 700 }}
-                          title="Two full-res renders: the colour pass over BLACK + the matte pass (photos white / backdrop black). When both are ready, 'Download alpha pair' appears on the colour pass — then double-click tools/Alpha Merge.command to get one .mov with a real alpha channel for Premiere. No chroma key, any colour clothing."
-                          onClick={() => rerenderMontage(m.id, true, false, true)}>Export with alpha</button>
-                        {' '}·{' '}
-                        <button type="button" className="linklike"
-                          title="Same two passes at HALF size (~¼ the credits) — merge them for a small .mov with alpha to cut with, then Replace Footage with the full-rez alpha at the end."
-                          onClick={() => rerenderMontage(m.id, false, false, true)}>Low rez with alpha</button>
-                      </>)}
                       {(() => {
-                        // The colour pass of an alpha pair: offer both files once the matte sibling is done.
-                        if (!m.alphaPair || m.matte) return null;
-                        const sib = montages.find((x) => x.alphaPair === m.alphaPair && x.matte);
-                        if (!sib) return <span style={{ color: 'var(--muted)' }}>{' '}· matte pass not started</span>;
-                        const ready = (x) => x && (x.downloadUrl || x.url) && x.status !== 'queued' && x.status !== 'rendering' && x.status !== 'failed';
-                        if (!ready(m) || !ready(sib)) return <span style={{ color: 'var(--muted)' }}>{' '}· alpha pair: {ready(m) ? 'colour ready' : 'colour rendering'} / {ready(sib) ? 'matte ready' : sib.status === 'failed' ? 'matte FAILED' : 'matte rendering'}</span>;
+                        // DELIVERY-AWARE LINKS (Josh 9/16: "so many options… how can we
+                        // streamline this?"). A Keyable render hands over PAIRS; a
+                        // Background-included render hands over ONE file. Same two links
+                        // either way: what you cut with, and the full-rez version.
+                        const keyable = renderIsKeyable(m) && !m.matte;
+                        const sib = m.alphaPair ? montages.find((x) => x.alphaPair === m.alphaPair && x.matte) : null;
+                        const isReady = (x) => x && (x.downloadUrl || x.url) && x.status !== 'queued' && x.status !== 'rendering' && x.status !== 'failed';
+                        const dl = (list) => list.filter(Boolean).forEach((v, i) => setTimeout(() => {
+                          const a = document.createElement('a'); a.href = v.downloadUrl || v.url; a.download = ''; a.rel = 'noopener';
+                          document.body.appendChild(a); a.click(); a.remove();
+                        }, i * 1500));
+                        const thisRez = m.watermarked ? 'low rez' : 'full rez';
+                        const thisLink = !keyable
+                          ? <a href={m.downloadUrl || m.url} download>{`Download ${thisRez}`}</a>
+                          : !sib
+                            ? <button type="button" className="linklike" title="This keyable render has no matte pass yet — this starts one at the same size so you get the pair"
+                                onClick={() => rerenderMontage(m.id, !m.watermarked, false, true)}>{`Make ${thisRez} pair`}</button>
+                            : (isReady(m) && isReady(sib))
+                              ? <button type="button" className="linklike" style={{ fontWeight: 700, color: '#22c55e' }}
+                                  title="Downloads the colour + matte pair (2 files). Then Alpha Merge in the Dock writes the .mov with alpha."
+                                  onClick={() => { dl([m, sib]); reviewMontage(m.id, { alphaDownloaded: true }); setMMsg('Pair downloading (2 files). Next: Alpha Merge in the Dock.'); }}>{`Download ${thisRez} pair (2 files)`}</button>
+                              : <span style={{ color: 'var(--muted)' }}>{`${thisRez} pair: ${isReady(m) ? 'colour ready' : 'colour rendering'} / ${isReady(sib) ? 'matte ready' : sib.status === 'failed' ? 'matte FAILED' : 'matte rendering'}`}</span>;
                         return (<>
-                          {' '}·{' '}
-                          <button type="button" className="linklike" style={{ fontWeight: 700, color: '#22c55e' }}
-                            title="Downloads both files (###HR colour + ###HRM matte) to your Downloads folder. Then double-click tools/Alpha Merge.command in the studio-portal folder — it finds every pair in Downloads and writes ###_ALPHA.mov next to them."
-                            onClick={() => {
-                              [m, sib].forEach((v, i) => setTimeout(() => {
-                                const a = document.createElement('a');
-                                a.href = v.downloadUrl || v.url; a.download = ''; a.rel = 'noopener';
-                                document.body.appendChild(a); a.click(); a.remove();
-                              }, i * 1500));
-                              setMMsg('Alpha pair downloading (2 files). Next: double-click "Alpha Merge.command" in the studio-portal/tools folder — it writes the .mov with alpha into Downloads.');
-                            }}>Download alpha pair (2 files)</button>
+                          {thisLink}
+                          {m.watermarked && (<>
+                            {' '}·{' '}
+                            <button type="button" className="linklike" style={{ fontWeight: 700 }}
+                              title={keyable ? 'Full rez as a colour + matte pair (two 1080p renders, uses credits) — then Download pair → Alpha Merge.' : 'Full rez, one file (1080p, no watermark). Uses credits.'}
+                              onClick={() => rerenderMontage(m.id, true, false, keyable)}>Export Full Rez</button>
+                          </>)}
                         </>);
                       })()}
+
                       {' '}·{' '}
                       <button type="button" className="linklike" title="Open this render's exact photo list: swap, remove or add photos, then render it again with every other setting unchanged"
                         onClick={() => openRevise(m)}>{revFor?.id === m.id ? 'Close revise' : 'Revise'}</button>
@@ -5169,7 +5215,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
                           This render's photos, in order — drag to reorder. <strong>Swap</strong> keeps the slot (and every transition) exactly as it was;
                           <strong> Remove</strong>, <strong>Add after</strong> and a drag shift the photos in between by one slot. Style, pace, cards,
-                          border and neon are kept from this render; the key colour can be changed below, or render it as a matte pass. The original is never changed.
+                          border, neon and delivery are kept from this render. The original is never changed.
                         </p>
                         {revLoading ? <p style={{ fontSize: 13 }}>Opening…</p> : (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -5249,36 +5295,19 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                               )}
                           </div>
                         )}
-                        {/* KEY COLOUR + MATTE for the revision (Josh 9/15: "under Revise could you also
-                            add Change key color or Matte option"). Key defaults to the render's own. */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 12, fontSize: 13 }}>
-                          <span style={{ color: 'var(--muted)' }}>Key colour</span>
-                          {KEY_COLOR_OPTS.map((k) => {
-                            const on = revKey === k.value;
-                            return (
-                              <button key={k.value} type="button" onClick={() => setRevKey(k.value)} title={k.note}
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: on ? 700 : 400,
-                                  border: `${on ? 2 : 1}px solid ${on ? 'var(--blue)' : 'var(--line)'}`, background: on ? 'rgba(61,123,255,0.14)' : 'transparent', color: on ? 'var(--text)' : 'var(--muted)' }}>
-                                <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 3, background: k.value, flex: '0 0 auto' }} />
-                                {k.label.replace(' (default)', '')}
-                              </button>
-                            );
-                          })}
-                          <label className="choice" style={{ color: 'var(--text)', marginLeft: 6 }} title="Renders a black & white luma matte only (photos white, key backdrop black). Use as a track matte.">
-                            <input type="checkbox" checked={revModeState === 'matte'} onChange={(e) => setRevMode(e.target.checked ? 'matte' : 'normal')} />
-                            Matte pass only
-                          </label>
-                        </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, fontSize: 13, flexWrap: 'wrap' }}>
-                          <button type="button" className="btn-primary" disabled={revBusy || revLoading}
-                            title="Two full-res renders: the colour pass over black + the matte pass. Download the pair, run Alpha Merge → one .mov with a real alpha channel."
-                            onClick={() => renderRevision(true, 'alpha')}>Render revision — with alpha</button>
-                          {revModeState === 'matte' ? (
-                            <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>Render revision — matte pass</button>
-                          ) : (<>
-                            <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(false)}>low rez</button>
-                            <button type="button" className="btn-ghost" disabled={revBusy || revLoading} onClick={() => renderRevision(true)}>full rez (no alpha)</button>
-                          </>)}
+                          {(() => {
+                            const keyable = renderIsKeyable(m);
+                            return (<>
+                              <button type="button" className="btn-primary" disabled={revBusy || revLoading}
+                                title={keyable ? 'Low rez colour + matte pair to cut with' : 'Low rez, one file'}
+                                onClick={() => renderRevision(false, keyable ? 'alpha' : 'normal')}>Render revision — low rez</button>
+                              <button type="button" className="btn-ghost" disabled={revBusy || revLoading}
+                                title={keyable ? 'Full rez colour + matte pair → Alpha Merge' : 'Full rez, one file'}
+                                onClick={() => renderRevision(true, keyable ? 'alpha' : 'normal')}>full rez</button>
+                              <span style={{ color: 'var(--muted)', fontSize: 12 }}>{keyable ? 'keyable → pairs' : 'background included → one file'}</span>
+                            </>);
+                          })()}
                           <span style={{ color: 'var(--muted)' }}>{revSeq.filter((e) => e.type === 'photo').length} photos</span>
                           {revMsg && <span style={{ color: /could not|cannot|needs/i.test(revMsg) ? '#f5a623' : 'var(--muted)' }}>{revMsg}</span>}
                         </div>

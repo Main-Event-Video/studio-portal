@@ -83,7 +83,7 @@ async function postMontage(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null, styleBorder = null, atmo = null, neon = null, stills = null, alphaPair = null, alphaRole = null } = body || {};
+  const { clientId, title, subtitle, watermark = true, style = 'hollywood', photoSeconds = null, totalSeconds = null, adjustments = {}, photoSpec = null, album = null, includeCards = true, videoPlaceholders = true, greenScreen = true, background = null, mpTransition = null, mpStagger = null, mpHold = null, mpSpeed = null, duoPalette = null, duoTreatment = null, glassLight = true, glassRefl = null, draftScale = null, fbAtmosphere = null, fbFrameW = null, fbFrameColor = null, keyColor = null, styleBorder = null, atmo = null, neon = null, stills = null, alphaPair = null, alphaRole = null, delivery = null } = body || {};
   // "Add background" control: keyable green-screen (default) or an imported image
   // + tint/opacity. Sanitised to a small known shape; null = the style's own bg.
   // Built-in animated textures live in public/backgrounds/<name>.jpg.
@@ -355,6 +355,10 @@ async function postMontage(request) {
         // SNAPSHOTTED so Export Full Rez re-renders in the same colour, and so a
         // montage keyed green last month stays green when it is re-exported.
         keyColor: KEY,
+        // 'keyable' (transparent around the photos → alpha pair) or 'finished'
+        // (the montage is the picture → one file). Decides what Export and the
+        // batch buttons hand back; see styleIsKeyable in lib/montage.js.
+        delivery: delivery === 'finished' ? 'finished' : delivery === 'keyable' ? 'keyable' : null,
         // GENERATE WITH ALPHA (Josh 9/16): the admin tags a draft as the colour pass
         // of a low-rez alpha pair and immediately starts its matte via finalize.
         ...(typeof alphaPair === 'string' && alphaPair ? { alphaPair, alphaRole: alphaRole === 'matte' ? 'matte' : 'color' } : {}),
@@ -706,6 +710,7 @@ export async function GET(request) {
       alphaPair: m.params?.alphaPair || null,     // Export-with-alpha pair id (colour + matte share it)
       alphaRole: m.params?.alphaRole || null,     // 'color' | 'matte'
       alphaDownloadedAt: m.params?.alphaDownloadedAt || null, // set by "Download all alpha pairs"
+      delivery: m.params?.delivery || null,        // 'keyable' | 'finished' | null (older render: the admin infers)
       // Another PRIMARY render of this client shares this number (a revision
       // that inherited its source's ### before revisions got their own).
       sharedNumber: !m.params?.rerenderOf && (data || []).some((o) => o.id !== m.id && o.client_id === m.client_id && !o.params?.rerenderOf && !o.params?.matte && seqMap.get(o.id) === seqMap.get(m.id)),
