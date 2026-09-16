@@ -739,7 +739,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: true, green: true, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#000000', bgBlur: '0', sbMode: 'none', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: false, green: false, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#000000', bgBlur: '0', sbMode: 'none', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -2965,7 +2965,7 @@ export default function AdminPage() {
             includeCards: s.cards,
             // Key-colour bookends only make sense on a keyable montage; a finished
             // look starts and ends on its own pictures.
-            greenScreen: segDelivery === 'keyable' ? s.green !== false : false,
+            greenScreen: segDelivery === 'keyable' ? s.green === true : false,
             background: s.bgMode === 'green'
               ? { green: true }
               : s.bgMode === 'photoblur'
@@ -4816,7 +4816,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                 </div>
                 <div className="field-group" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
                   <label className="choice" style={{ color: 'var(--text)', display: 'flex' }}>
-                    <input type="checkbox" checked={s.green !== false} onChange={(e) => updateSegment(s.key, { green: e.target.checked })} />
+                    <input type="checkbox" checked={s.green === true} onChange={(e) => updateSegment(s.key, { green: e.target.checked })} />
                     Green-screen frame (keyable green photo, first &amp; last)
                   </label>
                 </div>
