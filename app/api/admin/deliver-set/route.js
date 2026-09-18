@@ -51,6 +51,8 @@ export async function POST(request) {
   if (client.archived) return NextResponse.json({ error: 'That client is archived' }, { status: 400 });
 
   const noteClean = typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null;
+  // Label for this final ("FINAL", "FINAL Revised", …) — shown in the resend list + email.
+  const version = typeof body.version === 'string' ? body.version.trim().slice(0, 40) : '';
   const setId = crypto.randomUUID();
 
   const rows = files
@@ -65,6 +67,7 @@ export async function POST(request) {
       watermarked: false,
       note: noteClean,
       set_id: setId,
+      ...(version ? { version } : {}),
     }));
   if (!rows.length) return NextResponse.json({ error: 'No valid files' }, { status: 400 });
 
@@ -80,14 +83,14 @@ export async function POST(request) {
 
   await db.from('studio_messages').insert({
     client_id: client.id,
-    subject: `Final videos delivered (${rows.length})${to ? ` to ${to}` : ''}`,
+    subject: `${version || 'Final'} delivered (${rows.length} file${rows.length === 1 ? '' : 's'})${to ? ` to ${to}` : ''}`,
     note: noteClean,
   });
 
   let emailed = false;
   let emailError = null;
   try {
-    await sendFinalSetReady({ client, count: rows.length, note: noteClean || '', to, watchUrl });
+    await sendFinalSetReady({ client, count: rows.length, note: noteClean || '', to, watchUrl, version });
     emailed = true;
   } catch (e) {
     emailError = e?.message || 'Email failed';

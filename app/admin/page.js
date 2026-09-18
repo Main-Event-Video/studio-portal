@@ -112,7 +112,8 @@ async function readVideoDuration(file) {
 // Version-aware and editable — Josh can overwrite it per send.
 function brandNote(kind, v) {
   if (kind === 'final') {
-    return `Main Event Studio proudly presents your finished video! It's been a pleasure bringing your celebration to the screen. Enjoy! We know the ones you share it with will love it too.  ·  www.maineventstudio.com`;
+    const lbl = v && String(v).trim() && String(v).trim().toUpperCase() !== 'FINAL' ? ` (${String(v).trim()})` : '';
+    return `Main Event Studio proudly presents your finished video${lbl}! It's been a pleasure bringing your celebration to the screen. Enjoy! We know the ones you share it with will love it too.  ·  www.maineventstudio.com`;
   }
   const tag = v && String(v).trim() ? ` — presenting ${String(v).trim()}` : '';
   return `Main Event Studio${tag}. Here's your latest cut — take a look and let us know what you think!  ·  www.maineventstudio.com`;
@@ -967,6 +968,7 @@ export default function AdminPage() {
   const [dPhase, setDPhase] = useState('idle'); // idle | uploading | saving | done | error
   const [dMsg, setDMsg] = useState('');
   const [dVersion, setDVersion] = useState('V1');   // version for the next cut (auto-advances)
+  const [dNextV, setDNextV] = useState('V1');       // the auto-picked V# (kept while Final is selected)
   const [dSendTo, setDSendTo] = useState('');        // '' = the client; else override recipient(s), comma-separated
   const [dCcClient, setDCcClient] = useState(false); // when Send-to is used, also include the client
   const [rowSendId, setRowSendId] = useState(null);  // which sent-cut row has its "Send to…" field open
@@ -1113,8 +1115,11 @@ export default function AdminPage() {
         .filter(Boolean)
         .map((m) => parseInt(m[1], 10));
       const nextV = `V${nums.length ? Math.max(...nums) + 1 : 1}`;
-      setDVersion(nextV);
-      setDNote(brandNote(dKind, nextV));
+      setDNextV(nextV);
+      // Finals are marked FINAL, not a version number (Josh 9/17); Custom covers "FINAL Revised".
+      const startV = dKind === 'final' ? 'FINAL' : nextV;
+      setDVersion(startV);
+      setDNote(brandNote(dKind, startV));
       setDNoteAuto(true);
       setDCustomOpen(false);
       setDSendTo('');
@@ -3343,8 +3348,8 @@ export default function AdminPage() {
 
   function renderCutTool() {
     const sentVers = new Set(sentCuts.map((cut) => String(cut.version || '').trim()).filter(Boolean));
-    const VBTNS = ['V1', 'V2', 'V3', 'V4'];
-    const isCustom = dVersion !== '' && !/^V\d+$/.test(dVersion);
+    const VBTNS = dKind === 'final' ? ['FINAL'] : ['V1', 'V2', 'V3', 'V4'];
+    const isCustom = dVersion !== '' && !VBTNS.includes(dVersion);
     const versionBtnStyle = (label) => {
       const isNext = dVersion === label;
       const sent = sentVers.has(label);
@@ -3370,7 +3375,7 @@ export default function AdminPage() {
                   type="radio"
                   name="d_kind"
                   checked={dKind === 'rough_cut'}
-                  onChange={() => { setDKind('rough_cut'); if (dNoteAuto) setDNote(brandNote('rough_cut', dVersion)); }}
+                  onChange={() => { setDKind('rough_cut'); setDVersion(dNextV); setDCustomOpen(false); if (dNoteAuto) setDNote(brandNote('rough_cut', dNextV)); }}
                 />
                 Rough cut (auto-watermarked)
               </label>
@@ -3385,7 +3390,7 @@ export default function AdminPage() {
                   type="radio"
                   name="d_kind"
                   checked={dKind === 'final'}
-                  onChange={() => { setDKind('final'); if (dNoteAuto) setDNote(brandNote('final', dVersion)); }}
+                  onChange={() => { setDKind('final'); setDVersion('FINAL'); setDCustomOpen(false); if (dNoteAuto) setDNote(brandNote('final', 'FINAL')); }}
                 />
                 Final (clean, full-res)
               </label>
@@ -3393,7 +3398,7 @@ export default function AdminPage() {
           </div>
 
           <div className="field-group">
-            <span className="field-label">Version</span>
+            <span className="field-label">{dKind === 'final' ? 'Label' : 'Version'}</span>
             <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
               {VBTNS.map((label) => (
                 <button type="button" key={label} style={versionBtnStyle(label)}
@@ -3405,7 +3410,7 @@ export default function AdminPage() {
                 <input
                   autoFocus
                   value={isCustom ? dVersion : ''}
-                  placeholder="Name it…"
+                  placeholder={dKind === 'final' ? 'e.g. FINAL Revised' : 'Name it…'}
                   onChange={(e) => { setDVersion(e.target.value); if (dNoteAuto) setDNote(brandNote(dKind, e.target.value)); }}
                   onBlur={() => { if (!dVersion.trim()) setDCustomOpen(false); }}
                   style={{ width: 130, padding: '6px 10px', borderRadius: 8, border: '1px solid #43c088',
