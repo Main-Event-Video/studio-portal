@@ -961,7 +961,7 @@ export default function AdminPage() {
   // Rough cut WITHOUT the watermark render. Josh 9/14, after a watermark render
   // hung for two hours with the client waiting: "can we add a button to turn
   // off the watermark on a rough cut". Off by default; resets after each send.
-  const [dNoWatermark, setDNoWatermark] = useState(false);
+  const [dNoWatermark, setDNoWatermark] = useState(true); // Josh 9/17: no-watermark is the default rough cut
   const [dNote, setDNote] = useState('');
   const [dFiles, setDFiles] = useState([]);          // one or more video files staged to send
   const [dPct, setDPct] = useState(0);
@@ -3332,7 +3332,7 @@ export default function AdminPage() {
         );
         loadSentCuts(mClientId);
       }
-      setDNoWatermark(false); // one send at a time; the next rough cut is watermarked again unless asked
+      setDNoWatermark(true); // back to the default (no watermark) for the next send
       setDFiles([]);
       if (dFileRef.current) dFileRef.current.value = '';
     } catch (err) {
@@ -3363,8 +3363,8 @@ export default function AdminPage() {
     return (
       <div className="tool-window" style={{ marginTop: 16 }}>
         <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 0 }}>
-          Uploads to this client’s portal and emails a link. Rough cuts are watermarked automatically
-          (logo + version, exported at 720p) before the client can see them; finals go out clean and full-res.
+          Uploads to this client’s portal and emails a link. Rough cuts go out as-is by default; untick
+          the box to add the logo + version watermark (exported at 720p). Finals go out clean and full-res.
         </p>
         <form onSubmit={sendCut}>
           <div className="field-group">
@@ -3377,12 +3377,12 @@ export default function AdminPage() {
                   checked={dKind === 'rough_cut'}
                   onChange={() => { setDKind('rough_cut'); setDVersion(dNextV); setDCustomOpen(false); if (dNoteAuto) setDNote(brandNote('rough_cut', dNextV)); }}
                 />
-                Rough cut (auto-watermarked)
+                Rough cut
               </label>
               {dKind === 'rough_cut' && (
                 <label className="choice" title="Sends the file exactly as uploaded — no Creatomate render, delivered in seconds. Use when the watermark render is stuck or the cut is going to someone you trust.">
                   <input type="checkbox" checked={dNoWatermark} onChange={(ev) => setDNoWatermark(ev.target.checked)} />
-                  Skip the watermark — send as-is
+                  No watermark — send as-is (untick to add the logo + version watermark)
                 </label>
               )}
               <label className="choice">
