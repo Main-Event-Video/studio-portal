@@ -13,6 +13,25 @@ ZONE_TOP=0.50; ZONE_BOTTOM=0.95; ZONE_LEFT=0.00; ZONE_RIGHT=1.00
 #       sttn-auto = inpaint the WHOLE zone on every frame (no detection; use if
 #       detection keeps missing stylised captions). propainter = slower, better on motion.
 MODE=${MODE:-sttn-det}
+# Per-run overrides live in  ~/Desktop/Caption Remove/settings.txt  (created on first
+# run) — edit ZONE_* / MODE there, no need to touch this file.
+SETTINGS="$HOME/Desktop/Caption Remove/settings.txt"
+if [ ! -f "$SETTINGS" ]; then mkdir -p "$(dirname "$SETTINGS")"; cat > "$SETTINGS" <<'TXT'
+# Caption Remove settings — edit, save, re-click the Dock icon.
+#
+# MODE  sttn-det   detect text in the zone; inpaint only frames that have it (fast; can miss a frame)
+#       sttn-auto  inpaint the WHOLE zone on EVERY frame (never misses; keep the zone tight)
+#       propainter best quality, 3-4x slower
+MODE=sttn-det
+#
+# ZONE = where the captions live, as fractions of the frame (0.0 top/left … 1.0 bottom/right)
+ZONE_TOP=0.50
+ZONE_BOTTOM=0.95
+ZONE_LEFT=0.00
+ZONE_RIGHT=1.00
+TXT
+fi
+source "$SETTINGS"
 
 APP="$HOME/CaptionRemover"; IN="$HOME/Desktop/Caption Remove/In"; OUT="$HOME/Desktop/Caption Remove/Out"
 [ -f "$APP/.installed" ] || { echo "Not installed yet — running the installer first."; bash "$(dirname "$0")/caption-remove-install.sh" || exit 1; }

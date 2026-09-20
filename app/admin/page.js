@@ -3741,7 +3741,7 @@ export default function AdminPage() {
                   />
                   {f.isVideo ? (
                     <button type="button" className="pill" style={{ fontSize: 11, cursor: 'pointer' }} title="Click to play larger"
-                      onClick={() => setLightbox({ type: 'video', url: f.url, filename: f.filename })}>▶ video</button>
+                      onClick={() => setLightbox({ type: 'video', url: f.url, filename: f.filename, downloadUrl: f.downloadUrl, contentType: f.contentType })}>▶ video</button>
                   ) : (
                     <img src={f.url} alt={f.filename} title="Click to enlarge"
                       onClick={() => setLightbox({ type: 'image', url: f.url, filename: f.filename })}
@@ -4198,7 +4198,15 @@ export default function AdminPage() {
                 background: 'repeating-linear-gradient(135deg,#0d1a12,#0d1a12 8px,#0a140e 8px,#0a140e 16px)' }}>
               <div style={{ position: 'relative', aspectRatio: '16 / 9', display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                <span style={{ fontSize: 22, color: '#00b140', lineHeight: 1 }}>{'\u25B6'}</span>
+                {/* Josh 9/20: "allow viewing of video files … inside the Montage
+                    Maker." A real play button that opens the same full-screen
+                    player the Files tab uses (lightbox). p.url is the signed
+                    12-hour view link the photos route already returns for videos. */}
+                <button type="button" title="Play this video" disabled={!p.url}
+                  onClick={(ev) => { ev.stopPropagation(); if (p.url) setLightbox({ type: 'video', url: p.url, filename: p.filename, downloadUrl: p.downloadUrl, contentType: p.contentType }); }}
+                  style={{ width: 40, height: 40, borderRadius: 20, border: '2px solid rgba(255,255,255,.35)', background: '#00b140', color: '#04180b',
+                    fontSize: 18, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: p.url ? 'pointer' : 'default',
+                    boxShadow: '0 2px 8px rgba(0,0,0,.6)', padding: 0 }}>{'\u25B6'}</button>
                 <span style={{ fontSize: 10, color: '#9fb8a8', maxWidth: '92%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.filename}</span>
                 <span style={{ fontSize: 10, color: '#00b140' }}>green gap here</span>
               </div>
@@ -5827,8 +5835,20 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
           <button type="button" onClick={() => setLightbox(null)}
             style={{ position: 'absolute', top: 16, right: 20, width: 40, height: 40, borderRadius: 20, border: '1px solid rgba(255,255,255,0.4)',
               background: 'rgba(0,0,0,0.5)', color: '#fff', fontSize: 22, lineHeight: 1, cursor: 'pointer' }} title="Close (Esc)">×</button>
-          {lightbox.type === 'video' ? (
+          {lightbox.type === 'video' && lightbox.err ? (
+            /* The browser could not decode it (HEVC / ProRes .mov from some phones).
+               Say so instead of leaving a black box, and offer the file. */
+            <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(92vw, 640px)', padding: '36px 24px', borderRadius: 8, background: '#000',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, cursor: 'default', textAlign: 'center' }}>
+              <div style={{ color: '#f5a623', fontWeight: 800 }}>Can&apos;t play this format in the browser</div>
+              <div style={{ color: '#9fb3c8', fontSize: 12 }}>{lightbox.filename}{lightbox.contentType ? ` \u00b7 ${lightbox.contentType}` : ''}</div>
+              <a href={lightbox.downloadUrl || lightbox.url} download={lightbox.filename}
+                style={{ background: '#00b140', color: '#04180b', fontWeight: 700, padding: '6px 14px', borderRadius: 6, textDecoration: 'none', fontSize: 13 }}>
+                {'\u2913 Download to view'}</a>
+            </div>
+          ) : lightbox.type === 'video' ? (
             <video src={lightbox.url} controls autoPlay onClick={(e) => e.stopPropagation()}
+              onError={() => setLightbox((l) => (l ? { ...l, err: true } : l))}
               style={{ maxWidth: '92vw', maxHeight: '88vh', borderRadius: 8, background: '#000' }} />
           ) : (
             <img src={lightbox.url} alt={lightbox.filename} onClick={(e) => e.stopPropagation()}
