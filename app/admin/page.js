@@ -1504,20 +1504,28 @@ export default function AdminPage() {
     const X = photoBySeq(fromSeq), Y = photoBySeq(toSeq);
     if (!X) return `No photo #${fromSeq}`;
     if (!Y) return `No photo #${toSeq}`;
-    if (X.id === Y.id) return 'Same photo twice';
+    return swapPhotoObjs(clientId, X, Y, mode);
+  }
+  // Y = null → just move X to the Removed images album (Revise "Remove").
+  async function swapPhotoObjs(clientId, X, Y, mode) {
+    if (!X) return 'Photo not found';
+    if (Y && X.id === Y.id) return 'Same photo twice';
     let full;
     try { full = (await ensureFullOrder(clientId)).slice(); }
     catch { return 'Could not load the order — try again.'; }
     const before = arrangementFromFlat(full);
     const xi = full.findIndex((x) => x.id === X.id);
-    const yi = full.findIndex((x) => x.id === Y.id);
-    if (xi < 0 || yi < 0) {
+    const yi = Y ? full.findIndex((x) => x.id === Y.id) : -1;
+    if (xi < 0 || (Y && yi < 0)) {
       fullOrderRef.current = null; fullOrderClientRef.current = null;
       loadProjPhotos(clientId, true);
       return 'Order was stale — reloaded, try again.';
     }
-    const xa = full[xi].album || null, ya = full[yi].album || null;
-    if (mode === 'remove') {
+    const xa = full[xi].album || null, ya = Y ? (full[yi].album || null) : null;
+    if (!Y) {
+      full.splice(xi, 1);
+      full.push({ id: X.id, album: REMOVED_ALBUM });
+    } else if (mode === 'remove') {
       full[xi] = { id: Y.id, album: xa };
       full.splice(yi, 1);
       full.push({ id: X.id, album: REMOVED_ALBUM });
@@ -1534,7 +1542,7 @@ export default function AdminPage() {
     applyOrderToProjPhotos(full);
     if (roOpen && roClientId === clientId) loadReorder(clientId, true);
     queueSave(clientId, after);
-    if (mode === 'remove') editPhoto(clientId, X.key, { removed: true });
+    if (!Y || mode === 'remove') editPhoto(clientId, X.key, { removed: true });
     // No reload needed: applyOrderToProjPhotos carries each photo's new album,
     // so the grid regroups at once (Removed images appears as its own group).
     return '';
@@ -2719,6 +2727,11 @@ export default function AdminPage() {
   const [revBusy, setRevBusy] = useState(false);
   const [revMsg, setRevMsg] = useState('');
   const [revSeqNum, setRevSeqNum] = useState('');  // orange import number typed into the Revise picker
+  // Josh 9/20: "if I make a change in an export I'd like that change to show in
+  // the albums page too." Swap → new photo takes the old one's slot in Edit
+  // Photos, old one goes to Removed images; Remove → old one goes to Removed
+  // images. Add/Upload leave the albums alone. Untick for a one-off render.
+  const [revApply, setRevApply] = useState(true);
   const [revKey, setRevKey] = useState('#FF00FF');   // key colour for the revision (Josh 9/15)
   const [batchBusy, setBatchBusy] = useState(false);   // batch alpha export in flight
   const [numGridOpen, setNumGridOpen] = useState(false); // the pick-by-number grid in the alpha panel
@@ -2802,9 +2815,29 @@ export default function AdminPage() {
       setRevLoading(false);
     }
   }
-  function revRemove(pos) { setRevSeq((sq) => sq.filter((_, i) => i !== pos)); setRevPick(null); }
+  // The library photo behind a Revise slot (by r2 key) — null for placeholders
+  // or a photo no longer in the client's strip.
+  function revSlotPhoto(e) {
+    if (!e || e.type !== 'photo') return null;
+    return projPhotos.find((ph) => ph.key === e.r2_key) || null;
+  }
+  async function revApplyToAlbums(X, Y, what) {
+    if (!revApply || !revFor?.clientId || !X) return;
+    if (projPhotosClientId !== revFor.clientId) return;
+    const err = await swapPhotoObjs(revFor.clientId, X, Y, 'remove');
+    setRevMsg(err ? `Albums not updated: ${err}` : `${what} — albums updated too (see Edit Photos${Y ? '' : ` · "${REMOVED_ALBUM}"`}).`);
+  }
+  function revRemove(pos) {
+    const X = revSlotPhoto(revSeq[pos]);
+    setRevSeq((sq) => sq.filter((_, i) => i !== pos)); setRevPick(null);
+    revApplyToAlbums(X, null, 'Removed from this render');
+  }
   function revChoose(p) {
     // p = a photo from the client's strip (projPhotos)
+    if (revPick && revPick.mode === 'swap') {
+      const X = revSlotPhoto(revSeq[revPick.pos]);
+      if (X && X.id !== p.id) revApplyToAlbums(X, p, 'Swapped in this render');
+    }
     setRevSeq((sq) => {
       const item = { type: 'photo', r2_key: p.key, url: p.url, filename: p.filename, importSeq: p.importSeq ?? null, added: true };
       if (!revPick) return sq;
@@ -5378,6 +5411,10 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                           <strong> Remove</strong>, <strong>Add after</strong> and a drag shift the photos in between by one slot. Style, pace, cards,
                           border, neon and delivery are kept from this render. The original is never changed.
                         </p>
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: 'pointer', marginBottom: 8, padding: '4px 10px', border: '1px solid #1e4fd6', borderRadius: 8 }}
+                          title="Swap: the new photo takes the old one's slot in Edit Photos and the old one goes to Removed images. Remove: the old one goes to Removed images. Add/Upload never touch the albums.">
+                          <input type="checkbox" checked={revApply} onChange={(ev) => setRevApply(ev.target.checked)} /> Also apply Swap / Remove to this client's albums (Edit Photos)
+                        </label>
                         {revLoading ? <p style={{ fontSize: 13 }}>Opening…</p> : (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                             {revSeq.map((e, i) => {
