@@ -752,6 +752,15 @@ export default function AdminPage() {
   // "Fix HEIC photos" — Josh circled back after declining it once: a grey
   // .HEIC tile showed up in a second project. Holds the last result text.
   const [heicFix, setHeicFix] = useState({ busy: false, msg: '' });
+  // "Swap pic for pic" — Josh 9/20: clients send notes like "swap image X with
+  // image Y". Typed by the ORANGE import numbers (permanent, bottom-left of each
+  // tile), never the white play-order numbers. mode 'trade' = the two photos
+  // change slots; 'remove' = Y takes X's slot and X goes to a "Removed images"
+  // album, marked removed so it never renders. Same panel at the top of Edit
+  // Photos and inside the photo editor (there, X is the photo being edited).
+  const [swapUI, setSwapUI] = useState({ open: false, from: '', to: '', mode: 'trade', msg: '', busy: false });
+  const [edSwap, setEdSwap] = useState({ to: '', mode: 'trade', msg: '', busy: false });
+  const REMOVED_ALBUM = 'Removed images';
   // Photos whose <img> failed to load — a file the browser cannot show. Keyed
   // by r2 key; the tile explains itself instead of sitting there grey.
   const [brokenImgs, setBrokenImgs] = useState({});
@@ -1479,6 +1488,56 @@ export default function AdminPage() {
     applyOrderToProjPhotos(rest);
     if (roOpen && roClientId === clientId) loadReorder(clientId, true);
     queueSave(clientId, after);
+  }
+
+  // Photo by its orange import number. Returns null for a blank/unknown number.
+  function photoBySeq(seq) {
+    const n = Number(String(seq).trim());
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return projPhotos.find((ph) => Number(ph.importSeq) === n) || null;
+  }
+
+  // Swap pic for pic. Same machinery as a drag: edit the cached full timeline,
+  // update the screen at once, queue the save, push undo. A photo "takes a
+  // slot" = position AND album of that slot.
+  async function swapPhotos(clientId, fromSeq, toSeq, mode) {
+    const X = photoBySeq(fromSeq), Y = photoBySeq(toSeq);
+    if (!X) return `No photo #${fromSeq}`;
+    if (!Y) return `No photo #${toSeq}`;
+    if (X.id === Y.id) return 'Same photo twice';
+    let full;
+    try { full = (await ensureFullOrder(clientId)).slice(); }
+    catch { return 'Could not load the order — try again.'; }
+    const before = arrangementFromFlat(full);
+    const xi = full.findIndex((x) => x.id === X.id);
+    const yi = full.findIndex((x) => x.id === Y.id);
+    if (xi < 0 || yi < 0) {
+      fullOrderRef.current = null; fullOrderClientRef.current = null;
+      loadProjPhotos(clientId, true);
+      return 'Order was stale — reloaded, try again.';
+    }
+    const xa = full[xi].album || null, ya = full[yi].album || null;
+    if (mode === 'remove') {
+      full[xi] = { id: Y.id, album: xa };
+      full.splice(yi, 1);
+      full.push({ id: X.id, album: REMOVED_ALBUM });
+    } else {
+      full[xi] = { id: Y.id, album: xa };
+      full[yi] = { id: X.id, album: ya };
+    }
+    fullOrderRef.current = full; fullOrderClientRef.current = clientId;
+    const after = arrangementFromFlat(full);
+    histClientRef.current = clientId;
+    setUndoStack((st) => [...st, before].slice(-50));
+    setRedoStack([]);
+    lastArrRef.current = after;
+    applyOrderToProjPhotos(full);
+    if (roOpen && roClientId === clientId) loadReorder(clientId, true);
+    queueSave(clientId, after);
+    if (mode === 'remove') editPhoto(clientId, X.key, { removed: true });
+    // No reload needed: applyOrderToProjPhotos carries each photo's new album,
+    // so the grid regroups at once (Removed images appears as its own group).
+    return '';
   }
 
   // Load the client's FULL timeline order (photos + videos) once and cache it.
@@ -2659,6 +2718,7 @@ export default function AdminPage() {
   const [revPick, setRevPick] = useState(null);    // { pos, mode: 'swap' | 'insert' } — the library picker is open for this slot
   const [revBusy, setRevBusy] = useState(false);
   const [revMsg, setRevMsg] = useState('');
+  const [revSeqNum, setRevSeqNum] = useState('');  // orange import number typed into the Revise picker
   const [revKey, setRevKey] = useState('#FF00FF');   // key colour for the revision (Josh 9/15)
   const [batchBusy, setBatchBusy] = useState(false);   // batch alpha export in flight
   const [numGridOpen, setNumGridOpen] = useState(false); // the pick-by-number grid in the alpha panel
@@ -3999,10 +4059,58 @@ export default function AdminPage() {
                 }}>
                 {heicFix.busy ? 'Fixing…' : 'Fix colours (P3 → sRGB)'}
               </button>
+              {' · '}
+              <button type="button" className="linklike" style={{ color: swapUI.open ? '#38b6ff' : undefined, fontWeight: swapUI.open ? 800 : undefined }}
+                title="Replace one photo with another by their orange import numbers"
+                onClick={() => setSwapUI((u) => ({ ...u, open: !u.open, msg: '' }))}>
+                {'\u21C4 Swap pic for pic'}
+              </button>
               {heicFix.msg && <span style={{ marginLeft: 8, color: heicFix.msg.includes('failed') ? '#f5a623' : 'var(--muted)' }}>{heicFix.msg}</span>}
             </>
           )}
         </p>
+        {swapUI.open && projPhotos.length > 0 && (() => {
+          const X = photoBySeq(swapUI.from), Y = photoBySeq(swapUI.to);
+          const ready = X && Y && X.id !== Y.id && !swapUI.busy;
+          const go = async () => {
+            if (!ready) return;
+            setSwapUI((u) => ({ ...u, busy: true, msg: '' }));
+            const err = await swapPhotos(c.id, swapUI.from, swapUI.to, swapUI.mode);
+            setSwapUI((u) => ({ ...u, busy: false, from: err ? u.from : '', to: err ? u.to : '',
+              msg: err || (u.mode === 'remove' ? `#${swapUI.to} is in #${swapUI.from}'s slot · #${swapUI.from} moved to "${REMOVED_ALBUM}"` : `#${swapUI.from} and #${swapUI.to} traded places`) }));
+          };
+          const numBox = { width: 64, fontWeight: 900, color: '#f5a623', textAlign: 'center' };
+          const thumb = (ph, label) => (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {ph ? <img src={ph.url} alt="" style={{ width: 56, height: 40, objectFit: 'cover', borderRadius: 5, border: '1px solid var(--line)' }} />
+                  : <span style={{ width: 56, height: 40, borderRadius: 5, border: '1px dashed var(--line)', display: 'inline-block' }} />}
+              <span style={{ fontSize: 11, color: 'var(--muted)', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ph ? `${label} ${ph.filename}${ph.album ? ' · ' + ph.album : ''}` : label}</span>
+            </span>
+          );
+          return (
+            <div style={{ border: '1px solid #1e4fd6', borderRadius: 10, padding: '10px 12px', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span>Replace #</span>
+                <input value={swapUI.from} onChange={(e) => setSwapUI((u) => ({ ...u, from: e.target.value, msg: '' }))} onKeyDown={(e) => { if (e.key === 'Enter') go(); }} placeholder="032" style={numBox} />
+                <span>with #</span>
+                <input value={swapUI.to} onChange={(e) => setSwapUI((u) => ({ ...u, to: e.target.value, msg: '' }))} onKeyDown={(e) => { if (e.key === 'Enter') go(); }} placeholder="087" style={numBox} />
+                <button type="button" className="btn-primary" disabled={!ready} onClick={go}>{swapUI.busy ? 'Working…' : 'Replace'}</button>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>— the <span style={{ color: '#f5a623', fontWeight: 900 }}>orange</span> import numbers, bottom-left of each tile</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
+                <span style={{ color: 'var(--muted)' }}>What happens to #{swapUI.from || 'X'}:</span>
+                <label style={{ cursor: 'pointer' }}><input type="radio" name="swapmode" checked={swapUI.mode === 'trade'} onChange={() => setSwapUI((u) => ({ ...u, mode: 'trade' }))} /> <b>Trade places</b> <span style={{ color: 'var(--muted)' }}>— the two photos change slots</span></label>
+                <label style={{ cursor: 'pointer' }}><input type="radio" name="swapmode" checked={swapUI.mode === 'remove'} onChange={() => setSwapUI((u) => ({ ...u, mode: 'remove' }))} /> <b>Remove original</b> <span style={{ color: 'var(--muted)' }}>— #{swapUI.from || 'X'} moves to album <span style={{ color: '#ff6b6b', fontWeight: 700 }}>{REMOVED_ALBUM}</span></span></label>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {thumb(X, swapUI.from ? `#${swapUI.from}` : 'type a number')}
+                <span style={{ fontSize: 20, color: '#38b6ff' }}>{swapUI.mode === 'remove' ? '\u2192' : '\u21C4'}</span>
+                {thumb(Y, swapUI.to ? `#${swapUI.to}` : 'type a number')}
+                {swapUI.msg && <span style={{ fontSize: 12, color: /^No |Same|Could|stale/.test(swapUI.msg) ? '#f5a623' : '#22c55e' }}>{swapUI.msg}</span>}
+              </div>
+            </div>
+          );
+        })()}
         {roOpen && roClientId === c.id && renderReorder(c)}
         {showRef && projPhotos.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 8, marginBottom: 16 }}>
@@ -4175,6 +4283,30 @@ export default function AdminPage() {
                       button from Edit Photos and only have it in the montage maker"
                       — one place to set it, per montage, so a chosen colour can no
                       longer be silently outranked by a setting somewhere else. */}
+                  {selP.importSeq != null && (() => {
+                    const Y = photoBySeq(edSwap.to);
+                    const ready = Y && Y.id !== selP.id && !edSwap.busy;
+                    const go = async () => {
+                      if (!ready) return;
+                      setEdSwap((u) => ({ ...u, busy: true, msg: '' }));
+                      const err = await swapPhotos(c.id, selP.importSeq, edSwap.to, edSwap.mode);
+                      setEdSwap((u) => ({ ...u, busy: false, to: err ? u.to : '', msg: err || 'Done' }));
+                      if (!err) setSelKey(Y.key); // follow the photo now in this slot
+                    };
+                    return (
+                      <div style={{ border: '1px solid #1e4fd6', borderRadius: 8, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
+                        <span style={{ letterSpacing: '.06em', color: 'var(--muted)', fontSize: 11 }}>REPLACE THIS PHOTO (#{String(selP.importSeq).padStart(3, '0')})</span>
+                        <span>with #</span>
+                        <input value={edSwap.to} onChange={(e) => setEdSwap((u) => ({ ...u, to: e.target.value, msg: '' }))} onKeyDown={(e) => { if (e.key === 'Enter') go(); }} placeholder="087" style={{ width: 60, fontWeight: 900, color: '#f5a623', textAlign: 'center' }} />
+                        <button type="button" className="btn-primary" style={{ padding: '4px 10px', fontSize: 12 }} disabled={!ready} onClick={go}>{edSwap.busy ? 'Working…' : 'Replace'}</button>
+                        {Y && <img src={Y.url} alt="" style={{ width: 44, height: 32, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} />}
+                        {Y && <span style={{ color: 'var(--muted)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{Y.filename}{Y.album ? ` · ${Y.album}` : ''}</span>}
+                        <label style={{ cursor: 'pointer' }}><input type="radio" name="edswapmode" checked={edSwap.mode === 'trade'} onChange={() => setEdSwap((u) => ({ ...u, mode: 'trade' }))} /> Trade places</label>
+                        <label style={{ cursor: 'pointer' }}><input type="radio" name="edswapmode" checked={edSwap.mode === 'remove'} onChange={() => setEdSwap((u) => ({ ...u, mode: 'remove' }))} /> Remove original → <span style={{ color: '#ff6b6b' }}>{REMOVED_ALBUM}</span></label>
+                        {edSwap.msg && <span style={{ color: edSwap.msg === 'Done' ? '#22c55e' : '#f5a623' }}>{edSwap.msg}</span>}
+                      </div>
+                    );
+                  })()}
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
                     <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={rotatingKey === selP.key} title="Rotate this photo 90°" onClick={() => rotateProjPhoto(c.id, selP.key)}>{rotatingKey === selP.key ? 'Rotating…' : 'Rotate ↻'}</button>
                     <a href={selP.downloadUrl || selP.url} download={selP.filename} className="linklike" style={{ fontSize: 12 }}>Download</a>
@@ -5300,6 +5432,16 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 12 }}>
                               <strong>{revPick.mode === 'swap' ? `Pick the photo to put in slot ${revPick.pos + 1}` : `Pick the photo to add after slot ${revPick.pos + 1}`}</strong>
                               <span style={{ color: 'var(--muted)' }}>from this client's photos (their white numbers)</span>
+                              <span style={{ color: 'var(--muted)' }}>· or type the <span style={{ color: '#f5a623', fontWeight: 900 }}>orange</span> #</span>
+                              {/* Josh 9/20: swap by the import number here too, so a client's
+                                  "swap image X with image Y" note is one typed number. */}
+                              <input value={revSeqNum} onChange={(ev) => setRevSeqNum(ev.target.value)} placeholder="087"
+                                onKeyDown={(ev) => { if (ev.key === 'Enter') { const ph = photoBySeq(revSeqNum); if (ph) { revChoose(ph); setRevSeqNum(''); } else setRevMsg(`No photo #${revSeqNum}`); } }}
+                                style={{ width: 60, fontWeight: 900, color: '#f5a623', textAlign: 'center' }} />
+                              {(() => { const ph = photoBySeq(revSeqNum); return ph
+                                ? <><img src={ph.url} alt="" style={{ width: 44, height: 30, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} />
+                                    <button type="button" className="btn-primary" style={{ padding: '3px 10px', fontSize: 11.5 }} onClick={() => { revChoose(ph); setRevSeqNum(''); }}>Use #{revSeqNum}</button></>
+                                : (revSeqNum ? <span style={{ color: '#f5a623' }}>no photo #{revSeqNum}</span> : null); })()}
                               <span style={{ color: 'var(--muted)' }}>· or</span>
                               <button type="button" className="btn-ghost" style={{ padding: '3px 10px', fontSize: 11.5 }} disabled={revUploading}
                                 title="Upload a new photo from your computer into this slot. It is added to the client's photos too."
