@@ -53,6 +53,16 @@ for color in "$DIR"/[0-9][0-9][0-9]HR_*.mp4 "$DIR"/[0-9][0-9][0-9]_*.mp4; do
   #  so it listed the whole folder and "paired" every matte-less clip with the
   #  newest file in Downloads — caption-zone.py that day. Expand first, check.)
   mattes=( "$DIR/${num}${tag}M_${stem}"*.mp4 )
+  # (9/20: 042's matte came down as _V6 beside a _V5 colour pass — the matte
+  #  re-render took the next version number — so fall back to "same render
+  #  number, any name". ###HRM_ / ###M_ + the number is unique to that render.)
+  if [ "${#mattes[@]}" -eq 0 ]; then
+    # Only when this number has ONE colour file — otherwise an older flat export
+    # of the same number (042 …_V2 beside …_V5) would also grab the matte.
+    colors=( "$DIR/${num}${tag}_"*.mp4 )
+    if [ "${#colors[@]}" -eq 1 ]; then mattes=( "$DIR/${num}${tag}M_"*.mp4 )
+    else echo "⚠ ${num}${tag}: no matte named like $(basename "$color") and ${#colors[@]} colour files share this number — skipped. Trash the old one and run again."; continue; fi
+  fi
   matte=""
   if [ "${#mattes[@]}" -gt 0 ]; then matte="$(ls -t "${mattes[@]}" | head -1)"; fi
   out="$DIR/${num}${tag}_${stem}_ALPHA.mov"
