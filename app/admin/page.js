@@ -2230,7 +2230,11 @@ export default function AdminPage() {
     return ['photoblur', 'soft_focus', 'linen', 'gradient', 'library', 'image'].includes(seg.bgMode) ? 'finished' : 'keyable';
   };
   // A render's delivery: stored on new renders; inferred for older ones.
-  const renderIsKeyable = (m) => (m.delivery ? m.delivery === 'keyable' : ((m.keyColor || '#000000') === '#000000' && !FINISHED_ONLY.has(m.style)));
+  // 9/20: an older rough on a GREEN or MAGENTA key was guessed as Background
+  // included (only black counted), so Step 1 exported it as one flat file with
+  // the key colour baked in and Alpha Merge had nothing to merge. A keyed rough
+  // of ANY colour is keyable — the full-rez alpha pass re-renders it on black.
+  const renderIsKeyable = (m) => (m.delivery ? m.delivery === 'keyable' : !FINISHED_ONLY.has(m.style));
   const KEY_COLOR_OPTS = [
     { value: '#000000', label: 'Alpha (default)', note: 'The default for Keyable. Renders over black; exports come as a colour pass + matte pass that Alpha Merge turns into one .mov with a true alpha channel — no chroma key, any colour clothing.' },
     { value: '#FF00FF', label: 'Magenta', note: 'Magenta almost never occurs in a real photograph, so nothing in the pictures keys away; edges key a little softer than green.' },
