@@ -49,7 +49,12 @@ for color in "$DIR"/[0-9][0-9][0-9]HR_*.mp4 "$DIR"/[0-9][0-9][0-9]_*.mp4; do
   stem="$(printf '%s' "$stem" | sed -E 's/ \([0-9]+\)$//')"   # drop a trailing " (1)" the browser added
   case "$stem" in *_ALPHA) continue ;; esac
   # the matte may carry its own " (n)" — take the newest that matches
-  matte="$(ls -t "$DIR/${num}${tag}M_${stem}"*.mp4 2>/dev/null | head -1)"
+  # (Bug 9/20: with nullglob, an unmatched pattern left `ls -t` with NO argument,
+  #  so it listed the whole folder and "paired" every matte-less clip with the
+  #  newest file in Downloads — caption-zone.py that day. Expand first, check.)
+  mattes=( "$DIR/${num}${tag}M_${stem}"*.mp4 )
+  matte=""
+  if [ "${#mattes[@]}" -gt 0 ]; then matte="$(ls -t "${mattes[@]}" | head -1)"; fi
   out="$DIR/${num}${tag}_${stem}_ALPHA.mov"
   [ -n "$matte" ] && [ -f "$matte" ] || continue
   found=$((found+1))
