@@ -2740,7 +2740,10 @@ export default function AdminPage() {
   // "Download new" only offers what is new.
   function downloadPairs(pairs) {
     const files = [];
-    for (const m of pairs) { files.push(m); files.push(montages.find((x) => x.alphaPair === m.alphaPair && x.matte)); }
+    // A "Background included" single file has no pair id — do NOT look up a
+    // matte for it (9/20: alphaPair null matched an old un-paired matte, so six
+    // copies of 098HRM came down beside single-file finals).
+    for (const m of pairs) { files.push(m); if (m.alphaPair) files.push(montages.find((x) => x.alphaPair === m.alphaPair && x.matte)); }
     files.filter(Boolean).forEach((v, i) => setTimeout(() => {
       const a = document.createElement('a');
       a.href = v.downloadUrl || v.url; a.download = ''; a.rel = 'noopener';
