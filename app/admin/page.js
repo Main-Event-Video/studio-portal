@@ -963,6 +963,10 @@ export default function AdminPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [lightbox]);
   const [pendingHide, setPendingHide] = useState(null); // album name awaiting hide-confirm
+  // Josh 9/22: hidden albums fold to one line in Files (and sink to the bottom)
+  // so a client's "delete everything so I can re-upload" doesn't leave a wall of
+  // greyed-out rows. Names of hidden albums he has unfolded this session.
+  const [hiddenOpen, setHiddenOpen] = useState(() => new Set());
   const lastPickRef = useRef(null);
 
   // deliver a cut (step 6)
@@ -3688,7 +3692,12 @@ export default function AdminPage() {
       const k = f.folderPath || '';
       (groups[k] = groups[k] || []).push(f);
     }
-    const keys = Object.keys(groups).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, undefined, { numeric: true })));
+    const isHiddenGroup = (k) => k !== '' && k !== TRASH_FOLDER && groups[k].length > 0 && groups[k].every((f) => f.hidden);
+    const keys = Object.keys(groups).sort((a, b) => {
+      const ha = isHiddenGroup(a), hb = isHiddenGroup(b);
+      if (ha !== hb) return ha ? 1 : -1;            // hidden albums last
+      return a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, undefined, { numeric: true });
+    });
     const folderNames = keys.filter((k) => k !== '');
     const orderedIds = keys.flatMap((k) => groups[k].map((f) => f.id)); // on-screen order (shift-range)
     const selN = selIds.size;
@@ -3743,6 +3752,21 @@ export default function AdminPage() {
             background: hidden ? 'rgba(127,127,127,0.03)' : isAlbum ? 'linear-gradient(160deg, rgba(124,92,255,0.07), rgba(124,92,255,0.02))' : 'rgba(127,127,127,0.03)',
             opacity: hidden ? 0.6 : 1,
           };
+          if (hidden && !hiddenOpen.has(k)) {
+            return (
+              <section key={k} style={{ ...cardStyle, padding: '8px 14px', marginTop: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--muted)', flex: '0 0 auto' }} />
+                  <strong>{k}</strong>
+                  <span style={{ color: 'var(--muted)', fontSize: 12 }}>hidden · {list.length} photo{list.length === 1 ? '' : 's'} · not shown to the client or the Montage Maker</span>
+                  <span style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
+                    <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setHiddenOpen((st) => new Set(st).add(k))}>Show files</button>
+                    <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--ok)' }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'unhideBox', name: k })}>↩ Restore album</button>
+                  </span>
+                </div>
+              </section>
+            );
+          }
           return (
             <section key={k || '__loose__'} style={cardStyle}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
@@ -3798,7 +3822,10 @@ export default function AdminPage() {
                       Renumber 1…{list.length}
                     </button>
                     {isAlbum && (hidden ? (
-                      <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--ok)' }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'unhideBox', name: k })}>↩ Restore album</button>
+                      <>
+                        <button type="button" className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setHiddenOpen((st) => { const n = new Set(st); n.delete(k); return n; })}>Fold</button>
+                        <button type="button" className="btn-ghost" style={{ fontSize: 12, color: 'var(--ok)' }} disabled={mediaBusy} onClick={() => mediaAction(c.id, { action: 'unhideBox', name: k })}>↩ Restore album</button>
+                      </>
                     ) : pendingHide === k ? (
                       <span style={{ whiteSpace: 'nowrap' }}>
                         <span style={{ color: 'var(--muted)', fontSize: 12, marginRight: 6 }}>Hide album + its {list.length} photos? (reversible)</span>
