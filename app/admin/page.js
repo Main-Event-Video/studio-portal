@@ -740,7 +740,7 @@ export default function AdminPage() {
 
   // multi-segment montage builder. One montage per segment; typed photo order.
   const segKey = useRef(1);
-  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: false, green: false, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#000000', bgBlur: '0', sbMode: 'none', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
+  const newSegment = () => ({ key: `seg${segKey.current++}`, photos: '', album: '', style: 'hollywood', speed: '', paceMode: 'perphoto', tMin: '', tSec: '', tFrames: '', cards: false, green: false, bgMode: 'default', bgUrl: '', bgKey: '', bgKind: '', bgClipS: null, bgTint: '#102040', bgOpacity: '50', mpTransition: 'record-fwd', mpStagger: '', mpHold: '', duoPalette: '', duoTreatment: '', glassLight: true, fbAtmosphere: true, fbFrameW: null, fbFrameColor: '#FFFFFF', keyColor: '#00FF00', bgBlur: '0', sbMode: 'none', sbW: BORDER_DEFAULT.w, sbColor: BORDER_DEFAULT.color, atmoOn: false, atmoI: 100, atmoDust: 100, atmoLeak: 100, neonOn: false, neonI: 100, neonT: 100, neonColor: '#00E5FF', neonColors: ['#00E5FF'], stillsMode: 'cycle', stillsScreens: 'off', stillsShadow: true, stillsMix: [], stillsOpen: false });
   const [segments, setSegments] = useState([]);          // seeded when a client's montage tool opens
   const [projPhotos, setProjPhotos] = useState([]);      // [{ index, key, filename, url }]
   // Videos are kept OUT of projPhotos on purpose. Roughly twenty places treat
@@ -2240,9 +2240,10 @@ export default function AdminPage() {
   // of ANY colour is keyable — the full-rez alpha pass re-renders it on black.
   const renderIsKeyable = (m) => (m.delivery ? m.delivery === 'keyable' : !FINISHED_ONLY.has(m.style));
   const KEY_COLOR_OPTS = [
-    { value: '#000000', label: 'Alpha (default)', note: 'The default for Keyable. Renders over black; exports come as a colour pass + matte pass that Alpha Merge turns into one .mov with a true alpha channel — no chroma key, any colour clothing.' },
+    { value: '#00FF00', label: 'Bright green (default)', note: 'Josh 9/23: rough cuts key on pure green — ONE cheap low-rez render, no matte pass. Brighter than the standard chroma green so it never blends with anything in a photo, and unlike magenta it does not pull saturation. The full-rez alpha finish re-renders on black anyway.' },
+    { value: '#000000', label: 'Alpha', note: 'For Keyable. Renders over black; exports come as a colour pass + matte pass that Alpha Merge turns into one .mov with a true alpha channel — no chroma key, any colour clothing.' },
     { value: '#FF00FF', label: 'Magenta', note: 'Magenta almost never occurs in a real photograph, so nothing in the pictures keys away; edges key a little softer than green.' },
-    { value: '#00B140', label: 'Green', note: 'Cleanest key. Wrong when the photos contain foliage, grass or green clothing.' },
+    { value: '#00B140', label: 'Green (standard)', note: 'Cleanest key. Wrong when the photos contain foliage, grass or green clothing.' },
     { value: '#0047BB', label: 'Blue', note: 'The classic alternative — but sky, water, denim and eyes are blue, so it trades one collision for another.' },
   ];
   // THE MONTAGE-WIDE BORDER OVERRIDE. Josh 2026-09-08: "i want the Choose Style
