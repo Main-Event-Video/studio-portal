@@ -2158,7 +2158,7 @@ export default function AdminPage() {
                       };
                       return (
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {opt('keyable', 'Keyable', 'Transparent around the photos. Low rez and full rez come as a colour + matte pair → Alpha Merge → one .mov with alpha for Premiere.')}
+                          {opt('keyable', 'Keyable', 'Low rez: one file on bright green (or the key colour below) to key. Export Full Rez: colour + matte pair → Alpha Merge → one .mov with alpha for Premiere.')}
                           {opt('finished', 'Background included', locked ? 'This style is the picture, edge to edge — always one file.' : 'The montage is the picture, edge to edge. Always one file, never a matte.')}
                         </div>
                       );
@@ -2166,10 +2166,10 @@ export default function AdminPage() {
                   </div>
                   {deliveryOf(seg) === 'keyable' && (
                   <details style={{ marginTop: 8 }}>
-                    <summary style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>Advanced: chroma key instead of alpha</summary>
+                    <summary style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>Advanced: low-rez key colour</summary>
                     <div style={{ marginTop: 6, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                      {KEY_COLOR_OPTS.map((k) => {
-                        const on = (seg.keyColor || '#000000') === k.value;
+                      {KEY_COLOR_OPTS.filter((k) => k.value !== '#000000').map((k) => {
+                        const on = ((seg.keyColor && seg.keyColor !== '#000000') ? seg.keyColor : '#00FF00') === k.value;
                         return (
                           <button key={k.value} type="button" onClick={() => apply({ keyColor: k.value })}
                             style={{
@@ -2187,7 +2187,7 @@ export default function AdminPage() {
                       })}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-                      {(KEY_COLOR_OPTS.find((k) => k.value === (seg.keyColor || '#000000')) || KEY_COLOR_OPTS[0]).note}
+                      {(KEY_COLOR_OPTS.find((k) => k.value === ((seg.keyColor && seg.keyColor !== '#000000') ? seg.keyColor : '#00FF00')) || KEY_COLOR_OPTS[0]).note}
                     </div>
                   </details>
                   )}
@@ -2869,7 +2869,7 @@ export default function AdminPage() {
     try {
       await api('/api/admin/montage/finalize', {
         method: 'POST',
-        body: JSON.stringify({ montageId: revFor.id, full: !!full || revMode === 'matte', matte: revMode === 'matte', alpha: revMode === 'alpha', keyColor: revKey, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
+        body: JSON.stringify({ montageId: revFor.id, full: !!full || revMode === 'matte', matte: revMode === 'matte', alpha: revMode === 'alpha', keyColor: (!full && revKey === '#000000') ? '#00FF00' : revKey, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
       });
       setRevMsg('Revision started — it will appear in the list as a new render.');
       setRevFor(null);
@@ -3055,7 +3055,9 @@ export default function AdminPage() {
         const segDelivery = deliveryOf(s);
         // A low-rez alpha pair only for a Keyable segment on the Alpha key; a
         // Background-included segment (or a chroma key) is one file.
-        const alphaPairForSeg = (segDelivery === 'keyable' && (s.keyColor || '#000000') === '#000000' && s.autoAlpha !== false) ? (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`) : null;
+        // Josh 9/28: low rez is NEVER a pair — one file on green/magenta to key.
+        // Only Export Full Rez makes the colour + matte pair.
+        const alphaPairForSeg = null;
         const r = await api('/api/admin/montage', {
           method: 'POST',
           body: JSON.stringify({
@@ -3105,7 +3107,7 @@ export default function AdminPage() {
             fbFrameW: (s.fbFrameW === null || s.fbFrameW === undefined) ? null : Number(s.fbFrameW),
             fbFrameColor: s.fbFrameColor || null,
             // The backdrop colour the montage is meant to be keyed against.
-            keyColor: segDelivery === 'keyable' ? (s.keyColor || '#000000') : '#000000',
+            keyColor: segDelivery === 'keyable' ? ((s.keyColor && s.keyColor !== '#000000') ? s.keyColor : '#00FF00') : '#000000',
             delivery: segDelivery,
             // Montage-wide border override from the style panel. 'edits' (the
             // default) sends null, so nothing changes for an untouched montage.
@@ -5398,7 +5400,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                           document.body.appendChild(a); a.click(); a.remove();
                         }, i * 1500));
                         const thisRez = m.watermarked ? 'low rez' : 'full rez';
-                        const thisLink = !keyable
+                        const thisLink = (!keyable || (m.watermarked && !m.alphaPair))
                           ? <a href={m.downloadUrl || m.url} download>{`Download ${thisRez}`}</a>
                           : !sib
                             ? <button type="button" className="linklike" title="This keyable render has no matte pass yet — this starts one at the same size so you get the pair"
@@ -5543,8 +5545,8 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                             const keyable = renderIsKeyable(m);
                             return (<>
                               <button type="button" className="btn-primary" disabled={revBusy || revLoading}
-                                title={keyable ? 'Low rez colour + matte pair to cut with' : 'Low rez, one file'}
-                                onClick={() => renderRevision(false, keyable ? 'alpha' : 'normal')}>Render revision — low rez</button>
+                                title={keyable ? 'Low rez, one file on the key colour (no matte, no pair)' : 'Low rez, one file'}
+                                onClick={() => renderRevision(false, 'normal')}>Render revision — low rez</button>
                               <button type="button" className="btn-ghost" disabled={revBusy || revLoading}
                                 title={keyable ? 'Full rez colour + matte pair → Alpha Merge' : 'Full rez, one file'}
                                 onClick={() => renderRevision(true, keyable ? 'alpha' : 'normal')}>full rez</button>
