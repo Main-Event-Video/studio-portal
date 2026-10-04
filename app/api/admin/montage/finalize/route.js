@@ -21,19 +21,29 @@ const CHROMA_GREEN = '#00B140';
 
 // Same header-only dimension probe the main render route uses (tiled/print styles
 // need each photo's real aspect). Fully guarded → null falls back to landscape.
+// Same two-step probe as the draft route (header first, whole file second).
+// 10/3: this route only tried the first 256 KB, which fails on big phone JPEGs
+// → dims unknown → Stills drew a 3:2 box and letterboxed the photo (Josh's
+// "black bar on the bottom of the frames") on revisions that the draft got right.
 async function probeDims(url) {
-  try {
-    const sharp = (await import('sharp')).default;
-    const res = await fetch(url, { headers: { Range: 'bytes=0-262143' } });
-    if (!res.ok && res.status !== 206) return null;
+  let sharp;
+  try { sharp = (await import('sharp')).default; } catch (e) { console.error('[probeDims] sharp unavailable', e?.message); return null; }
+  const read = async (headers) => {
+    const res = await fetch(url, headers ? { headers } : undefined);
+    if (!res.ok && res.status !== 206) throw new Error(`fetch ${res.status}`);
     const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > 40 * 1024 * 1024) throw new Error(`too large (${buf.length} bytes)`);
     const md = await sharp(buf).metadata();
-    if (md && md.width && md.height) {
-      const rot = md.orientation >= 5 && md.orientation <= 8;
-      return { w: rot ? md.height : md.width, h: rot ? md.width : md.height };
+    if (!(md && md.width && md.height)) throw new Error('no size in metadata');
+    const rot = md.orientation >= 5 && md.orientation <= 8;
+    return { w: rot ? md.height : md.width, h: rot ? md.width : md.height };
+  };
+  try { return await read({ Range: 'bytes=0-262143' }); } catch (e1) {
+    try { return await read(null); } catch (e2) {
+      console.error('[probeDims] unknown dims', String(url).split('?')[0].slice(-80), 'header:', e1?.message, 'full:', e2?.message);
+      return null;
     }
-  } catch { /* unknown → caller defaults to landscape */ }
-  return null;
+  }
 }
 
 export async function POST(request) {
