@@ -1552,6 +1552,192 @@ export default function AdminPage() {
     return '';
   }
 
+  const PHOTO_DEF_E = { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null };
+  const photoStyleFor = (e) => {
+            const pos = e.fit === 'fill'
+              ? ((Number.isFinite(e.posX) && Number.isFinite(e.posY)) ? `${e.posX}% ${e.posY}%`
+                 : e.anchor === 'top' ? '50% 0%' : e.anchor === 'bottom' ? '50% 100%' : e.anchor === 'left' ? '0% 50%' : e.anchor === 'right' ? '100% 50%' : '50% 50%')
+              : 'center';
+            // Auto color = one-tap enhance (a starting point to fine-tune with the
+            // sliders): a brightness + contrast + saturation lift, multiplied on top
+            // of the manual contrast/saturation. Now shown in the preview so On/Off
+            // is visibly different (was omitted here → toggling looked identical).
+            const cc = e.colorCorrect ? { b: 1.08, c: 1.14, s: 1.20 } : { b: 1, c: 1, s: 1 };
+            let f = e.mode === 'bw' ? 'grayscale(1) ' : e.mode === 'sepia' ? 'sepia(.8) ' : '';
+            const contrast = ((e.contrast || 100) / 100) * cc.c;
+            const sat = (e.mode === 'bw' ? 0 : (e.saturation || 100) / 100) * cc.s;
+            f += `brightness(${cc.b}) contrast(${contrast.toFixed(3)}) saturate(${sat.toFixed(3)})`;
+            return { objectFit: e.fit === 'fill' ? 'cover' : 'contain', objectPosition: pos, transform: `scale(${(e.size || 100) / 100})`, filter: f };
+          };
+          // Learn a photo's real shape once, the first time its <img> decodes.
+  const noteDimsFor = (key) => (ev) => {
+            const t = ev.currentTarget;
+            if (!t || !t.naturalWidth || !t.naturalHeight) return;
+            setPhotoDims((d) => (d[key] ? d : { ...d, [key]: { w: t.naturalWidth, h: t.naturalHeight } }));
+          };
+          // The inline editor for ONE photo — opens directly under its
+          // thumbnail on double-click. ‹ › move to the previous/next photo.
+  // THE BIG PHOTO EDITOR, shared. Plain call = Edit Photos (edits persist on the
+  // client). opts.rev = inside Revise (Josh 10/3: "when I select revise … could
+  // I double click an image and crop, resize or color it?"): the edits live on
+  // that revision's slot, go to the re-render, and ALSO to Edit Photos when
+  // "Also apply to albums" is ticked. Crop / swap / rotate / replace / remove
+  // are library actions, so they stay out of the Revise flavour.
+  const photoEditorPanel = (selP, opts = {}) => {
+            const rev = !!opts.rev;
+            const clientId = opts.clientId;
+            const e = rev ? { ...PHOTO_DEF_E, ...(opts.edits || {}) } : { ...PHOTO_DEF_E, ...(photoEdits.photos[selP.key] || {}) };
+            const setE = (patch) => (rev ? opts.onEdit(patch) : editPhoto(clientId, selP.key, patch));
+            const idx = rev ? opts.index : projPhotos.findIndex((p) => p.key === selP.key);
+            const total = rev ? opts.total : projPhotos.length;
+            const goto = (j) => { if (rev) { if (opts.goto) opts.goto(j); return; } if (j >= 0 && j < projPhotos.length) setSelKey(projPhotos[j].key); };
+            const startDrag = (ev) => {
+              if (e.fit !== 'fill') return;
+              const r = ev.currentTarget.getBoundingClientRect();
+              const px = Number.isFinite(e.posX) ? e.posX : (e.anchor === 'top' ? 0 : e.anchor === 'bottom' ? 100 : 50);
+              const py = Number.isFinite(e.posY) ? e.posY : 50;
+              bigDragRef.current = { sx: ev.clientX, sy: ev.clientY, px, py, w: r.width, h: r.height };
+              try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch (_) {}
+            };
+            const moveDrag = (ev) => {
+              const d = bigDragRef.current; if (!d) return;
+              const nx = Math.max(0, Math.min(100, d.px - (ev.clientX - d.sx) / d.w * 140));
+              const ny = Math.max(0, Math.min(100, d.py - (ev.clientY - d.sy) / d.h * 140));
+              setE({ posX: Math.round(nx), posY: Math.round(ny) });
+            };
+            const endDrag = () => { bigDragRef.current = null; };
+            const arrow = (dir, disabled) => (
+              <button type="button" onClick={() => goto(idx + dir)} disabled={disabled} aria-label={dir < 0 ? 'Previous photo' : 'Next photo'}
+                style={{ position: 'absolute', top: '50%', [dir < 0 ? 'left' : 'right']: 8, transform: 'translateY(-50%)', zIndex: 4, width: 40, height: 40, borderRadius: '50%', border: 'none', background: disabled ? 'rgba(0,0,0,.25)' : 'rgba(0,0,0,.6)', color: '#fff', fontSize: 22, lineHeight: 1, cursor: disabled ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{dir < 0 ? '‹' : '›'}</button>
+            );
+            return (
+              <div style={{ gridColumn: '1 / -1', border: '1px solid var(--line)', borderRadius: 10, padding: 12, margin: '4px 0 8px', background: 'rgba(127,127,127,0.04)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                  <strong style={{ fontSize: 13 }}>{rev ? 'Editing slot' : 'Editing photo'} {selP.index}{' '}
+                    <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· {selP.filename}</span></strong>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rev ? (opts.alsoAlbums ? 'This revision + Edit Photos' : 'This revision only') : editsSaving ? 'Saving…' : editsSaved ? 'Saved' : ''}</span>
+                    <button type="button" className="linklike" onClick={() => (rev ? opts.onClose() : setSelKey(null))}>Close ✕</button>
+                  </span>
+                </div>
+                <div
+                  onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag}
+                  style={{ position: 'relative', width: '100%', maxWidth: 720, margin: '0 auto', aspectRatio: '16 / 9', background: '#000', borderRadius: 10, overflow: 'hidden', containerType: 'size', cursor: e.fit === 'fill' ? 'grab' : 'default' }}
+                >
+                  <img src={(selP.clientCrop && e.useOriginal && selP.originalUrl) ? selP.originalUrl : selP.url}
+                    alt={selP.filename} draggable={false} onLoad={noteDimsFor(selP.key)}
+                    style={{ width: '100%', height: '100%', userSelect: 'none', ...photoStyleFor(e) }} />
+                  {arrow(-1, idx <= 0)}
+                  {arrow(1, idx >= total - 1)}
+                  <span style={{ position: 'absolute', top: 8, left: 8, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '2px 8px', borderRadius: 6 }}>Photo {selP.index} of {total}</span>
+                  <span style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#e9dcc0', padding: '3px 10px', borderRadius: 6 }}>
+                    {e.fit === 'fill' ? 'Fill — drag the photo to position it' : 'Fit — whole photo, nothing cropped'}
+                  </span>
+                </div>
+                {/* THE CLIENT CROPPED THIS ONE. Josh wanted to know before he
+                    starts reframing it — "so that I know not to change it and the
+                    montage knows to keep it as is" — with a way out for a look
+                    that needs the full frame. The override is PER MONTAGE: it
+                    never touches what the client saved, so their crop is still
+                    there for the next one. */}
+                {!rev && selP.clientCrop && (
+                  <div style={{ maxWidth: 720, margin: '12px auto 0', border: '1px solid rgba(255,212,121,0.45)',
+                    background: 'rgba(255,212,121,0.07)', borderRadius: 9, padding: '9px 12px' }}>
+                    <div style={{ fontSize: 12, color: '#ffd479', fontWeight: 600 }}>
+                      {selP.cropBy === 'admin' ? 'Cropped by you' : 'Cropped by the client'}{selP.cropRatio ? ` to ${selP.cropRatio}` : ''}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
+                      <button type="button" className={!e.useOriginal ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 10px', fontSize: 11 }}
+                        onClick={() => setE({ useOriginal: false })}>Use their crop</button>
+                      <button type="button" className={e.useOriginal ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 10px', fontSize: 11 }}
+                        onClick={() => setE({ useOriginal: true })}>Use the full original</button>
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                        This montage only — the crop itself is untouched.
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', maxWidth: 720, margin: '12px auto 0', fontSize: 12, color: 'var(--muted)' }}>
+                  {!rev && (
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Crop
+                    <button type="button" className={selP.clientCrop ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }}
+                      title="Drag a 16:9 or 9:16 window over the photo. The original is kept."
+                      onClick={() => setCropFor(selP)}>{selP.clientCrop ? `Cropped${selP.cropRatio ? ` ${selP.cropRatio}` : ''} · edit ⤢` : 'Drag to crop ⤢'}</button>
+                  </div>
+                  )}
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Framing
+                    {['top', 'center', 'bottom'].map((a) => (
+                      <button key={a} type="button" className={e.anchor === a && e.fit === 'fill' && !Number.isFinite(e.posX) ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }}
+                        onClick={() => setE({ anchor: a, fit: 'fill', posX: null, posY: null })}>{a[0].toUpperCase() + a.slice(1)}</button>
+                    ))}
+                  </div>
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Fit
+                    <button type="button" className={e.fit === 'fill' ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => setE({ fit: 'fill' })}>Fill</button>
+                    <button type="button" className={e.fit === 'fit' ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => setE({ fit: 'fit' })}>Fit</button>
+                    <span style={{ marginLeft: 6 }}>Size</span>
+                    <input type="range" min="60" max="140" step="5" value={e.size || 100} style={{ width: 110 }} onChange={(ev) => setE({ size: Number(ev.target.value) })} />
+                    <span style={{ display: 'inline-block', minWidth: 40 }}>{e.size || 100}%</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', maxWidth: 720, margin: '10px auto 0', fontSize: 12, color: 'var(--muted)' }}>
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Look
+                    {[['color', 'Colour'], ['bw', 'B&W'], ['sepia', 'Sepia']].map((mm) => (
+                      <button key={mm[0]} type="button" className={e.mode === mm[0] ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => setE({ mode: mm[0] })}>{mm[1]}</button>
+                    ))}
+                  </div>
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Contrast
+                    <input type="range" min="50" max="200" step="2" value={e.contrast || 100} style={{ width: 100 }} onChange={(ev) => setE({ contrast: Number(ev.target.value) })} />
+                    <span style={{ display: 'inline-block', minWidth: 40 }}>{e.contrast || 100}%</span>
+                    <span style={{ marginLeft: 8 }}>Saturation</span>
+                    <input type="range" min="0" max="200" step="5" value={e.saturation || 100} style={{ width: 100 }} onChange={(ev) => setE({ saturation: Number(ev.target.value) })} />
+                    <span style={{ display: 'inline-block', minWidth: 40 }}>{e.saturation || 100}%</span>
+                  </div>
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Auto color
+                    <button type="button" className={!e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => setE({ colorCorrect: false })}>Off</button>
+                    <button type="button" className={e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => setE({ colorCorrect: true })}>On</button>
+                  </div>
+                  {/* BORDER LIVES IN CHOOSE STYLE ONLY. Josh 2026-09-11: "I think
+                      I've made it too confusing on myself. Let's remove the Border
+                      button from Edit Photos and only have it in the montage maker"
+                      — one place to set it, per montage, so a chosen colour can no
+                      longer be silently outranked by a setting somewhere else. */}
+                  {!rev && selP.importSeq != null && (() => {
+                    const Y = photoBySeq(edSwap.to);
+                    const ready = Y && Y.id !== selP.id && !edSwap.busy;
+                    const go = async () => {
+                      if (!ready) return;
+                      setEdSwap((u) => ({ ...u, busy: true, msg: '' }));
+                      const err = await swapPhotos(clientId, selP.importSeq, edSwap.to, edSwap.mode);
+                      setEdSwap((u) => ({ ...u, busy: false, to: err ? u.to : '', msg: err || 'Done' }));
+                      if (!err) setSelKey(Y.key); // follow the photo now in this slot
+                    };
+                    return (
+                      <div style={{ border: '1px solid #1e4fd6', borderRadius: 8, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
+                        <span style={{ letterSpacing: '.06em', color: 'var(--muted)', fontSize: 11 }}>REPLACE THIS PHOTO (#{String(selP.importSeq).padStart(3, '0')})</span>
+                        <span>with #</span>
+                        <input value={edSwap.to} onChange={(e) => setEdSwap((u) => ({ ...u, to: e.target.value, msg: '' }))} onKeyDown={(e) => { if (e.key === 'Enter') go(); }} placeholder="087" style={{ width: 60, fontWeight: 900, color: '#f5a623', textAlign: 'center' }} />
+                        <button type="button" className="btn-primary" style={{ padding: '4px 10px', fontSize: 12 }} disabled={!ready} onClick={go}>{edSwap.busy ? 'Working…' : 'Replace'}</button>
+                        {Y && <img src={Y.url} alt="" style={{ width: 44, height: 32, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} />}
+                        {Y && <span style={{ color: 'var(--muted)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{Y.filename}{Y.album ? ` · ${Y.album}` : ''}</span>}
+                        <label style={{ cursor: 'pointer' }}><input type="radio" name="edswapmode" checked={edSwap.mode === 'trade'} onChange={() => setEdSwap((u) => ({ ...u, mode: 'trade' }))} /> Trade places</label>
+                        <label style={{ cursor: 'pointer' }}><input type="radio" name="edswapmode" checked={edSwap.mode === 'remove'} onChange={() => setEdSwap((u) => ({ ...u, mode: 'remove' }))} /> Remove original → <span style={{ color: '#ff6b6b' }}>{REMOVED_ALBUM}</span></label>
+                        {edSwap.msg && <span style={{ color: edSwap.msg === 'Done' ? '#22c55e' : '#f5a623' }}>{edSwap.msg}</span>}
+                      </div>
+                    );
+                  })()}
+                  {!rev && (
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
+                    <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={rotatingKey === selP.key} title="Rotate this photo 90°" onClick={() => rotateProjPhoto(clientId, selP.key)}>{rotatingKey === selP.key ? 'Rotating…' : 'Rotate ↻'}</button>
+                    <a href={selP.downloadUrl || selP.url} download={selP.filename} className="linklike" style={{ fontSize: 12 }}>Download</a>
+                    <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={replacing === selP.key} onClick={() => { replaceKeyRef.current = selP.key; if (replaceInputRef.current) replaceInputRef.current.click(); }}>{replacing === selP.key ? 'Uploading…' : 'Replace'}</button>
+                    <button type="button" className="linklike" style={{ fontSize: 12 }} onClick={() => setE({ removed: !e.removed })}>{e.removed ? 'Restore' : 'Remove'}</button>
+                  </div>
+                  )}
+                </div>
+              </div>
+            );
+          };
+
   // Load the client's FULL timeline order (photos + videos) once and cache it.
   // Everything after is done locally, so drags are instant.
   async function ensureFullOrder(clientId) {
@@ -2741,6 +2927,17 @@ export default function AdminPage() {
   // Photos, old one goes to Removed images; Remove → old one goes to Removed
   // images. Add/Upload leave the albums alone. Untick for a one-off render.
   const [revApply, setRevApply] = useState(true);
+  const [revSel, setRevSel] = useState(null);      // slot index open in the big editor inside Revise
+  // The snapshot stores edits under the render's names; the editor uses Edit Photos' names.
+  const snapEdits = (e) => ({
+    anchor: ['top', 'center', 'bottom', 'left', 'right'].includes(e.framing) ? e.framing : 'top',
+    fit: e.fit === 'fill' ? 'fill' : e.fit === 'fit' ? 'fit' : null,
+    size: Number(e.size) || 100, mode: ['color', 'bw', 'sepia'].includes(e.mode) ? e.mode : 'color',
+    contrast: Number.isFinite(Number(e.contrast)) ? Number(e.contrast) : 100,
+    saturation: Number.isFinite(Number(e.saturation)) ? Number(e.saturation) : 100,
+    posX: Number.isFinite(Number(e.posX)) ? Number(e.posX) : null, posY: Number.isFinite(Number(e.posY)) ? Number(e.posY) : null,
+    colorCorrect: !!e.colorCorrect,
+  });
   const [revKey, setRevKey] = useState('#FF00FF');   // key colour for the revision (Josh 9/15)
   const [batchBusy, setBatchBusy] = useState(false);   // batch alpha export in flight
   const [numGridOpen, setNumGridOpen] = useState(false); // the pick-by-number grid in the alpha panel
@@ -2795,6 +2992,7 @@ export default function AdminPage() {
   const revDrag = useRef(null);                    // index being dragged
   const [revOver, setRevOver] = useState(null);    // { pos, side: 'before' | 'after' }
   function revMove(from, pos, side) {
+    setRevSel(null);
     setRevSeq((sq) => {
       if (from == null || from < 0 || from >= sq.length) return sq;
       const next = sq.slice();
@@ -2808,7 +3006,7 @@ export default function AdminPage() {
 
   async function openRevise(m) {
     if (revFor?.id === m.id) { setRevFor(null); return; }
-    setRevFor(m); setRevPick(null); setRevMsg(''); setRevLoading(true); setRevSeq([]);
+    setRevFor(m); setRevPick(null); setRevSel(null); setRevMsg(''); setRevLoading(true); setRevSeq([]);
     setRevKey(m.keyColor || '#000000'); setRevMode('normal');
     try {
       const { photos, sequence } = await api(`/api/admin/montage/photos?montageId=${m.id}`);
@@ -2818,7 +3016,7 @@ export default function AdminPage() {
       if (!Array.isArray(sequence)) throw new Error('This render was made before its exact settings were saved, so it cannot be revised — run a fresh draft.');
       setRevSeq(sequence.map((e) => (e.type === 'placeholder'
         ? { type: 'placeholder', name: e.name }
-        : { type: 'photo', r2_key: e.r2_key, ...(th[e.renderKey] || th[e.r2_key] || {}) })));
+        : { type: 'photo', r2_key: e.r2_key, libKey: e.sourceKey || e.r2_key, edits: snapEdits(e), ...(th[e.renderKey] || th[e.r2_key] || {}) })));
       // The library picker draws on the client's Edit Photos strip.
       if (m.clientId) loadProjPhotos(m.clientId);
     } catch (e) {
@@ -2841,7 +3039,7 @@ export default function AdminPage() {
   }
   function revRemove(pos) {
     const X = revSlotPhoto(revSeq[pos]);
-    setRevSeq((sq) => sq.filter((_, i) => i !== pos)); setRevPick(null);
+    setRevSeq((sq) => sq.filter((_, i) => i !== pos)); setRevPick(null); setRevSel(null);
     revApplyToAlbums(X, null, 'Removed from this render');
   }
   function revChoose(p) {
@@ -2869,7 +3067,7 @@ export default function AdminPage() {
     try {
       await api('/api/admin/montage/finalize', {
         method: 'POST',
-        body: JSON.stringify({ montageId: revFor.id, full: !!full || revMode === 'matte', matte: revMode === 'matte', alpha: revMode === 'alpha', keyColor: (!full && revKey === '#000000') ? '#00FF00' : revKey, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key })) }),
+        body: JSON.stringify({ montageId: revFor.id, full: !!full || revMode === 'matte', matte: revMode === 'matte', alpha: revMode === 'alpha', keyColor: (!full && revKey === '#000000') ? '#00FF00' : revKey, sequence: revSeq.map((e) => (e.type === 'placeholder' ? { type: 'placeholder', name: e.name } : { r2_key: e.r2_key, ...(e.editsDirty && e.edits ? { edits: e.edits } : {}) })) }),
       });
       setRevMsg('Revision started — it will appear in the list as a new render.');
       setRevFor(null);
@@ -4216,177 +4414,10 @@ export default function AdminPage() {
         {/* Photo editor — click a thumbnail to edit it large. Edits persist on the
             client and apply to EVERY style. Thumbnails mirror each photo's edits. */}
         {projPhotos.length > 0 && (() => {
-          const defE = { anchor: 'top', fit: 'fit', size: 100, removed: false, colorCorrect: false, mode: 'color', contrast: 100, saturation: 100, posX: null, posY: null };
-          const styleFor = (e) => {
-            const pos = e.fit === 'fill'
-              ? ((Number.isFinite(e.posX) && Number.isFinite(e.posY)) ? `${e.posX}% ${e.posY}%`
-                 : e.anchor === 'top' ? '50% 0%' : e.anchor === 'bottom' ? '50% 100%' : e.anchor === 'left' ? '0% 50%' : e.anchor === 'right' ? '100% 50%' : '50% 50%')
-              : 'center';
-            // Auto color = one-tap enhance (a starting point to fine-tune with the
-            // sliders): a brightness + contrast + saturation lift, multiplied on top
-            // of the manual contrast/saturation. Now shown in the preview so On/Off
-            // is visibly different (was omitted here → toggling looked identical).
-            const cc = e.colorCorrect ? { b: 1.08, c: 1.14, s: 1.20 } : { b: 1, c: 1, s: 1 };
-            let f = e.mode === 'bw' ? 'grayscale(1) ' : e.mode === 'sepia' ? 'sepia(.8) ' : '';
-            const contrast = ((e.contrast || 100) / 100) * cc.c;
-            const sat = (e.mode === 'bw' ? 0 : (e.saturation || 100) / 100) * cc.s;
-            f += `brightness(${cc.b}) contrast(${contrast.toFixed(3)}) saturate(${sat.toFixed(3)})`;
-            return { objectFit: e.fit === 'fill' ? 'cover' : 'contain', objectPosition: pos, transform: `scale(${(e.size || 100) / 100})`, filter: f };
-          };
-          // Learn a photo's real shape once, the first time its <img> decodes.
-          const noteDims = (key) => (ev) => {
-            const t = ev.currentTarget;
-            if (!t || !t.naturalWidth || !t.naturalHeight) return;
-            setPhotoDims((d) => (d[key] ? d : { ...d, [key]: { w: t.naturalWidth, h: t.naturalHeight } }));
-          };
-          // The inline editor for ONE photo — opens directly under its
-          // thumbnail on double-click. ‹ › move to the previous/next photo.
-          const editorPanel = (selP) => {
-            const e = { ...defE, ...(photoEdits.photos[selP.key] || {}) };
-            const idx = projPhotos.findIndex((p) => p.key === selP.key);
-            const goto = (j) => { if (j >= 0 && j < projPhotos.length) setSelKey(projPhotos[j].key); };
-            const startDrag = (ev) => {
-              if (e.fit !== 'fill') return;
-              const r = ev.currentTarget.getBoundingClientRect();
-              const px = Number.isFinite(e.posX) ? e.posX : (e.anchor === 'top' ? 0 : e.anchor === 'bottom' ? 100 : 50);
-              const py = Number.isFinite(e.posY) ? e.posY : 50;
-              bigDragRef.current = { sx: ev.clientX, sy: ev.clientY, px, py, w: r.width, h: r.height };
-              try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch (_) {}
-            };
-            const moveDrag = (ev) => {
-              const d = bigDragRef.current; if (!d) return;
-              const nx = Math.max(0, Math.min(100, d.px - (ev.clientX - d.sx) / d.w * 140));
-              const ny = Math.max(0, Math.min(100, d.py - (ev.clientY - d.sy) / d.h * 140));
-              editPhoto(c.id, selP.key, { posX: Math.round(nx), posY: Math.round(ny) });
-            };
-            const endDrag = () => { bigDragRef.current = null; };
-            const arrow = (dir, disabled) => (
-              <button type="button" onClick={() => goto(idx + dir)} disabled={disabled} aria-label={dir < 0 ? 'Previous photo' : 'Next photo'}
-                style={{ position: 'absolute', top: '50%', [dir < 0 ? 'left' : 'right']: 8, transform: 'translateY(-50%)', zIndex: 4, width: 40, height: 40, borderRadius: '50%', border: 'none', background: disabled ? 'rgba(0,0,0,.25)' : 'rgba(0,0,0,.6)', color: '#fff', fontSize: 22, lineHeight: 1, cursor: disabled ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{dir < 0 ? '‹' : '›'}</button>
-            );
-            return (
-              <div style={{ gridColumn: '1 / -1', border: '1px solid var(--line)', borderRadius: 10, padding: 12, margin: '4px 0 8px', background: 'rgba(127,127,127,0.04)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                  <strong style={{ fontSize: 13 }}>Editing photo {selP.index}{' '}
-                    <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· {selP.filename}</span></strong>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{editsSaving ? 'Saving…' : editsSaved ? 'Saved' : ''}</span>
-                    <button type="button" className="linklike" onClick={() => setSelKey(null)}>Close ✕</button>
-                  </span>
-                </div>
-                <div
-                  onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag}
-                  style={{ position: 'relative', width: '100%', maxWidth: 720, margin: '0 auto', aspectRatio: '16 / 9', background: '#000', borderRadius: 10, overflow: 'hidden', containerType: 'size', cursor: e.fit === 'fill' ? 'grab' : 'default' }}
-                >
-                  <img src={(selP.clientCrop && e.useOriginal && selP.originalUrl) ? selP.originalUrl : selP.url}
-                    alt={selP.filename} draggable={false} onLoad={noteDims(selP.key)}
-                    style={{ width: '100%', height: '100%', userSelect: 'none', ...styleFor(e) }} />
-                  {arrow(-1, idx <= 0)}
-                  {arrow(1, idx >= projPhotos.length - 1)}
-                  <span style={{ position: 'absolute', top: 8, left: 8, fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#fff', padding: '2px 8px', borderRadius: 6 }}>Photo {selP.index} of {projPhotos.length}</span>
-                  <span style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', fontSize: 11, background: 'rgba(0,0,0,.6)', color: '#e9dcc0', padding: '3px 10px', borderRadius: 6 }}>
-                    {e.fit === 'fill' ? 'Fill — drag the photo to position it' : 'Fit — whole photo, nothing cropped'}
-                  </span>
-                </div>
-                {/* THE CLIENT CROPPED THIS ONE. Josh wanted to know before he
-                    starts reframing it — "so that I know not to change it and the
-                    montage knows to keep it as is" — with a way out for a look
-                    that needs the full frame. The override is PER MONTAGE: it
-                    never touches what the client saved, so their crop is still
-                    there for the next one. */}
-                {selP.clientCrop && (
-                  <div style={{ maxWidth: 720, margin: '12px auto 0', border: '1px solid rgba(255,212,121,0.45)',
-                    background: 'rgba(255,212,121,0.07)', borderRadius: 9, padding: '9px 12px' }}>
-                    <div style={{ fontSize: 12, color: '#ffd479', fontWeight: 600 }}>
-                      {selP.cropBy === 'admin' ? 'Cropped by you' : 'Cropped by the client'}{selP.cropRatio ? ` to ${selP.cropRatio}` : ''}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7, flexWrap: 'wrap' }}>
-                      <button type="button" className={!e.useOriginal ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 10px', fontSize: 11 }}
-                        onClick={() => editPhoto(c.id, selP.key, { useOriginal: false })}>Use their crop</button>
-                      <button type="button" className={e.useOriginal ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 10px', fontSize: 11 }}
-                        onClick={() => editPhoto(c.id, selP.key, { useOriginal: true })}>Use the full original</button>
-                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                        This montage only — the crop itself is untouched.
-                      </span>
-                    </div>
-                  </div>
-                )}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', maxWidth: 720, margin: '12px auto 0', fontSize: 12, color: 'var(--muted)' }}>
-                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Crop
-                    <button type="button" className={selP.clientCrop ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }}
-                      title="Drag a 16:9 or 9:16 window over the photo. The original is kept."
-                      onClick={() => setCropFor(selP)}>{selP.clientCrop ? `Cropped${selP.cropRatio ? ` ${selP.cropRatio}` : ''} · edit ⤢` : 'Drag to crop ⤢'}</button>
-                  </div>
-                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Framing
-                    {['top', 'center', 'bottom'].map((a) => (
-                      <button key={a} type="button" className={e.anchor === a && e.fit === 'fill' && !Number.isFinite(e.posX) ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }}
-                        onClick={() => editPhoto(c.id, selP.key, { anchor: a, fit: 'fill', posX: null, posY: null })}>{a[0].toUpperCase() + a.slice(1)}</button>
-                    ))}
-                  </div>
-                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Fit
-                    <button type="button" className={e.fit === 'fill' ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { fit: 'fill' })}>Fill</button>
-                    <button type="button" className={e.fit === 'fit' ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { fit: 'fit' })}>Fit</button>
-                    <span style={{ marginLeft: 6 }}>Size</span>
-                    <input type="range" min="60" max="140" step="5" value={e.size || 100} style={{ width: 110 }} onChange={(ev) => editPhoto(c.id, selP.key, { size: Number(ev.target.value) })} />
-                    <span style={{ display: 'inline-block', minWidth: 40 }}>{e.size || 100}%</span>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', maxWidth: 720, margin: '10px auto 0', fontSize: 12, color: 'var(--muted)' }}>
-                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Look
-                    {[['color', 'Colour'], ['bw', 'B&W'], ['sepia', 'Sepia']].map((mm) => (
-                      <button key={mm[0]} type="button" className={e.mode === mm[0] ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { mode: mm[0] })}>{mm[1]}</button>
-                    ))}
-                  </div>
-                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Contrast
-                    <input type="range" min="50" max="200" step="2" value={e.contrast || 100} style={{ width: 100 }} onChange={(ev) => editPhoto(c.id, selP.key, { contrast: Number(ev.target.value) })} />
-                    <span style={{ display: 'inline-block', minWidth: 40 }}>{e.contrast || 100}%</span>
-                    <span style={{ marginLeft: 8 }}>Saturation</span>
-                    <input type="range" min="0" max="200" step="5" value={e.saturation || 100} style={{ width: 100 }} onChange={(ev) => editPhoto(c.id, selP.key, { saturation: Number(ev.target.value) })} />
-                    <span style={{ display: 'inline-block', minWidth: 40 }}>{e.saturation || 100}%</span>
-                  </div>
-                  <div style={{ border: '1px solid var(--line)', borderRadius: 9, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>Auto color
-                    <button type="button" className={!e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { colorCorrect: false })}>Off</button>
-                    <button type="button" className={e.colorCorrect ? 'btn-primary' : 'btn-ghost'} style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => editPhoto(c.id, selP.key, { colorCorrect: true })}>On</button>
-                  </div>
-                  {/* BORDER LIVES IN CHOOSE STYLE ONLY. Josh 2026-09-11: "I think
-                      I've made it too confusing on myself. Let's remove the Border
-                      button from Edit Photos and only have it in the montage maker"
-                      — one place to set it, per montage, so a chosen colour can no
-                      longer be silently outranked by a setting somewhere else. */}
-                  {selP.importSeq != null && (() => {
-                    const Y = photoBySeq(edSwap.to);
-                    const ready = Y && Y.id !== selP.id && !edSwap.busy;
-                    const go = async () => {
-                      if (!ready) return;
-                      setEdSwap((u) => ({ ...u, busy: true, msg: '' }));
-                      const err = await swapPhotos(c.id, selP.importSeq, edSwap.to, edSwap.mode);
-                      setEdSwap((u) => ({ ...u, busy: false, to: err ? u.to : '', msg: err || 'Done' }));
-                      if (!err) setSelKey(Y.key); // follow the photo now in this slot
-                    };
-                    return (
-                      <div style={{ border: '1px solid #1e4fd6', borderRadius: 8, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
-                        <span style={{ letterSpacing: '.06em', color: 'var(--muted)', fontSize: 11 }}>REPLACE THIS PHOTO (#{String(selP.importSeq).padStart(3, '0')})</span>
-                        <span>with #</span>
-                        <input value={edSwap.to} onChange={(e) => setEdSwap((u) => ({ ...u, to: e.target.value, msg: '' }))} onKeyDown={(e) => { if (e.key === 'Enter') go(); }} placeholder="087" style={{ width: 60, fontWeight: 900, color: '#f5a623', textAlign: 'center' }} />
-                        <button type="button" className="btn-primary" style={{ padding: '4px 10px', fontSize: 12 }} disabled={!ready} onClick={go}>{edSwap.busy ? 'Working…' : 'Replace'}</button>
-                        {Y && <img src={Y.url} alt="" style={{ width: 44, height: 32, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }} />}
-                        {Y && <span style={{ color: 'var(--muted)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{Y.filename}{Y.album ? ` · ${Y.album}` : ''}</span>}
-                        <label style={{ cursor: 'pointer' }}><input type="radio" name="edswapmode" checked={edSwap.mode === 'trade'} onChange={() => setEdSwap((u) => ({ ...u, mode: 'trade' }))} /> Trade places</label>
-                        <label style={{ cursor: 'pointer' }}><input type="radio" name="edswapmode" checked={edSwap.mode === 'remove'} onChange={() => setEdSwap((u) => ({ ...u, mode: 'remove' }))} /> Remove original → <span style={{ color: '#ff6b6b' }}>{REMOVED_ALBUM}</span></label>
-                        {edSwap.msg && <span style={{ color: edSwap.msg === 'Done' ? '#22c55e' : '#f5a623' }}>{edSwap.msg}</span>}
-                      </div>
-                    );
-                  })()}
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
-                    <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={rotatingKey === selP.key} title="Rotate this photo 90°" onClick={() => rotateProjPhoto(c.id, selP.key)}>{rotatingKey === selP.key ? 'Rotating…' : 'Rotate ↻'}</button>
-                    <a href={selP.downloadUrl || selP.url} download={selP.filename} className="linklike" style={{ fontSize: 12 }}>Download</a>
-                    <button type="button" className="linklike" style={{ fontSize: 12 }} disabled={replacing === selP.key} onClick={() => { replaceKeyRef.current = selP.key; if (replaceInputRef.current) replaceInputRef.current.click(); }}>{replacing === selP.key ? 'Uploading…' : 'Replace'}</button>
-                    <button type="button" className="linklike" style={{ fontSize: 12 }} onClick={() => editPhoto(c.id, selP.key, { removed: !e.removed })}>{e.removed ? 'Restore' : 'Remove'}</button>
-                  </div>
-                </div>
-              </div>
-            );
-          };
+          const defE = PHOTO_DEF_E;
+          const styleFor = photoStyleFor;
+          const noteDims = noteDimsFor;
+          const editorPanel = (selP) => photoEditorPanel(selP, { clientId: c.id });
 
           // One thumbnail cell.
           // A VIDEO IN THE GRID. Not draggable, not editable, no photo number —
@@ -5450,7 +5481,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         </p>
                         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: 'pointer', marginBottom: 8, padding: '4px 10px', border: '1px solid #1e4fd6', borderRadius: 8 }}
                           title="Swap: the new photo takes the old one's slot in Edit Photos and the old one goes to Removed images. Remove: the old one goes to Removed images. Add/Upload never touch the albums.">
-                          <input type="checkbox" checked={revApply} onChange={(ev) => setRevApply(ev.target.checked)} /> Also apply Swap / Remove to this client's albums (Edit Photos)
+                          <input type="checkbox" checked={revApply} onChange={(ev) => setRevApply(ev.target.checked)} /> Also apply Swap / Remove / photo edits to this client's albums (Edit Photos)
                         </label>
                         {revLoading ? <p style={{ fontSize: 13 }}>Opening…</p> : (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -5475,17 +5506,19 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                                   revMove(revDrag.current, i, side);
                                   revDrag.current = null; setRevOver(null);
                                 }}
-                                title="Drag to reorder"
-                                style={{ width: 132, position: 'relative', cursor: 'grab', border: `1px solid ${e.added ? '#22c55e' : 'var(--line)'}`, borderRadius: 8, overflow: 'hidden', background: e.type === 'placeholder' ? 'repeating-linear-gradient(135deg,#0d1a12,#0d1a12 8px,#0a140e 8px,#0a140e 16px)' : '#000',
+                                onDoubleClick={() => { if (e.type === 'photo') setRevSel(revSel === i ? null : i); }}
+                                title={e.type === 'photo' ? 'Drag to reorder · double-click to edit' : 'Drag to reorder'}
+                                style={{ width: 132, position: 'relative', cursor: 'grab', border: revSel === i ? '2px solid #d8b56b' : `1px solid ${e.added ? '#22c55e' : 'var(--line)'}`, borderRadius: 8, overflow: 'hidden', background: e.type === 'placeholder' ? 'repeating-linear-gradient(135deg,#0d1a12,#0d1a12 8px,#0a140e 8px,#0a140e 16px)' : '#000',
                                   outline: over ? '2px solid rgba(56,182,255,.5)' : 'none', outlineOffset: '-2px' }}>
                                 {over && <span style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 7, borderRadius: '8px 0 0 8px', background: over === 'before' ? '#22c55e' : '#38b6ff', boxShadow: over === 'before' ? '0 0 8px #22c55e' : 'none', zIndex: 7 }} />}
                                 {over && <span style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: 7, borderRadius: '0 8px 8px 0', background: over === 'after' ? '#22c55e' : '#38b6ff', boxShadow: over === 'after' ? '0 0 8px #22c55e' : 'none', zIndex: 7 }} />}
                                 <div style={{ position: 'relative', aspectRatio: '16 / 9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                   {e.type === 'placeholder'
                                     ? <span style={{ fontSize: 10, color: '#00b140', textAlign: 'center', padding: 4 }}>VIDEO<br />{e.name}</span>
-                                    : (e.url ? <img src={e.url} alt={e.filename || ''} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <span style={{ fontSize: 10, color: 'var(--muted)' }}>no preview</span>)}
+                                    : (e.url ? <img src={e.url} alt={e.filename || ''} style={{ width: '100%', height: '100%', ...photoStyleFor({ ...PHOTO_DEF_E, ...(e.edits || {}) }) }} /> : <span style={{ fontSize: 10, color: 'var(--muted)' }}>no preview</span>)}
                                   <span style={{ position: 'absolute', top: 3, left: 3, fontSize: 10, background: 'rgba(0,0,0,.65)', color: '#fff', padding: '1px 5px', borderRadius: 5 }}>{i + 1}</span>
                                   {e.importSeq != null && <span title={`Import #${String(e.importSeq).padStart(3, '0')} — permanent reference number`} style={{ position: 'absolute', bottom: 3, left: 3, fontSize: 10, fontWeight: 900, letterSpacing: '.3px', background: '#f5a623', color: '#241700', padding: '1px 5px', borderRadius: 5, boxShadow: '0 1px 3px rgba(0,0,0,.5)' }}>{String(e.importSeq).padStart(3, '0')}</span>}
+                                  {e.editsDirty && !e.swapped && !e.added && <span style={{ position: 'absolute', top: 3, right: 3, fontSize: 9, background: '#d8b56b', color: '#241700', padding: '1px 5px', borderRadius: 5, fontWeight: 800 }}>EDITED</span>}
                                   {e.swapped && <span style={{ position: 'absolute', top: 3, right: 3, fontSize: 9, background: '#22c55e', color: '#04180b', padding: '1px 5px', borderRadius: 5, fontWeight: 700 }}>SWAPPED</span>}
                                   {e.added && !e.swapped && <span style={{ position: 'absolute', top: 3, right: 3, fontSize: 9, background: '#22c55e', color: '#04180b', padding: '1px 5px', borderRadius: 5, fontWeight: 700 }}>ADDED</span>}
                                 </div>
@@ -5501,6 +5534,27 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                             })}
                           </div>
                         )}
+                        {revSel != null && revSeq[revSel] && revSeq[revSel].type === 'photo' && (() => {
+                          const ent = revSeq[revSel];
+                          const pseudo = { key: ent.r2_key, url: ent.url, filename: ent.filename || '', index: revSel + 1, importSeq: ent.importSeq ?? null, id: null };
+                          const inLib = projPhotosClientId === m.clientId && projPhotos.some((p) => p.key === ent.libKey);
+                          const photoSlots = revSeq.map((x, j) => (x.type === 'photo' ? j : -1)).filter((j) => j >= 0);
+                          const at = photoSlots.indexOf(revSel);
+                          return (
+                            <div style={{ marginTop: 10 }}>
+                              {photoEditorPanel(pseudo, {
+                                rev: true, clientId: m.clientId, edits: ent.edits || {}, index: at, total: photoSlots.length,
+                                alsoAlbums: revApply && inLib,
+                                goto: (j) => { if (j >= 0 && j < photoSlots.length) setRevSel(photoSlots[j]); },
+                                onClose: () => setRevSel(null),
+                                onEdit: (patch) => {
+                                  setRevSeq((sq) => sq.map((x, j) => (j === revSel ? { ...x, edits: { ...PHOTO_DEF_E, ...(x.edits || {}), ...patch }, editsDirty: true } : x)));
+                                  if (revApply && inLib) editPhoto(m.clientId, ent.libKey, patch);
+                                },
+                              })}
+                            </div>
+                          );
+                        })()}
                         {revPick && (
                           <div style={{ marginTop: 10, border: '1px solid var(--blue)', borderRadius: 10, padding: 10, background: 'rgba(61,123,255,0.06)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 12 }}>

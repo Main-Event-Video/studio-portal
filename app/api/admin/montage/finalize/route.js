@@ -129,13 +129,31 @@ async function finalizeOne(body) {
     // Border comes from the snapshot's Choose Style setting, like every other photo.
     const sb = params.styleBorder && params.styleBorder.mode === 'custom'
       ? { on: true, w: Number(params.styleBorder.w) || 1.2, color: params.styleBorder.color || '#FFFFFF', at: 0 } : null;
+    // Josh 10/3: a slot can be re-edited INSIDE Revise (framing / fit / size /
+    // position / look / contrast / saturation / auto colour). The admin sends
+    // those as r.edits in Edit Photos' names; they overlay the slot — whether
+    // it kept its snapshotted edits or is new to this render.
+    const overlayEdits = (entry, ed) => {
+      if (!ed || typeof ed !== 'object') return entry;
+      const o = { ...entry };
+      if (['top', 'center', 'bottom', 'left', 'right'].includes(ed.anchor)) o.framing = ed.anchor;
+      if (ed.fit === 'fill' || ed.fit === 'fit') o.fit = ed.fit; else if (ed.fit === null) o.fit = null;
+      if (Number.isFinite(Number(ed.size))) o.size = Math.min(140, Math.max(60, Number(ed.size)));
+      if (typeof ed.colorCorrect === 'boolean') o.colorCorrect = ed.colorCorrect;
+      if (['color', 'bw', 'sepia'].includes(ed.mode)) o.mode = ed.mode;
+      if (Number.isFinite(Number(ed.contrast))) o.contrast = Math.min(200, Math.max(50, Math.round(Number(ed.contrast))));
+      if (Number.isFinite(Number(ed.saturation))) o.saturation = Math.min(200, Math.max(0, Math.round(Number(ed.saturation))));
+      if ('posX' in ed) o.posX = Number.isFinite(Number(ed.posX)) && ed.posX !== null ? Number(ed.posX) : null;
+      if ('posY' in ed) o.posY = Number.isFinite(Number(ed.posY)) && ed.posY !== null ? Number(ed.posY) : null;
+      return o;
+    };
     const out = [];
     for (const r of revised) {
       if (!r) continue;
       if (r.type === 'placeholder') { out.push({ type: 'placeholder', name: r.name || 'VIDEO' }); continue; }
       if (!r.r2_key) continue;
       const known = byKey.get(r.r2_key);
-      if (known) { out.push({ ...known }); continue; }
+      if (known) { out.push(overlayEdits({ ...known }, r.edits)); continue; }
       const m = mediaByKey.get(r.r2_key);
       if (!m) return NextResponse.json({ error: `A photo in the revision is not one of this client's uploads (${r.r2_key})` }, { status: 400 });
       const e = pePhotos[r.r2_key] || {};
@@ -152,6 +170,7 @@ async function finalizeOne(body) {
         posY: Number.isFinite(Number(e.posY)) ? Number(e.posY) : null,
         border: sb,
       });
+      if (r.edits) out[out.length - 1] = overlayEdits(out[out.length - 1], r.edits);
     }
     while (out.length && out[0].type === 'placeholder') out.shift();
     while (out.length && out[out.length - 1].type === 'placeholder') out.pop();

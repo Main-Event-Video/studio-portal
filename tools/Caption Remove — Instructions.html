@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Caption Remove — Instructions</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--ink:#1b1f2a;--muted:#5b6170;--line:#e3e6ee;--bg:#f6f7fb;--card:#ffffff;
+        --blue:#2f6fed;--blue-bg:#eaf1ff;--green:#1f9d6a;--green-bg:#e7f7ef;--gold:#c98a00;--gold-bg:#fff5db;--red:#d64545;--red-bg:#fdecec;--purple:#6b4fd8;--purple-bg:#efeaff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif}
+  .page{max-width:860px;margin:0 auto;padding:36px 24px 60px}
+  header{background:linear-gradient(135deg,#1b2a4a,#2f6fed);color:#fff;border-radius:16px;padding:28px 30px;margin-bottom:22px}
+  header h1{margin:0 0 6px;font-size:28px;letter-spacing:.2px}
+  header p{margin:0;opacity:.9;font-size:15px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:700px){.grid{grid-template-columns:1fr}}
+  section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:16px 0;box-shadow:0 2px 10px rgba(20,30,60,.05)}
+  section.accent{border-left:6px solid var(--blue)}
+  section.go{border-left:6px solid var(--green)}
+  section.warn{border-left:6px solid var(--gold)}
+  section.fix{border-left:6px solid var(--red)}
+  section.ref{border-left:6px solid var(--purple)}
+  h2{margin:0 0 12px;font-size:17px;display:flex;align-items:center;gap:10px;text-transform:uppercase;letter-spacing:.06em}
+  .tag{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;font-size:13px;font-weight:800;color:#fff}
+  .t-blue{background:var(--blue)}.t-green{background:var(--green)}.t-gold{background:var(--gold)}.t-red{background:var(--red)}.t-purple{background:var(--purple)}
+  ol.steps{list-style:none;counter-reset:s;padding:0;margin:0}
+  ol.steps li{counter-increment:s;position:relative;padding:10px 0 10px 46px;border-top:1px dashed var(--line)}
+  ol.steps li:first-child{border-top:0}
+  ol.steps li::before{content:counter(s);position:absolute;left:0;top:10px;width:32px;height:32px;border-radius:50%;background:var(--green-bg);color:var(--green);font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid var(--green)}
+  .tree{font-family:ui-monospace,Menlo,monospace;font-size:13.5px;background:var(--blue-bg);border-radius:10px;padding:14px 16px;white-space:pre;line-height:1.6;color:#1b2a4a}
+  .tree b{color:var(--blue)}
+  kbd{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:#eef0f5;border:1px solid #cfd4e0;border-bottom-width:2px;border-radius:6px;padding:1px 7px;color:#1b1f2a}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:13px;background:#eef0f5;border-radius:5px;padding:1px 6px}
+  .path{color:var(--blue);font-weight:650}
+  .callout{border-radius:10px;padding:12px 14px;margin:10px 0;font-size:14px}
+  .c-green{background:var(--green-bg);border:1px solid #bfe8d2}.c-gold{background:var(--gold-bg);border:1px solid #f1dca0}.c-blue{background:var(--blue-bg);border:1px solid #c5d8ff}.c-red{background:var(--red-bg);border:1px solid #f4c3c3}
+  .modes{display:grid;grid-template-columns:1fr;gap:10px}
+  .mode{border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:start}
+  .mode code{font-weight:700}
+  .mode.def{border-color:#bfe8d2;background:#f4fcf8}
+  .pill{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;border-radius:999px;padding:2px 9px;margin-left:6px;vertical-align:middle}
+  .p-green{background:var(--green);color:#fff}
+  dl{margin:0}dt{font-weight:700;margin-top:10px}dd{margin:2px 0 0 0;color:var(--muted)}
+  footer{color:var(--muted);font-size:12.5px;text-align:center;margin-top:28px}
+  @media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{background:#fff;font-size:13px}.page{padding:0;max-width:none}.grid{display:block}section{break-inside:avoid;box-shadow:none;margin:10px 0;padding:14px 18px}header{border-radius:12px;padding:20px 24px}}
+</style></head><body><div class="page">
+
+<header>
+  <h1>Caption Remove</h1>
+  <p>Strips burned-in captions (words baked into the picture) from video clips. Runs on your Mac — nothing is uploaded. Originals are never changed.</p>
+</header>
+
+<div class="grid">
+<section class="accent">
+  <h2><span class="tag t-blue">▣</span>The folders</h2>
+  <div class="tree">Desktop
+└── Caption Remove
+    ├── <b>In</b>            ← drop original clips here
+    ├── <b>Out</b>           ← cleaned clips appear here
+    └── settings.txt   ← caption zone + mode (filled in for you)</div>
+  <div class="callout c-blue">Every cleaned clip is a <b>new file</b> in <span class="path">Out</span>, named like the original plus <code>_clean</code>.<br>
+  <code>FOX_Picky Eaters_V1.mp4</code> → <code>FOX_Picky Eaters_V1<b>_clean</b>.mp4</code></div>
+</section>
+
+<section class="accent">
+  <h2><span class="tag t-blue">⏱</span>What to expect</h2>
+  <dl>
+    <dt>Speed</dt><dd>About 1 frame per second. A 30-second clip ≈ 12–15 min; 2 minutes ≈ an hour. Leave batches overnight.</dd>
+    <dt>Quality</dt><dd>Nearly invisible over a plain wall, shirt or black backdrop. A hand or busy detail passing through the box can leave a soft patch for a few frames.</dd>
+    <dt>Output</dt><dd>Same resolution and frame rate as the original; the original audio is copied through untouched.</dd>
+    <dt>While it runs</dt><dd>Keep using the Mac, but don't close the lid — it pauses.</dd>
+  </dl>
+</section>
+</div>
+
+<section class="go">
+  <h2><span class="tag t-green">▶</span>Step by step</h2>
+  <ol class="steps">
+    <li><b>Get the original clip</b> — e.g. the Download button on Frame.io. A real download, not a screen recording (much cleaner result).</li>
+    <li><b>Drop it in</b> <span class="path">Desktop › Caption Remove › In</span>. Several clips at once is fine.</li>
+    <li><b>Click the Caption Remove icon in the Dock.</b> A picture window opens showing the newest clip in <span class="path">In</span>.</li>
+    <li><b>Find a frame with a caption</b> — drag the slider at the top of the window.</li>
+    <li><b>Drag a box around the caption.</b> It draws in yellow. If captions move between shots, make the box tall enough to cover the highest and lowest spot you see while scrubbing. Keep it clear of faces.<br>
+      <span style="color:var(--muted)"><kbd>C</kbd> clears the box to redraw &nbsp;·&nbsp; <kbd>Esc</kbd> skips drawing and reuses the last saved box</span></li>
+    <li><b>Press</b> <kbd>Enter</kbd>. The picture window closes and a Terminal window shows progress, one clip at a time (<code>Subtitle Removing: 43% …</code>).</li>
+    <li><b>Wait</b> for <code>Done: 1 cleaned …</code>, then press any key to close the Terminal.</li>
+    <li><b>Open the result</b> in <span class="path">Desktop › Caption Remove › Out</span> and scrub through where the captions were.</li>
+  </ol>
+</section>
+
+<div class="grid">
+<section class="warn">
+  <h2><span class="tag t-gold">↻</span>Running it again · batches</h2>
+  <div class="callout c-green">Clips that already have a <code>_clean</code> file in <span class="path">Out</span> are <b>skipped</b> — top up <span class="path">In</span> and click the icon any time.</div>
+  <div class="callout c-gold">To <b>re-do</b> a clip (new box or new mode): move or delete its <code>_clean</code> file from <span class="path">Out</span> first, then click the icon.</div>
+  <p style="margin:8px 0 0;color:var(--muted)">The box you draw is saved and reused for every clip in that run. New batch, captions in a different spot? Just draw a new box when the window opens.</p>
+</section>
+
+<section class="warn">
+  <h2><span class="tag t-gold">⚙</span>settings.txt — the mode</h2>
+  <p style="margin:0 0 10px;color:var(--muted)">Normally untouched (the box you draw writes the ZONE lines). The one line worth knowing is <code>MODE=</code>. Open in TextEdit, change, save.</p>
+  <div class="modes">
+    <div class="mode def"><code>sttn-det</code><div><b>Default.</b> Finds text inside your box and repairs only those frames. Fastest. Very rarely misses a frame (caption flashes on for a moment).<span class="pill p-green">default</span></div></div>
+    <div class="mode"><code>sttn-auto</code><div>Repairs the whole box on <b>every</b> frame. Never misses — but anything passing through the box (a hand) gets smoothed too. Keep the box tight.</div></div>
+    <div class="mode"><code>propainter</code><div>Best quality on movement, about 3–4× slower. For a hero clip when the default leaves a visible patch.</div></div>
+  </div>
+</section>
+</div>
+
+<section class="fix">
+  <h2><span class="tag t-red">!</span>If something goes wrong</h2>
+  <dl>
+    <dt>"Nothing in In"</dt><dd><span class="path">In</span> is empty, or the file isn't .mp4 / .mov / .m4v.</dd>
+    <dt>"FAILED — left in In"</dt><dd>That clip errored; the others continue. Try it alone and send Claude the Terminal lines just above the word FAILED.</dd>
+    <dt>Picture window doesn't open</dt><dd>First time, macOS may ask to let Python control the screen — allow it and click the icon again.</dd>
+    <dt>Opened the icon twice</dt><dd>In the extra picture window press <kbd>Esc</kbd>, then in its Terminal press <kbd>Ctrl</kbd>+<kbd>C</kbd> and close that window.</dd>
+    <dt>"Operation not permitted"</dt><dd>System Settings › Privacy &amp; Security › Files and Folders › Terminal → allow Desktop.</dd>
+  </dl>
+</section>
+
+<section class="ref">
+  <h2><span class="tag t-purple">i</span>Where the pieces live</h2>
+  <dl>
+    <dt>Dock icon</dt><dd><span class="path">Documents › GitHub › studio-portal › tools › Caption Remove.command</span></dd>
+    <dt>Scripts</dt><dd><code>tools/caption-zone.py</code> (box picker) · <code>tools/caption-remove.sh</code> (batch) · <code>tools/caption-remove-install.sh</code> (one-time install — done)</dd>
+    <dt>The AI tool</dt><dd><code>~/CaptionRemover</code> — video-subtitle-remover (open source, Apache 2.0), running on the Mac's own GPU</dd>
+  </dl>
+  <p style="color:var(--muted);font-size:12.5px;margin:14px 0 0;text-align:right">Main Event Studio · Caption Remove · October 2026</p>
+</section>
+</div></body></html>
