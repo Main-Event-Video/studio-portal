@@ -1220,6 +1220,13 @@ export default function AdminPage() {
         setDMsg(`⚠ Not sent — watermarking failed${c.error ? `: ${c.error}` : ''}. Nothing un-watermarked went out; check your alert email.`);
         return;
       }
+      // 10/13: the render finished but the copy/save step keeps failing — show
+      // the recorded reason instead of "watermarking…" forever.
+      if (c && c.error) {
+        setDMsg(`Render finished but delivery keeps failing — ${c.error}. Still retrying; or resend with "Skip the watermark" to get it out now.`);
+        setTimeout(() => pollCutStatus(cutRenderId, clientId, attempt + 1), 15000);
+        return;
+      }
     } catch { /* keep trying */ }
     // A 9-minute cut renders in ~5 minutes and then takes a while to copy, so
     // the poll (which DRIVES completion) keeps going for 20 minutes: every 4s
