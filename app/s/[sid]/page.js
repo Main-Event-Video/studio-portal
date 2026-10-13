@@ -44,7 +44,7 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function SharePage({ params }) {
+export default async function SharePage({ params, searchParams }) {
   const sid = params?.sid;
   const db = createServiceClient();
   const mediaId = await resolveShareId(db, sid);
@@ -61,7 +61,10 @@ export default async function SharePage({ params }) {
 
   // Best-effort: notify the studio the FIRST time a real person opens this link.
   // Skipped for bots/prefetchers, and only fires once (guarded on opened_at).
-  if (m) {
+  // ?studio=1 = the studio's own copy of the email (lib/email.js studioLink):
+  // never counts as the client's first open.
+  const studioView = String(searchParams?.studio || '') === '1';
+  if (m && !studioView) {
     try {
       const ua = headers().get('user-agent') || '';
       if (ua && !BOT_RE.test(ua)) {
