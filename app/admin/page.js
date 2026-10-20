@@ -10,6 +10,7 @@ import { buildTimeline } from '@/lib/timelineOrder';
 import StillsPanel from './StillsPanel';
 import NeonControls from './NeonControls';
 import CropEditor from './CropEditor';
+import SiteAnalytics from './SiteAnalytics';
 
 // Clients move unwanted / duplicate files into this folder; only the admin
 // actually deletes them ("Empty Trash"). Must match the portal's constant.
@@ -792,6 +793,13 @@ export default function AdminPage() {
   // open by default it pushed the client list down every single visit. Closed on
   // every load, by Josh's choice — no remembered state.
   const [newOpen, setNewOpen] = useState(false);
+  // Site analytics (Josh 10/20): maineventstudio.com traffic, folded under its own
+  // pill beside New client. Closed on load like New client — except when arriving
+  // from MEvid's "Main Event Studio Analytics" pill (?analytics=1), which opens it.
+  const [saOpen, setSaOpen] = useState(false);
+  useEffect(() => {
+    try { if (new URLSearchParams(window.location.search).get('analytics') === '1') setSaOpen(true); } catch {}
+  }, []);
   // Archived clients live in their own row at the bottom, also closed each load.
   const [archOpen, setArchOpen] = useState(false);
   // Which albums are showing filenames under their thumbnails. Josh: "just want
@@ -5768,6 +5776,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
 
       {!openClientId && (
       <section className="panel">
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <button type="button" onClick={() => setNewOpen((v) => !v)} aria-expanded={newOpen}
           style={{ background: 'transparent', border: '1px solid var(--red)', borderRadius: 999,
             padding: '6px 16px', color: 'var(--red)', fontWeight: 800, fontSize: 13, letterSpacing: '.09em',
@@ -5775,6 +5784,15 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             textShadow: '0 0 8px rgba(255,46,76,.55)' }}>
           <span aria-hidden="true" style={{ fontSize: 11 }}>{newOpen ? '▾' : '▸'}</span> New client
         </button>
+        <button type="button" onClick={() => setSaOpen((v) => !v)} aria-expanded={saOpen}
+          style={{ background: 'transparent', border: '1px solid var(--blue)', borderRadius: 999,
+            padding: '6px 16px', color: '#cfe0ff', fontWeight: 800, fontSize: 13, letterSpacing: '.09em',
+            textTransform: 'uppercase', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+            textShadow: '0 0 8px rgba(61,123,255,.6)' }}>
+          <span aria-hidden="true" style={{ fontSize: 11 }}>{saOpen ? '▾' : '▸'}</span> Site analytics
+        </button>
+        </div>
+        {saOpen && <SiteAnalytics api={api} />}
         {/* The ticket — the one-time username/password and portal link — lives in
             this section, so the fold has to stay OPEN while one is on screen or
             creating a client would hide the credentials it just produced. That is
