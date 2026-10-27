@@ -1,12 +1,14 @@
 import './globals.css';
-import { Big_Shoulders_Display, Inter } from 'next/font/google';
+import { Plus_Jakarta_Sans } from 'next/font/google';
 
-const display = Big_Shoulders_Display({
+// Same typeface as maineventstudio.com (Plus Jakarta Sans) so the portal
+// matches the main site: 800 for headings, 400-700 for body copy.
+const display = Plus_Jakarta_Sans({
   subsets: ['latin'],
-  weight: ['600', '700', '800'],
+  weight: ['400', '500', '600', '700', '800'],
   variable: '--font-display',
 });
-const body = Inter({ subsets: ['latin'] });
+const body = display;
 
 export const metadata = {
   title: 'Main Event Studio — Client Portal',
