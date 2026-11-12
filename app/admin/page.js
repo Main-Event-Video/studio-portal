@@ -11,6 +11,7 @@ import StillsPanel from './StillsPanel';
 import NeonControls from './NeonControls';
 import CropEditor from './CropEditor';
 import SiteAnalytics from './SiteAnalytics';
+import SampleLinks from './SampleLinks';
 
 // Clients move unwanted / duplicate files into this folder; only the admin
 // actually deletes them ("Empty Trash"). Must match the portal's constant.
@@ -797,6 +798,9 @@ export default function AdminPage() {
   // pill beside New client. Closed on load like New client — except when arriving
   // from MEvid's "Main Event Studio Analytics" pill (?analytics=1), which opens it.
   const [saOpen, setSaOpen] = useState(false);
+  // Sample links (Josh 11/11): clip library + trackable links for prospects.
+  // Closed on load like the other pills.
+  const [slOpen, setSlOpen] = useState(false);
   useEffect(() => {
     try { if (new URLSearchParams(window.location.search).get('analytics') === '1') setSaOpen(true); } catch {}
   }, []);
@@ -5791,8 +5795,16 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             textShadow: '0 0 8px rgba(61,123,255,.6)' }}>
           <span aria-hidden="true" style={{ fontSize: 11 }}>{saOpen ? '▾' : '▸'}</span> Site analytics
         </button>
+        <button type="button" onClick={() => setSlOpen((v) => !v)} aria-expanded={slOpen}
+          style={{ background: 'transparent', border: '1px solid var(--blue)', borderRadius: 999,
+            padding: '6px 16px', color: '#cfe0ff', fontWeight: 800, fontSize: 13, letterSpacing: '.09em',
+            textTransform: 'uppercase', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+            textShadow: '0 0 8px rgba(61,123,255,.6)' }}>
+          <span aria-hidden="true" style={{ fontSize: 11 }}>{slOpen ? '▾' : '▸'}</span> Sample links
+        </button>
         </div>
         {saOpen && <SiteAnalytics api={api} />}
+        {slOpen && <SampleLinks api={api} />}
         {/* The ticket — the one-time username/password and portal link — lives in
             this section, so the fold has to stay OPEN while one is on screen or
             creating a client would hide the credentials it just produced. That is
