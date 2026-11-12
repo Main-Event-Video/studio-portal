@@ -234,7 +234,8 @@ export default function SampleLinks({ api }) {
   const [pending, setPending] = useState(null);           // uploaded, waiting for a name
   const [renaming, setRenaming] = useState(null);         // {id, title}
   const [thumbFor, setThumbFor] = useState(null);         // sample id for the thumbnail picker
-  const [linkFor, setLinkFor] = useState(null);           // sample id for the New link form
+  const [linkOpen, setLinkOpen] = useState(false);        // New link form showing
+  const [pickIds, setPickIds] = useState([]);             // clips on the new link, in tap order
   const [form, setForm] = useState({ recipient: '', title: '', password: '' });
   const [made, setMade] = useState(null);                 // the link just created
   const [tab, setTab] = useState('active');
@@ -257,7 +258,7 @@ export default function SampleLinks({ api }) {
   const byId = useMemo(() => Object.fromEntries(samples.map((s) => [s.id, s])), [samples]);
   const stats = useMemo(() => {
     const m = {};
-    for (const l of links) { const s = (m[l.sample_id] ||= { links: 0, opens: 0 }); s.links++; s.opens += l.opens || 0; }
+    for (const l of links) for (const id of (l.sample_ids || [l.sample_id])) { const s = (m[id] ||= { links: 0, opens: 0 }); s.links++; s.opens += l.opens || 0; }
     return m;
   }, [links]);
 
@@ -300,19 +301,25 @@ export default function SampleLinks({ api }) {
   }
 
   async function archiveClip(s, archived) {
-    try { await post({ action: 'archive-sample', id: s.id, archived }); if (linkFor === s.id) setLinkFor(null); await load(); }
+    try { await post({ action: 'archive-sample', id: s.id, archived }); if (archived) setPickIds((p) => p.filter((x) => x !== s.id)); await load(); }
     catch (e) { setErr(e.message); }
   }
 
+  // From a clip card: starts the link with that clip picked. From "＋ New link"
+  // above the list: starts empty. More clips can be tapped on/off either way.
   function openNewLink(s) {
-    setLinkFor(s.id); setMade(null);
-    setForm({ recipient: '', title: s.title, password: '' });
+    setLinkOpen(true); setMade(null);
+    setPickIds(s ? [s.id] : []);
+    setForm({ recipient: '', title: '', password: '' });
   }
+  const togglePick = (id) => setPickIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
   async function createLink(e) {
     e?.preventDefault();
     try {
-      const j = await post({ action: 'create-link', sampleId: linkFor, ...form });
+      if (!pickIds.length) { setErr('Pick at least one clip for this link.'); return; }
+      const title = form.title.trim() || (pickIds.length > 1 ? 'Main Event Studio Samples' : '');
+      const j = await post({ action: 'create-link', sampleIds: pickIds, ...form, title });
       setMade(j.link); await load();
     } catch (e2) { setErr(e2.message); }
   }
@@ -340,7 +347,7 @@ export default function SampleLinks({ api }) {
     off: links.filter((l) => !l.archived_at && l.disabled_at).length,
     archived: links.filter((l) => l.archived_at).length,
   };
-  const shownLinks = links.filter((l) => inTab(l) && (!filterClip || l.sample_id === filterClip));
+  const shownLinks = links.filter((l) => inTab(l) && (!filterClip || (l.sample_ids || [l.sample_id]).includes(filterClip)));
 
   return (
     <div style={{ marginTop: 16 }}>
@@ -448,11 +455,32 @@ export default function SampleLinks({ api }) {
       )}
 
       {/* ---- New link form ---- */}
-      {linkFor && byId[linkFor] && (
+      {linkOpen && (
         <form onSubmit={createLink} style={{ marginTop: 16, border: `1px solid ${BLUE}`, borderRadius: 12, padding: 16, background: 'rgba(61,123,255,.06)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 10 }}>
-            <h3 style={{ margin: 0, fontSize: 16 }}>New link for &ldquo;{byId[linkFor].title}&rdquo;</h3>
-            <button type="button" style={pillBtn()} onClick={() => { setLinkFor(null); setMade(null); }}>Close</button>
+            <h3 style={{ margin: 0, fontSize: 16 }}>New link</h3>
+            <button type="button" style={pillBtn()} onClick={() => { setLinkOpen(false); setMade(null); }}>Close</button>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 6px' }}>
+            Clips on this link: tap to add or remove. They show to the client in the order you tap them. One clip plays straight away; two or more give the client a list to choose from.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, marginBottom: 14 }}>
+            {samples.filter((x) => !x.archived_at).map((x) => {
+              const n = pickIds.indexOf(x.id) + 1;
+              return (
+                <button key={x.id} type="button" onClick={() => togglePick(x.id)}
+                  style={{ border: `1px solid ${n ? BLUE : 'var(--line)'}`, borderRadius: 10, overflow: 'hidden', background: 'var(--panel-2)',
+                    position: 'relative', padding: 0, cursor: 'pointer', textAlign: 'left', color: 'var(--text)',
+                    boxShadow: n ? '0 0 12px rgba(61,123,255,.35)' : 'none' }}>
+                  <span style={{ display: 'block', aspectRatio: '16/9', background: '#000' }}>
+                    {x.thumb_url && <img src={x.thumb_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: n ? 1 : 0.6 }} />}
+                  </span>
+                  <span style={{ position: 'absolute', left: 6, top: 6, width: 22, height: 22, borderRadius: 6, border: `2px solid ${n ? BLUE : '#fff'}`,
+                    background: n ? BLUE : 'rgba(0,0,0,.4)', display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 900, color: '#fff' }}>{n || ''}</span>
+                  <span style={{ display: 'block', fontSize: 12, padding: '6px 8px', fontWeight: 600 }}>{x.title}</span>
+                </button>
+              );
+            })}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, alignItems: 'end' }}>
             <div>
@@ -461,13 +489,14 @@ export default function SampleLinks({ api }) {
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Title on the page</label>
-              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={byId[linkFor].title} />
+              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder={pickIds.length > 1 ? 'Main Event Studio Samples' : (byId[pickIds[0]]?.title || 'Clip name')} />
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Password (optional, blank = none)</label>
               <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="off" />
             </div>
-            <div><button type="submit" style={{ ...solidBtn, padding: '10px 18px', fontSize: 14 }}>Create link</button></div>
+            <div><button type="submit" disabled={!pickIds.length} style={{ ...solidBtn, padding: '10px 18px', fontSize: 14, opacity: pickIds.length ? 1 : 0.5 }}>Create link{pickIds.length > 1 ? ` (${pickIds.length} clips)` : ''}</button></div>
           </div>
           {made && (
             <div style={{ marginTop: 12, border: `1px solid ${OK}`, borderRadius: 10, padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', background: 'rgba(55,217,154,.06)' }}>
@@ -484,7 +513,12 @@ export default function SampleLinks({ api }) {
       )}
 
       {/* ---- 2 · All links ---- */}
-      <p style={kicker}>All links</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <p style={kicker}>All links</p>
+        {!linkOpen && samples.some((x) => !x.archived_at) && (
+          <button type="button" style={solidBtn} onClick={() => openNewLink(null)}>＋ New link</button>
+        )}
+      </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         {[['active', 'Active'], ['off', 'Turned off'], ['archived', 'Archived']].map(([k, label]) => (
           <button key={k} type="button" onClick={() => setTab(k)}
@@ -511,7 +545,8 @@ export default function SampleLinks({ api }) {
             <thead><tr><th style={th}>For</th><th style={th}>Clip</th><th style={th}>Password</th><th style={th}>Opens</th><th style={th}>Last opened</th><th style={th}></th></tr></thead>
             <tbody>
               {shownLinks.map((l) => {
-                const s = byId[l.sample_id];
+                const ids = l.sample_ids || [l.sample_id];
+                const s = byId[ids[0]];
                 return (
                   <tr key={l.id}>
                     <td style={td}>
@@ -523,8 +558,24 @@ export default function SampleLinks({ api }) {
                         <span style={{ width: 56, aspectRatio: '16/9', borderRadius: 4, overflow: 'hidden', background: '#000', display: 'inline-block', flex: 'none' }}>
                           {s?.thumb_url && <img src={s.thumb_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
                         </span>
-                        <span>{l.title || s?.title || '—'}</span>
+                        <span>
+                          {l.title || s?.title || '—'}
+                          {ids.length > 1 && <small style={{ color: 'var(--muted)', marginLeft: 6 }}>({ids.length} videos)</small>}
+                        </span>
                       </span>
+                      {ids.length > 1 && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+                          {ids.map((id) => {
+                            const n = (l.plays || {})[id] || 0;
+                            return (
+                              <div key={id}>
+                                • {byId[id]?.title || 'Removed clip'} —{' '}
+                                <b style={{ color: n ? OK : 'var(--muted)' }}>{n} play{n === 1 ? '' : 's'}</b>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       {pwEdit?.id === l.id ? (

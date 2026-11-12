@@ -11,7 +11,7 @@
 //   rename-sample  { id, title }
 //   set-thumb      { id, thumbKey }   (thumbnail picker / uploaded image)
 //   archive-sample { id, archived: true|false }
-//   create-link    { sampleId, recipient, title, password } → { link }
+//   create-link    { sampleIds: [..in order..] | sampleId, recipient, title, password } → { link }
 //   update-link    { id, disabled?, archived?, password? }
 //   delete-link    { id }
 import crypto from 'crypto';
@@ -47,7 +47,7 @@ export async function GET(request) {
   if (e1) return NextResponse.json({ error: e1.message.includes('does not exist') ? 'Run the 018 database step first.' : e1.message }, { status: 500 });
 
   const { data: links, error: e2 } = await db.from('studio_sample_links')
-    .select('id, created_at, sample_id, slug, recipient, title, password, opens, last_opened_at, disabled_at, archived_at')
+    .select('id, created_at, sample_id, sample_ids, plays, slug, recipient, title, password, opens, last_opened_at, disabled_at, archived_at')
     .order('created_at', { ascending: false });
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
 
@@ -59,7 +59,7 @@ export async function GET(request) {
   })));
   return NextResponse.json({
     samples: out,
-    links: (links || []).map((l) => ({ ...l, url: `${base}/w/${l.slug}` })),
+    links: (links || []).map((l) => ({ ...l, sample_ids: l.sample_ids?.length ? l.sample_ids : [l.sample_id], plays: l.plays || {}, url: `${base}/w/${l.slug}` })),
   });
 }
 
@@ -113,11 +113,16 @@ export async function POST(request) {
         return NextResponse.json({ ok: true });
       }
       case 'create-link': {
-        if (!b.sampleId) return NextResponse.json({ error: 'Pick a clip' }, { status: 400 });
-        const base = { sample_id: b.sampleId, recipient: clean(b.recipient), title: clean(b.title), password: clean(b.password, 100) };
+        // One clip (sampleId) or several in order (sampleIds). Duplicates dropped.
+        const ids = [...new Set((Array.isArray(b.sampleIds) && b.sampleIds.length ? b.sampleIds : [b.sampleId]).filter(Boolean).map(String))];
+        if (!ids.length) return NextResponse.json({ error: 'Pick at least one clip' }, { status: 400 });
+        if (ids.length > 30) return NextResponse.json({ error: 'Up to 30 clips per link' }, { status: 400 });
+        const { data: found } = await db.from('studio_samples').select('id').in('id', ids);
+        if ((found || []).length !== ids.length) return NextResponse.json({ error: 'One of those clips no longer exists' }, { status: 400 });
+        const base = { sample_id: ids[0], sample_ids: ids, recipient: clean(b.recipient), title: clean(b.title), password: clean(b.password, 100) };
         for (let i = 0; i < 5; i++) {
           const { data, error } = await db.from('studio_sample_links').insert({ ...base, slug: makeSlug() })
-            .select('id, created_at, sample_id, slug, recipient, title, password, opens, last_opened_at, disabled_at, archived_at').single();
+            .select('id, created_at, sample_id, sample_ids, plays, slug, recipient, title, password, opens, last_opened_at, disabled_at, archived_at').single();
           if (!error) return NextResponse.json({ ok: true, link: { ...data, url: `${watchBase()}/w/${data.slug}` } });
           if (!String(error.message).includes('duplicate')) throw error; // slug clash → try another
         }
