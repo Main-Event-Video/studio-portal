@@ -8,7 +8,7 @@
 // deleted; clips are only ever archived from here, never deleted.
 // The library itself opens and closes, closed on load like the other folds.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const BLUE = '#3d7bff', RED = '#ff2e4c', OK = '#37d99a';
 
@@ -36,29 +36,64 @@ const fmtWhen = (iso) => {
 };
 const baseName = (f) => String(f || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
 
+// Average brightness (0-255) of what's on a canvas — used to skip black frames.
+function brightness(ctx, w, h) {
+  try {
+    const d = ctx.getImageData(0, 0, w, h).data;
+    let sum = 0, n = 0;
+    for (let k = 0; k < d.length; k += 4 * 37) { sum += 0.299 * d[k] + 0.587 * d[k + 1] + 0.114 * d[k + 2]; n++; }
+    return n ? sum / n : 0;
+  } catch { return 255; } // can't read pixels → don't block on it
+}
+
+// Draw the current frame of a <video> to a JPEG blob (null if the browser refuses).
+function frameToBlob(v) {
+  return new Promise((resolve) => {
+    try {
+      const w = 640, h = Math.round((v.videoHeight / v.videoWidth) * 640) || 360;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(v, 0, 0, w, h);
+      c.toBlob((b) => resolve(b), 'image/jpeg', 0.85);
+    } catch { resolve(null); }
+  });
+}
+
+const seekTo = (v, t) => new Promise((res) => {
+  const done = () => { v.removeEventListener('seeked', done); res(); };
+  v.addEventListener('seeked', done);
+  try { v.currentTime = t; } catch { res(); }
+  setTimeout(done, 4000);
+});
+
 // Read duration + grab a still from the local file (no network, no CORS) for the
-// library thumbnail. Formats the browser can't decode just come back without one.
+// library thumbnail. Skips dark frames (fade-ins): tries several moments and uses
+// the first bright one, else the brightest it saw. Formats the browser can't
+// decode just come back without a thumbnail.
 function probeVideo(file) {
   return new Promise((resolve) => {
-    let done = false;
-    const finish = (out) => { if (!done) { done = true; try { URL.revokeObjectURL(v.src); } catch {} resolve(out); } };
     const v = document.createElement('video');
     v.preload = 'auto'; v.muted = true; v.playsInline = true;
-    v.onloadedmetadata = () => {
-      const d = Number.isFinite(v.duration) ? v.duration : null;
-      v._dur = d;
-      try { v.currentTime = Math.min(2, (d || 3) / 3); } catch { finish({ duration: d, thumb: null }); }
-    };
-    v.onseeked = () => {
-      try {
-        const w = 640, h = Math.round((v.videoHeight / v.videoWidth) * 640) || 360;
-        const c = document.createElement('canvas'); c.width = w; c.height = h;
-        c.getContext('2d').drawImage(v, 0, 0, w, h);
-        c.toBlob((blob) => finish({ duration: v._dur, thumb: blob }), 'image/jpeg', 0.82);
-      } catch { finish({ duration: v._dur, thumb: null }); }
-    };
+    let settled = false;
+    const finish = (out) => { if (!settled) { settled = true; try { URL.revokeObjectURL(v.src); } catch {} resolve(out); } };
+    setTimeout(() => finish({ duration: Number.isFinite(v.duration) ? v.duration : null, thumb: null }), 25000);
     v.onerror = () => finish({ duration: null, thumb: null });
-    setTimeout(() => finish({ duration: v._dur || null, thumb: null }), 15000);
+    v.onloadedmetadata = async () => {
+      const d = Number.isFinite(v.duration) ? v.duration : null;
+      const tries = [2, 4, (d || 10) * 0.15, (d || 10) * 0.3, (d || 10) * 0.5].map((t) => Math.min(t, Math.max(0, (d || 1) - 0.1)));
+      const w = 160, h = Math.round((v.videoHeight / v.videoWidth) * 160) || 90;
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      let best = { t: tries[0], b: -1 };
+      for (const t of tries) {
+        await seekTo(v, t);
+        try { ctx.drawImage(v, 0, 0, w, h); } catch { break; }
+        const b = brightness(ctx, w, h);
+        if (b > best.b) best = { t, b };
+        if (b > 40) break;
+      }
+      await seekTo(v, best.t);
+      finish({ duration: d, thumb: await frameToBlob(v) });
+    };
     v.src = URL.createObjectURL(file);
   });
 }
@@ -80,6 +115,115 @@ async function copy(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
 }
 
+// THUMBNAIL PICKER (Josh 11/11): slide through the clip and pick the frame for
+// its thumbnail, or upload an image instead. Grabbing a frame from the stored
+// clip needs the file storage to allow cross-origin reads; if it doesn't, the
+// video still plays (reloaded without that flag) and only upload-an-image is offered.
+function ThumbPicker({ sample, post, onDone, onCancel }) {
+  const vref = useRef(null);
+  const [cors, setCors] = useState(true);       // false = frames can't be grabbed
+  const [dur, setDur] = useState(Number(sample.duration_s) || 0);
+  const [t, setT] = useState(0);
+  const [strip, setStrip] = useState([]);       // [{t, url}]
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  // Contact strip of 8 stills from a hidden copy of the clip.
+  useEffect(() => {
+    if (!cors || !sample.video_url) return;
+    let alive = true;
+    const v = document.createElement('video');
+    v.crossOrigin = 'anonymous'; v.muted = true; v.preload = 'auto'; v.playsInline = true;
+    const urls = [];
+    v.onloadedmetadata = async () => {
+      const d = v.duration || dur || 1;
+      const out = [];
+      for (let k = 0; k < 8 && alive; k++) {
+        const at = Math.min(d - 0.1, (d * (k + 0.5)) / 8);
+        await seekTo(v, at);
+        const b = await frameToBlob(v);
+        if (!b) break;
+        const u = URL.createObjectURL(b); urls.push(u); out.push({ t: at, url: u });
+        if (alive) setStrip([...out]);
+      }
+    };
+    v.src = sample.video_url;
+    return () => { alive = false; urls.forEach((u) => URL.revokeObjectURL(u)); v.removeAttribute('src'); };
+  }, [cors, sample.video_url]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const jump = (sec) => { setT(sec); if (vref.current) { try { vref.current.currentTime = sec; } catch {} } };
+
+  async function upload(blob, ct) {
+    const u = await post({ action: 'upload-url', contentType: ct });
+    await putWithProgress(u.url, blob, ct);
+    await post({ action: 'set-thumb', id: sample.id, thumbKey: u.key });
+  }
+
+  async function useFrame() {
+    setBusy(true); setMsg('');
+    try {
+      const b = await frameToBlob(vref.current);
+      if (!b) { setCors(false); setMsg("This clip's frames can't be grabbed in the browser. Use Upload an image instead."); setBusy(false); return; }
+      await upload(b, 'image/jpeg');
+      onDone();
+    } catch (e) { setMsg(e.message); }
+    setBusy(false);
+  }
+
+  async function useImage(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { setMsg('Please choose an image file (.jpg / .png).'); return; }
+    setBusy(true); setMsg('');
+    try { await upload(file, file.type); onDone(); } catch (e) { setMsg(e.message); }
+    setBusy(false);
+  }
+
+  const fmt = (x) => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
+
+  return (
+    <div style={{ marginTop: 16, border: `1px solid ${BLUE}`, borderRadius: 12, padding: 16, background: 'rgba(61,123,255,.06)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 16 }}>Pick a thumbnail for &ldquo;{sample.title}&rdquo;</h3>
+        <button type="button" style={pillBtn()} onClick={onCancel}>Cancel</button>
+      </div>
+      {sample.video_url ? (
+        <div style={{ position: 'relative', maxWidth: 640 }}>
+          <video key={cors ? 'c' : 'n'} ref={vref} src={sample.video_url} crossOrigin={cors ? 'anonymous' : undefined}
+            muted playsInline preload="auto"
+            onLoadedMetadata={(e) => { if (e.currentTarget.duration) setDur(e.currentTarget.duration); try { e.currentTarget.currentTime = t; } catch {} }}
+            onError={() => { if (cors) { setCors(false); setMsg("Frames can't be grabbed from this clip in the browser, so slide-to-pick is off. Upload an image instead."); } }}
+            style={{ width: '100%', aspectRatio: '16/9', background: '#000', borderRadius: 10, display: 'block' }} />
+          <span style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 12, background: 'rgba(0,0,0,.65)', padding: '2px 8px', borderRadius: 4, color: '#fff' }}>
+            {fmt(t)} / {fmt(dur)}
+          </span>
+        </div>
+      ) : <p style={{ color: 'var(--muted)' }}>Clip not available.</p>}
+      {cors && dur > 0 && (
+        <input type="range" min={0} max={Math.max(0.1, dur - 0.05)} step={0.04} value={t}
+          onChange={(e) => jump(Number(e.target.value))}
+          style={{ width: '100%', maxWidth: 640, margin: '14px 0 6px', accentColor: BLUE, display: 'block' }} />
+      )}
+      {cors && strip.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4, maxWidth: 640, marginBottom: 12 }}>
+          {strip.map((f) => (
+            <img key={f.t} src={f.url} alt="" onClick={() => jump(f.t)} title={`Jump to ${fmt(f.t)}`}
+              style={{ width: '100%', aspectRatio: '16/9', objectFit: 'cover', borderRadius: 3, cursor: 'pointer', display: 'block' }} />
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+        {cors && <button type="button" style={solidBtn} disabled={busy} onClick={useFrame}>{busy ? 'Saving…' : 'Use this frame'}</button>}
+        <label style={{ ...pillBtn(cors ? 'var(--line)' : BLUE), display: 'inline-block' }}>
+          Upload an image instead
+          <input type="file" accept="image/*" style={{ display: 'none' }} disabled={busy}
+            onChange={(e) => { useImage(e.target.files?.[0]); e.target.value = ''; }} />
+        </label>
+      </div>
+      {msg && <p className="msg-error">{msg}</p>}
+    </div>
+  );
+}
+
 export default function SampleLinks({ api }) {
   const [samples, setSamples] = useState([]);
   const [links, setLinks] = useState([]);
@@ -89,6 +233,7 @@ export default function SampleLinks({ api }) {
   const [upload, setUpload] = useState(null);             // {name, pct, stage}
   const [pending, setPending] = useState(null);           // uploaded, waiting for a name
   const [renaming, setRenaming] = useState(null);         // {id, title}
+  const [thumbFor, setThumbFor] = useState(null);         // sample id for the thumbnail picker
   const [linkFor, setLinkFor] = useState(null);           // sample id for the New link form
   const [form, setForm] = useState({ recipient: '', title: '', password: '' });
   const [made, setMade] = useState(null);                 // the link just created
@@ -268,6 +413,7 @@ export default function SampleLinks({ api }) {
                     <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                       {!s.archived_at && <button type="button" style={solidBtn} onClick={() => openNewLink(s)}>＋ New link</button>}
                       <button type="button" style={pillBtn()} onClick={() => setRenaming({ id: s.id, title: s.title })}>Rename</button>
+                      <button type="button" style={pillBtn(thumbFor === s.id ? BLUE : 'var(--line)')} onClick={() => setThumbFor(thumbFor === s.id ? null : s.id)}>Thumbnail</button>
                       <button type="button" style={pillBtn()} onClick={() => archiveClip(s, !s.archived_at)}>{s.archived_at ? 'Unarchive' : 'Archive'}</button>
                     </div>
                   </div>
@@ -293,6 +439,12 @@ export default function SampleLinks({ api }) {
           </div>
           {!pending.thumbKey && <p style={{ color: 'var(--muted)', fontSize: 12, margin: '8px 0 0' }}>No thumbnail: this browser could not read a frame from the file. The clip still works.</p>}
         </form>
+      )}
+
+      {thumbFor && byId[thumbFor] && (
+        <ThumbPicker key={thumbFor} sample={byId[thumbFor]} post={post}
+          onCancel={() => setThumbFor(null)}
+          onDone={async () => { setThumbFor(null); await load(); say('Thumbnail updated'); }} />
       )}
 
       {/* ---- New link form ---- */}

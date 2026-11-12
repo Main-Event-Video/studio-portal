@@ -9,6 +9,7 @@
 //   upload-url     { contentType }                         → { url, key }
 //   create-sample  { key, thumbKey, filename, title, contentType, size, duration }
 //   rename-sample  { id, title }
+//   set-thumb      { id, thumbKey }   (thumbnail picker / uploaded image)
 //   archive-sample { id, archived: true|false }
 //   create-link    { sampleId, recipient, title, password } → { link }
 //   update-link    { id, disabled?, archived?, password? }
@@ -41,7 +42,7 @@ export async function GET(request) {
   const db = createServiceClient();
 
   const { data: samples, error: e1 } = await db.from('studio_samples')
-    .select('id, created_at, title, filename, content_type, size_bytes, duration_s, thumb_key, archived_at')
+    .select('id, created_at, title, filename, r2_key, content_type, size_bytes, duration_s, thumb_key, archived_at')
     .order('created_at', { ascending: false });
   if (e1) return NextResponse.json({ error: e1.message.includes('does not exist') ? 'Run the 018 database step first.' : e1.message }, { status: 500 });
 
@@ -51,9 +52,10 @@ export async function GET(request) {
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
 
   const base = watchBase();
-  const out = await Promise.all((samples || []).map(async (s) => ({
+  const out = await Promise.all((samples || []).map(async ({ r2_key, ...s }) => ({
     ...s,
     thumb_url: s.thumb_key ? await getViewUrl(s.thumb_key, 43200).catch(() => null) : null,
+    video_url: await getViewUrl(r2_key, 43200).catch(() => null), // for the thumbnail picker
   })));
   return NextResponse.json({
     samples: out,
@@ -95,6 +97,12 @@ export async function POST(request) {
         const title = clean(b.title);
         if (!b.id || !title) return NextResponse.json({ error: 'Name is empty' }, { status: 400 });
         const { error } = await db.from('studio_samples').update({ title }).eq('id', b.id);
+        if (error) throw error;
+        return NextResponse.json({ ok: true });
+      }
+      case 'set-thumb': {
+        if (!b.id || !b.thumbKey || !String(b.thumbKey).startsWith('studio/samples/')) return NextResponse.json({ error: 'Missing thumbnail' }, { status: 400 });
+        const { error } = await db.from('studio_samples').update({ thumb_key: b.thumbKey }).eq('id', b.id);
         if (error) throw error;
         return NextResponse.json({ ok: true });
       }
