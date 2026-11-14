@@ -799,7 +799,9 @@ export default function AdminPage() {
   // from MEvid's "Main Event Studio Analytics" pill (?analytics=1), which opens it.
   const [saOpen, setSaOpen] = useState(false);
   // Sample links (Josh 11/11): clip library + trackable links for prospects.
-  // Closed on load like the other pills.
+  // Closed on load like the other pills. Josh 11/14: Sample links and Site
+  // analytics are one-at-a-time — opening one closes the other, because a panel
+  // opened under the long analytics panel landed off-screen and looked broken.
   const [slOpen, setSlOpen] = useState(false);
   useEffect(() => {
     try { if (new URLSearchParams(window.location.search).get('analytics') === '1') setSaOpen(true); } catch {}
@@ -5788,14 +5790,14 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             textShadow: '0 0 8px rgba(255,46,76,.55)' }}>
           <span aria-hidden="true" style={{ fontSize: 11 }}>{newOpen ? '▾' : '▸'}</span> New client
         </button>
-        <button type="button" onClick={() => setSaOpen((v) => !v)} aria-expanded={saOpen}
+        <button type="button" onClick={() => { setSaOpen((v) => !v); setSlOpen(false); }} aria-expanded={saOpen}
           style={{ background: 'transparent', border: '1px solid var(--blue)', borderRadius: 999,
             padding: '6px 16px', color: '#cfe0ff', fontWeight: 800, fontSize: 13, letterSpacing: '.09em',
             textTransform: 'uppercase', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
             textShadow: '0 0 8px rgba(61,123,255,.6)' }}>
           <span aria-hidden="true" style={{ fontSize: 11 }}>{saOpen ? '▾' : '▸'}</span> Site analytics
         </button>
-        <button type="button" onClick={() => setSlOpen((v) => !v)} aria-expanded={slOpen}
+        <button type="button" onClick={() => { setSlOpen((v) => !v); setSaOpen(false); }} aria-expanded={slOpen}
           style={{ background: 'transparent', border: '1px solid var(--blue)', borderRadius: 999,
             padding: '6px 16px', color: '#cfe0ff', fontWeight: 800, fontSize: 13, letterSpacing: '.09em',
             textTransform: 'uppercase', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
