@@ -484,7 +484,7 @@ export default function SampleLinks({ api }) {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, alignItems: 'end' }}>
             <div>
-              <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Who&apos;s it for? (shows in the open emails)</label>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Who&apos;s it for? (internal use — shows in the open emails)</label>
               <input value={form.recipient} onChange={(e) => setForm({ ...form, recipient: e.target.value })} placeholder="Jennifer Lee – Bat Mitzvah inquiry" />
             </div>
             <div>
@@ -496,7 +496,7 @@ export default function SampleLinks({ api }) {
               <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Password (optional, blank = none)</label>
               <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="off" />
             </div>
-            <div><button type="submit" disabled={!pickIds.length} style={{ ...solidBtn, padding: '10px 18px', fontSize: 14, opacity: pickIds.length ? 1 : 0.5 }}>Create link{pickIds.length > 1 ? ` (${pickIds.length} clips)` : ''}</button></div>
+            <div><button type="submit" disabled={!pickIds.length} style={{ ...solidBtn, padding: '10px 18px', fontSize: 14, opacity: pickIds.length ? 1 : 0.5 }}>Create link to send{pickIds.length > 1 ? ` (${pickIds.length} clips)` : ''}</button></div>
           </div>
           {made && (
             <div style={{ marginTop: 12, border: `1px solid ${OK}`, borderRadius: 10, padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', background: 'rgba(55,217,154,.06)' }}>
