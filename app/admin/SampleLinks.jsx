@@ -516,7 +516,7 @@ export default function SampleLinks({ api }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <p style={kicker}>All links</p>
         {!linkOpen && samples.some((x) => !x.archived_at) && (
-          <button type="button" style={solidBtn} onClick={() => openNewLink(null)}>＋ New link</button>
+          <button type="button" style={solidBtn} onClick={() => openNewLink(null)}>Click here to send multiple samples</button>
         )}
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
@@ -537,7 +537,7 @@ export default function SampleLinks({ api }) {
 
       {shownLinks.length === 0 ? (
         <p style={{ color: 'var(--muted)', fontSize: 14 }}>
-          {links.length ? 'No links here.' : 'No links yet. Open the Sample library, add a clip, then click ＋ New link.'}
+          {links.length ? 'No links here.' : 'No links yet. Open the Sample library, add a clip, then click the blue “Click here to send multiple samples” button.'}
         </p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
