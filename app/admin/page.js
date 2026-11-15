@@ -5845,6 +5845,46 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
               </span>
             </p>
           )}
+          {(form.display_name || form.email) && (() => {
+            // Josh 11/15: live "How it will read" preview, so the welcome name
+            // can be checked before the client is created. Mirrors the portal
+            // hub header (app/p/[token]/page.js) and the cut emails (lib/email.js).
+            const nm = form.display_name.trim();
+            let dt = '';
+            if (form.event_date) {
+              try { dt = new Date(form.event_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); } catch { dt = form.event_date; }
+            }
+            const when = [dt, form.event_type.trim()].filter(Boolean).join(' · ');
+            const cap = { fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--muted)', padding: '7px 10px', borderBottom: '1px solid var(--line)' };
+            return (
+              <div style={{ marginTop: 16 }}>
+                <p style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--muted)', margin: '0 0 8px' }}>How it will read</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
+                    <div style={cap}>Their portal</div>
+                    <div style={{ background: 'radial-gradient(ellipse at top, #1b1030, #0a0610)', textAlign: 'center', padding: '16px 10px 18px' }}>
+                      <Image src="/logo.png" alt="Main Event Studio" width={120} height={81} style={{ display: 'block', margin: '0 auto' }} />
+                      <div className="neon neon-blue" style={{ fontSize: 20, fontWeight: 800, margin: '8px 0 4px' }}>Welcome {nm}</div>
+                      {when && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{when}</div>}
+                    </div>
+                  </div>
+                  <div style={{ border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
+                    <div style={cap}>Emails we send them</div>
+                    <div style={{ background: '#f4f2f7', padding: 12, height: '100%' }}>
+                      <div style={{ fontSize: 11.5, color: '#666', marginBottom: 8, wordBreak: 'break-all' }}>
+                        To: <b style={{ color: '#333' }}>{nm} &lt;{form.email.trim()}&gt;</b>
+                      </div>
+                      <div style={{ background: '#fff', borderRadius: 8, padding: '14px 16px' }}>
+                        <p style={{ fontSize: 18, fontWeight: 700, color: '#1a1523', margin: '0 0 6px' }}>Hi {nm},</p>
+                        <p style={{ fontSize: 13, color: '#555', lineHeight: 1.5, margin: 0 }}>Your cut from Main Event Studio is ready to watch…</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {!nm && <p style={{ fontSize: 12.5, color: '#ffb44d', margin: '8px 0 0' }}>⚠ Welcome name is empty — the portal would just say &quot;Welcome&quot;.</p>}
+              </div>
+            );
+          })()}
           {createError && <p className="msg-error">{createError}</p>}
           <button className="btn-primary" disabled={creating}>
             {creating ? 'Creating…' : 'Create client'}
