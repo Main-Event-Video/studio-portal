@@ -12,6 +12,7 @@ import NeonControls from './NeonControls';
 import CropEditor from './CropEditor';
 import SiteAnalytics from './SiteAnalytics';
 import SampleLinks from './SampleLinks';
+import Reviews from './Reviews';
 
 // Clients move unwanted / duplicate files into this folder; only the admin
 // actually deletes them ("Empty Trash"). Must match the portal's constant.
@@ -803,6 +804,11 @@ export default function AdminPage() {
   // analytics are one-at-a-time — opening one closes the other, because a panel
   // opened under the long analytics panel landed off-screen and looked broken.
   const [slOpen, setSlOpen] = useState(false);
+  // Reviews (Josh + Robyn 11/17): approve client reviews before they post on
+  // /testimonials. Same one-at-a-time rule as Site analytics / Sample links.
+  // rvWaiting = the red count on the pill, fetched once the admin is signed in.
+  const [rvOpen, setRvOpen] = useState(false);
+  const [rvWaiting, setRvWaiting] = useState(0);
   useEffect(() => {
     try { if (new URLSearchParams(window.location.search).get('analytics') === '1') setSaOpen(true); } catch {}
   }, []);
@@ -1057,6 +1063,7 @@ export default function AdminPage() {
     if (session) {
       loadClients();
       loadMontages();
+      api('/api/admin/reviews').then((j) => setRvWaiting(j.waiting || 0)).catch(() => {});
     }
   }, [session, loadClients, loadMontages]);
 
@@ -5790,23 +5797,34 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
             textShadow: '0 0 8px rgba(255,46,76,.55)' }}>
           <span aria-hidden="true" style={{ fontSize: 11 }}>{newOpen ? '▾' : '▸'}</span> New client
         </button>
-        <button type="button" onClick={() => { setSaOpen((v) => !v); setSlOpen(false); }} aria-expanded={saOpen}
+        <button type="button" onClick={() => { setSaOpen((v) => !v); setSlOpen(false); setRvOpen(false); }} aria-expanded={saOpen}
           style={{ background: 'transparent', border: '1px solid var(--blue)', borderRadius: 999,
             padding: '6px 16px', color: '#cfe0ff', fontWeight: 800, fontSize: 13, letterSpacing: '.09em',
             textTransform: 'uppercase', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
             textShadow: '0 0 8px rgba(61,123,255,.6)' }}>
           <span aria-hidden="true" style={{ fontSize: 11 }}>{saOpen ? '▾' : '▸'}</span> Site analytics
         </button>
-        <button type="button" onClick={() => { setSlOpen((v) => !v); setSaOpen(false); }} aria-expanded={slOpen}
+        <button type="button" onClick={() => { setSlOpen((v) => !v); setSaOpen(false); setRvOpen(false); }} aria-expanded={slOpen}
           style={{ background: 'transparent', border: '1px solid var(--blue)', borderRadius: 999,
             padding: '6px 16px', color: '#cfe0ff', fontWeight: 800, fontSize: 13, letterSpacing: '.09em',
             textTransform: 'uppercase', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
             textShadow: '0 0 8px rgba(61,123,255,.6)' }}>
           <span aria-hidden="true" style={{ fontSize: 11 }}>{slOpen ? '▾' : '▸'}</span> Sample links
         </button>
+        <button type="button" onClick={() => { setRvOpen((v) => !v); setSaOpen(false); setSlOpen(false); }} aria-expanded={rvOpen}
+          style={{ background: 'transparent', border: '1px solid var(--blue)', borderRadius: 999,
+            padding: '6px 16px', color: '#cfe0ff', fontWeight: 800, fontSize: 13, letterSpacing: '.09em',
+            textTransform: 'uppercase', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
+            textShadow: '0 0 8px rgba(61,123,255,.6)' }}>
+          <span aria-hidden="true" style={{ fontSize: 11 }}>{rvOpen ? '▾' : '▸'}</span> Reviews
+          {rvWaiting > 0 && (
+            <span style={{ background: 'var(--red)', color: '#fff', borderRadius: 999, fontSize: 11, padding: '0 7px', letterSpacing: 0, textShadow: 'none' }}>{rvWaiting}</span>
+          )}
+        </button>
         </div>
         {saOpen && <SiteAnalytics api={api} />}
         {slOpen && <SampleLinks api={api} />}
+        {rvOpen && <Reviews api={api} onCount={setRvWaiting} />}
         {/* The ticket — the one-time username/password and portal link — lives in
             this section, so the fold has to stay OPEN while one is on screen or
             creating a client would hide the credentials it just produced. That is
