@@ -13,6 +13,7 @@ import CropEditor from './CropEditor';
 import SiteAnalytics from './SiteAnalytics';
 import SampleLinks from './SampleLinks';
 import Reviews from './Reviews';
+import ReviewRequest from './ReviewRequest';
 
 // Clients move unwanted / duplicate files into this folder; only the admin
 // actually deletes them ("Empty Trash"). Must match the portal's constant.
@@ -809,6 +810,8 @@ export default function AdminPage() {
   // rvWaiting = the red count on the pill, fetched once the admin is signed in.
   const [rvOpen, setRvOpen] = useState(false);
   const [rvWaiting, setRvWaiting] = useState(0);
+  // Which client row has its "★ Request Review" box open (one at a time).
+  const [reqFor, setReqFor] = useState(null);
   useEffect(() => {
     try { if (new URLSearchParams(window.location.search).get('analytics') === '1') setSaOpen(true); } catch {}
   }, []);
@@ -6110,9 +6113,35 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                           <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
                           <button className="btn-ghost" onClick={() => toggleArchive(c.id)}>
                             {c.archived ? 'Unarchive' : 'Archive'}
-                          </button>
+                          </button>{' '}
+                          {(() => {
+                            // ★ Request Review (Josh 11/17): gold = not asked yet,
+                            // grey = asked (click to remind), green = reviewed.
+                            const open = reqFor === c.id;
+                            const asked = c.review_reminded_at || c.review_asked_at;
+                            const done = !!c.reviewed_at;
+                            const color = done ? '#37d99a' : asked ? 'var(--muted)' : '#ffc93d';
+                            const label = done
+                              ? `${'★'.repeat(c.review_stars || 5)} Reviewed`
+                              : asked
+                                ? `★ Requested ${new Date(asked).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                                : '★ Request Review';
+                            return (
+                              <button type="button" className="btn-ghost" aria-expanded={open}
+                                style={{ borderColor: color, color, ...(open ? { background: 'rgba(255,201,61,.08)' } : {}) }}
+                                onClick={() => setReqFor(open ? null : c.id)}>{label}</button>
+                            );
+                          })()}
                         </td>
                       </tr>
+
+                      {reqFor === c.id && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: '6px 8px 16px' }}>
+                            <ReviewRequest client={c} api={api} onDone={loadClients} onClose={() => setReqFor(null)} />
+                          </td>
+                        </tr>
+                      )}
 
                       {isOpen && (
                         <tr className="row-workspace">

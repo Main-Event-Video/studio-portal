@@ -84,7 +84,18 @@ export async function GET(request) {
     for (const r of charRows || []) { if (r.done_at && !r.deleted_at) charDone.add(r.client_id); }
   } catch { /* characters table absent — leave all un-flagged */ }
 
+  // Review request status (Reviews, 11/17): when they were asked, and the
+  // stars of their latest review, for the ★ Request Review button. Best-effort.
+  const review = {};
+  try {
+    const { data: rc } = await db.from('studio_clients').select('id, review_asked_at, review_reminded_at, reviewed_at');
+    for (const r of rc || []) review[r.id] = { review_asked_at: r.review_asked_at, review_reminded_at: r.review_reminded_at, reviewed_at: r.reviewed_at };
+    const { data: rv } = await db.from('studio_reviews').select('client_id, stars, created_at').not('client_id', 'is', null).order('created_at', { ascending: true });
+    for (const r of rv || []) if (review[r.client_id]) review[r.client_id].review_stars = r.stars; // latest wins
+  } catch { /* 020 not run — leave buttons as "Request Review" */ }
+
   const clients = (data || []).map((c) => ({
+    ...(review[c.id] || {}),
     ...c,
     upload_count: stats[c.id]?.upload_count || 0,
     trash_count: stats[c.id]?.trash_count || 0,

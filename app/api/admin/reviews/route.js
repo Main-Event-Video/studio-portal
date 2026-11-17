@@ -12,9 +12,15 @@
 //   add      { stars, body, name_given, name_display, event_label, post }
 //            → a review typed in by hand (arrived by text/email). post=true
 //              puts it straight on the website.
+//   request-link { clientId }  → { url }  (makes the client's private link if needed)
+//   send-request { clientId, to, subject, heading, message } → emails the request
+//              (only after the admin clicks "Request approved to send to client"),
+//              copy to info@, and records when they were asked / reminded.
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabaseAdmin';
+import crypto from 'crypto';
 import { requireAdmin } from '@/lib/adminAuth';
+import { sendReviewRequest } from '@/lib/email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,6 +28,28 @@ export const dynamic = 'force-dynamic';
 const clean = (v, n = 200) => (typeof v === 'string' ? v.trim().slice(0, n) : '');
 const COLS = 'id, created_at, client_id, source, stars, body, original_body, name_given, name_display, event_label, ok_to_post, status, posted_at';
 const MODES = ['full', 'first', 'initials'];
+const ALPHA = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function makeToken(len = 24) {
+  const bytes = crypto.randomBytes(len);
+  let t = '';
+  for (let i = 0; i < len; i++) t += ALPHA[bytes[i] % ALPHA.length];
+  return t;
+}
+function reviewBase() {
+  return (process.env.NEXT_PUBLIC_SITE_URL || 'https://clients.maineventstudio.com').replace(/\/$/, '');
+}
+// The client's private review link — made once, then reused for reminders.
+async function linkFor(db, clientId) {
+  const { data: c } = await db.from('studio_clients').select('id, review_token, review_asked_at').eq('id', clientId).maybeSingle();
+  if (!c) return null;
+  let token = c.review_token;
+  if (!token) {
+    token = makeToken();
+    const { error } = await db.from('studio_clients').update({ review_token: token }).eq('id', clientId);
+    if (error) return null;
+  }
+  return { url: `${reviewBase()}/review?c=${token}`, askedBefore: !!c.review_asked_at };
+}
 
 export async function GET(request) {
   const auth = await requireAdmin(request);
@@ -79,6 +107,23 @@ export async function POST(request) {
       const { data, error } = await db.from('studio_reviews').insert(row).select(COLS).single();
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ review: data });
+    }
+    case 'request-link': {
+      const l = await linkFor(db, b.clientId);
+      if (!l) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+      return NextResponse.json({ url: l.url });
+    }
+    case 'send-request': {
+      const to = clean(b.to, 300), subject = clean(b.subject, 200), heading = clean(b.heading, 200);
+      const message = typeof b.message === 'string' ? b.message.slice(0, 8000) : '';
+      if (!to.includes('@')) return NextResponse.json({ error: 'Add an email address in To.' }, { status: 400 });
+      if (!subject || !message.trim()) return NextResponse.json({ error: 'Subject and message are both needed.' }, { status: 400 });
+      const l = await linkFor(db, b.clientId);
+      if (!l) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+      try { await sendReviewRequest({ to, subject, heading, message, link: l.url }); }
+      catch (e) { return NextResponse.json({ error: `The email could not be sent: ${e?.message || 'unknown error'}` }, { status: 502 }); }
+      await db.from('studio_clients').update(l.askedBefore ? { review_reminded_at: now } : { review_asked_at: now }).eq('id', b.clientId);
+      return NextResponse.json({ ok: true, at: now, reminder: l.askedBefore });
     }
     default: return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   }
