@@ -146,7 +146,7 @@ td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: t
    clip its text with an ellipsis, not spill into the neighbour. */
 table.colw { table-layout: fixed; }
 table.colw > tbody > tr > td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-table.colw > tbody > tr > td.wrap { white-space: normal; }
+table.colw > tbody > tr > td.notes-cell { white-space: normal; }
 table.colw > tbody > tr > td[colspan] { white-space: normal; overflow: visible; }
 tr:last-child td { border-bottom: none; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }

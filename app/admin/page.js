@@ -6163,7 +6163,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.last_upload_at)}</td>
                         <td>{c.upload_count ?? 0}</td>
-                        <td className="wrap" style={{ verticalAlign: 'top' }} onClick={(e) => e.stopPropagation()}>
+                        <td className="notes-cell" style={{ verticalAlign: 'top' }} onClick={(e) => e.stopPropagation()}>
                           <textarea
                             value={noteDraft[c.id] ?? (c.admin_info?.notes || '')}
                             placeholder="Add a note…"
