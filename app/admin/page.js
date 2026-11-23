@@ -865,10 +865,14 @@ export default function AdminPage() {
       }}
       onDoubleClick={(e) => { e.stopPropagation(); setColWidth(k, COL_DEFAULT[k]); }}
       onClick={(e) => e.stopPropagation()}
-      style={{ position: 'absolute', top: 0, right: -4, width: 8, height: '100%', cursor: 'col-resize', zIndex: 2, background: colDrag.current === k ? 'rgba(56,182,255,.55)' : 'transparent' }}
+      style={{ position: 'absolute', top: 0, right: 0, width: 10, height: '100%', cursor: 'col-resize', zIndex: 2,
+        // a visible grab line, so it reads as "drag me" (Josh 11/23: "I don't see how to slide the boxes")
+        borderRight: colDrag.current === k ? '3px solid #38b6ff' : '2px solid rgba(56,182,255,.45)', boxSizing: 'border-box' }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderRight = '3px solid #38b6ff'; }}
+      onMouseLeave={(e) => { if (colDrag.current !== k) e.currentTarget.style.borderRight = '2px solid rgba(56,182,255,.45)'; }}
     />
   );
-  const thStyle = (k, extra = {}) => ({ position: 'relative', width: colW[k], maxWidth: colW[k], overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...extra });
+  const thStyle = (k, extra = {}) => ({ position: 'relative', width: colW[k], maxWidth: colW[k], overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 14, ...extra });
   // Notes: draft per client while typing, saved on blur (merged into admin_info).
   const [noteDraft, setNoteDraft] = useState({});
   const [noteSaved, setNoteSaved] = useState({});
