@@ -6095,7 +6095,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
         )}
         {clients.length > 0 && (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ tableLayout: 'fixed', width: COL_KEYS.reduce((n, k) => n + (colW[k] || 0), 0) }}>
+            <table className="colw" style={{ tableLayout: 'fixed', width: COL_KEYS.reduce((n, k) => n + (colW[k] || 0), 0) }}>
               <thead>
                 <tr>
                   {sortHead('name', 'Client')}
@@ -6156,14 +6156,14 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                           </button>{' '}
                           {c.archived && <span className="pill archived">archived</span>}
                         </td>
-                        <td className="mono">{c.email}</td>
+                        <td className="mono" title={c.email}>{c.email}</td>
                         <td>
                           {c.event_date}
                           {c.event_type ? ` · ${c.event_type}` : ''}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.last_upload_at)}</td>
                         <td>{c.upload_count ?? 0}</td>
-                        <td style={{ whiteSpace: 'normal', verticalAlign: 'top' }} onClick={(e) => e.stopPropagation()}>
+                        <td className="wrap" style={{ verticalAlign: 'top' }} onClick={(e) => e.stopPropagation()}>
                           <textarea
                             value={noteDraft[c.id] ?? (c.admin_info?.notes || '')}
                             placeholder="Add a note…"
