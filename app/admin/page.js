@@ -835,6 +835,55 @@ export default function AdminPage() {
   // sorted by.
   const [sortKey, setSortKey] = useState('event');
   const [sortDir, setSortDir] = useState(-1);
+  // Josh 11/23: (a) a NOTES column right of Files — free text per client, saved
+  // into the client's admin_info (same store as the info sheet, so Robyn sees
+  // it; no migration); (b) spreadsheet-style column widths — drag a header's
+  // right edge, double-click to reset; remembered per browser in localStorage.
+  const COL_KEYS = ['name', 'email', 'event', 'upload', 'files', 'notes', 'actions'];
+  const COL_DEFAULT = { name: 200, email: 200, event: 130, upload: 120, files: 60, notes: 260, actions: 420 };
+  const [colW, setColW] = useState({ ...COL_DEFAULT });
+  useEffect(() => { // after mount, so the server-rendered table and the browser agree
+    try { const j = JSON.parse(localStorage.getItem('studio_admin_colw') || 'null'); if (j && typeof j === 'object') setColW({ ...COL_DEFAULT, ...j }); }
+    catch { /* no storage */ }
+  }, []);
+  const colDrag = useRef(null);
+  const setColWidth = (k, w) => setColW((cur) => {
+    const next = { ...cur, [k]: w };
+    try { localStorage.setItem('studio_admin_colw', JSON.stringify(next)); } catch { /* private mode */ }
+    return next;
+  });
+  const colGrip = (k) => (
+    <span
+      title="Drag to resize · double-click to reset"
+      onMouseDown={(e) => {
+        e.preventDefault(); e.stopPropagation();
+        const start = { x: e.clientX, w: colW[k] || COL_DEFAULT[k] };
+        colDrag.current = k;
+        const mv = (ev) => setColWidth(k, Math.max(50, start.w + ev.clientX - start.x));
+        const up = () => { colDrag.current = null; window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); };
+        window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+      }}
+      onDoubleClick={(e) => { e.stopPropagation(); setColWidth(k, COL_DEFAULT[k]); }}
+      onClick={(e) => e.stopPropagation()}
+      style={{ position: 'absolute', top: 0, right: -4, width: 8, height: '100%', cursor: 'col-resize', zIndex: 2, background: colDrag.current === k ? 'rgba(56,182,255,.55)' : 'transparent' }}
+    />
+  );
+  const thStyle = (k, extra = {}) => ({ position: 'relative', width: colW[k], maxWidth: colW[k], overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...extra });
+  // Notes: draft per client while typing, saved on blur (merged into admin_info).
+  const [noteDraft, setNoteDraft] = useState({});
+  const [noteSaved, setNoteSaved] = useState({});
+  async function saveClientNote(c, text) {
+    const cur = (c.admin_info && typeof c.admin_info === 'object') ? c.admin_info : {};
+    if ((cur.notes || '') === text) return;
+    try {
+      await saveAdminInfo(c.id, { ...cur, notes: text });
+      setClients((list) => list.map((x) => (x.id === c.id ? { ...x, admin_info: { ...cur, notes: text } } : x)));
+      setNoteSaved((m) => ({ ...m, [c.id]: 'Saved' }));
+      setTimeout(() => setNoteSaved((m) => { const n = { ...m }; delete n[c.id]; return n; }), 1500);
+    } catch (e) {
+      setNoteSaved((m) => ({ ...m, [c.id]: `Not saved: ${e.message}` }));
+    }
+  }
   const sortVal = (c) => (sortKey === 'name' ? String(c.display_name || '').toLowerCase()
     : sortKey === 'event' ? (c.event_date || '')
       : (c.last_upload_at || ''));
@@ -860,11 +909,12 @@ export default function AdminPage() {
   };
   const sortHead = (k, label) => (
     <th onClick={() => sortBy(k)} title={`Sort by ${label.toLowerCase()}`}
-      style={{ cursor: 'pointer', userSelect: 'none', color: sortKey === k ? 'var(--blue)' : undefined }}>
+      style={thStyle(k, { cursor: 'pointer', userSelect: 'none', color: sortKey === k ? 'var(--blue)' : undefined })}>
       {label}{' '}
       <span aria-hidden="true" style={{ fontSize: 9, opacity: 0.85 }}>
         {sortKey === k ? (sortDir === 1 ? '\u25B2' : '\u25BC') : ''}
       </span>
+      {colGrip(k)}
     </th>
   );
   // The one row that gathers every archived client. Rendered at the boundary
@@ -874,7 +924,7 @@ export default function AdminPage() {
     const n = arr.filter((c) => c.archived).length;
     return (
       <tr key="__archived_toggle">
-        <td colSpan={6} style={{ background: 'rgba(255,46,76,0.04)' }}>
+        <td colSpan={7} style={{ background: 'rgba(255,46,76,0.04)' }}>
           <button type="button" onClick={() => setArchOpen((v) => !v)} aria-expanded={archOpen}
             style={{ background: 'transparent', border: '1px solid var(--red)', borderRadius: 999,
               padding: '5px 14px', color: 'var(--red)', fontWeight: 700, fontSize: 12.5,
@@ -6041,15 +6091,16 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
         )}
         {clients.length > 0 && (
           <div style={{ overflowX: 'auto' }}>
-            <table>
+            <table style={{ tableLayout: 'fixed', width: COL_KEYS.reduce((n, k) => n + (colW[k] || 0), 0) }}>
               <thead>
                 <tr>
                   {sortHead('name', 'Client')}
-                  <th>Email</th>
+                  <th style={thStyle('email')}>Email{colGrip('email')}</th>
                   {sortHead('event', 'Event')}
                   {sortHead('upload', 'Last upload')}
-                  <th>Files</th>
-                  <th></th>
+                  <th style={thStyle('files')}>Files{colGrip('files')}</th>
+                  <th style={thStyle('notes')}>Notes{colGrip('notes')}</th>
+                  <th style={thStyle('actions')}>{colGrip('actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -6108,6 +6159,18 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.last_upload_at)}</td>
                         <td>{c.upload_count ?? 0}</td>
+                        <td style={{ whiteSpace: 'normal', verticalAlign: 'top' }} onClick={(e) => e.stopPropagation()}>
+                          <textarea
+                            value={noteDraft[c.id] ?? (c.admin_info?.notes || '')}
+                            placeholder="Add a note…"
+                            rows={1}
+                            onChange={(e) => setNoteDraft((d) => ({ ...d, [c.id]: e.target.value }))}
+                            onBlur={(e) => { const v = e.target.value; setNoteDraft((d) => { const n = { ...d }; delete n[c.id]; return n; }); saveClientNote(c, v); }}
+                            onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = `${Math.min(220, e.target.scrollHeight)}px`; }}
+                            style={{ width: '100%', boxSizing: 'border-box', minHeight: 32, resize: 'vertical', font: 'inherit', fontSize: 12.5, lineHeight: 1.4, padding: '5px 7px' }}
+                          />
+                          <div style={{ fontSize: 10.5, height: 12, color: (noteSaved[c.id] || '').startsWith('Not') ? '#f5a623' : '#22c55e' }}>{noteSaved[c.id] || ''}</div>
+                        </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <button className="btn-ghost" onClick={() => startEditClient(c)} title="Fix a name, email or date entered at setup">✎ Edit</button>{' '}
                           <button className="btn-ghost" onClick={() => resetPassword(c.id)}>Reset password</button>{' '}
@@ -6137,7 +6200,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
 
                       {reqFor === c.id && (
                         <tr>
-                          <td colSpan={6} style={{ padding: '6px 8px 16px' }}>
+                          <td colSpan={7} style={{ padding: '6px 8px 16px' }}>
                             <ReviewRequest client={c} api={api} onDone={loadClients} onClose={() => setReqFor(null)} />
                           </td>
                         </tr>
@@ -6145,7 +6208,7 @@ Drag any photo to a new spot to reorder it — the order saves automatically and
 
                       {isOpen && (
                         <tr className="row-workspace">
-                          <td colSpan={6} style={{ background: 'rgba(127,127,127,0.06)', padding: '18px 16px' }}>
+                          <td colSpan={7} style={{ background: 'rgba(127,127,127,0.06)', padding: '18px 16px' }}>
                             <div className="client-workspace">
                               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                                 <button
