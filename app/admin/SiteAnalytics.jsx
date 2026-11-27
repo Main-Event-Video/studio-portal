@@ -41,7 +41,7 @@ function List({ title, items, empty, onPick }) {
   );
 }
 
-function Chart({ series }) {
+function Chart({ series, color = BLUE }) {
   const W = 1000, H = 130, pad = 14;
   const max = Math.max(1, ...series.map((s) => s.value));
   const n = series.length;
@@ -51,14 +51,66 @@ function Chart({ series }) {
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
       {[0, 0.5, 1].map((f) => <line key={f} x1="0" x2={W} y1={16 + (H - 40) * f} y2={16 + (H - 40) * f} stroke="var(--line)" />)}
-      <polyline fill="none" stroke={BLUE} strokeWidth="3" points={series.map((s, i) => `${x(i)},${y(s.value)}`).join(' ')} />
+      <polyline fill="none" stroke={color} strokeWidth="3" points={series.map((s, i) => `${x(i)},${y(s.value)}`).join(' ')} />
       {series.map((s, i) => (
         <g key={i}>
-          <circle cx={x(i)} cy={y(s.value)} r={n > 40 ? 2.5 : 4} fill={BLUE}><title>{`${s.label}: ${s.value}`}</title></circle>
+          <circle cx={x(i)} cy={y(s.value)} r={n > 40 ? 2.5 : 4} fill={color}><title>{`${s.label}: ${s.value}`}</title></circle>
           {i % every === 0 || i === n - 1 ? <text x={x(i)} y={H - 4} fontSize="11" fill="var(--muted)" textAnchor="middle">{s.label}</text> : null}
         </g>
       ))}
     </svg>
+  );
+}
+
+
+// DRAWN TOGETHER VIDEO (Josh 11/27, layout approved from mockup) — plays and
+// how far people watch, from the watch-page tracker (kind='video' rows).
+const PINK = '#FF2E93', GREEN = '#7CD992';
+function DrawnTogetherVideo({ v, range }) {
+  if (!v) return null;
+  const top = v.funnel?.[0]?.people || 0;
+  const stat = (value, label, sub, color) => (
+    <div style={box}>
+      <div style={kicker}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 800, color: color || 'inherit' }}>{value}</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', minHeight: 16 }}>{sub}</div>
+    </div>
+  );
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <b style={{ fontSize: 15 }}>Drawn Together video</b>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>· maineventstudio.com/drawn-together-video</span>
+      </div>
+      {!v.plays ? <div style={{ ...box, color: 'var(--muted)', fontSize: 13 }}>No plays recorded in this period yet. Counting starts from the day the video tracker went live.</div> : null}
+      <div className="mes-sa-grid3">
+        {stat(v.people.toLocaleString(), 'People who pressed play', `${v.plays.toLocaleString()} plays incl. replays`)}
+        {stat(v.completionPct != null ? v.completionPct + '%' : '—', 'Watched to the end', v.completionPct != null ? 'of everyone who pressed play' : '', GREEN)}
+        {stat(v.playRatePct != null ? v.playRatePct + '%' : '—', 'Play rate', v.watchPageVisitors ? `of ${v.watchPageVisitors.toLocaleString()} watch-page visitors` : '')}
+      </div>
+      <div className="mes-sa-map">
+        <div style={box}>
+          <div style={kicker}>How far people watch</div>
+          {(v.funnel || []).map((f, i, a) => {
+            const pct = top ? Math.round((f.people / top) * 100) : 0;
+            return (
+              <div key={f.label} style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '7px 0', fontSize: 13 }}>
+                <span style={{ width: 62 }}>{f.label}</span>
+                <div style={{ flex: 1, height: 8, background: 'var(--line)', borderRadius: 999 }}>
+                  <div style={{ width: pct + '%', height: '100%', borderRadius: 999, background: i === a.length - 1 ? GREEN : PINK }} />
+                </div>
+                <span style={{ width: 40, textAlign: 'right', fontWeight: 700 }}>{f.people.toLocaleString()}</span>
+              </div>
+            );
+          })}
+        </div>
+        <List title="Plays by device" items={v.devices} empty="No plays yet" />
+      </div>
+      <div style={box}>
+        <div style={kicker}>{range === 'today' ? 'Plays per hour' : 'Plays per day'}</div>
+        <Chart series={v.series || []} color={PINK} />
+      </div>
+    </div>
   );
 }
 
@@ -178,6 +230,7 @@ export default function SiteAnalytics({ api }) {
             <div style={kicker}>{range === 'today' ? 'Visitors per hour' : 'Visitors per day'}</div>
             <Chart series={data.series || []} />
           </div>
+          <DrawnTogetherVideo v={data.video} range={range} />
           <div className="mes-sa-map">
             <div style={box}>
               <div style={kicker}>Where visitors are</div>

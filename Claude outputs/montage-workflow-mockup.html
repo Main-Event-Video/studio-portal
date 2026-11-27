@@ -1,0 +1,76 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Montage Maker — streamlined workflow (Stills)</title>
+<style>
+  body{margin:0;background:#0d0d12;color:#e8e8ee;font:14px/1.45 -apple-system,Helvetica,Arial,sans-serif;padding:28px}
+  h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:26px 0 10px;color:#9aa0b4;letter-spacing:.06em;text-transform:uppercase}
+  .muted{color:#8b90a3}.card{border:1px solid #2a2b36;border-radius:12px;padding:14px 16px;background:#14141b;margin-bottom:12px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .pill{display:inline-block;border:1px solid #2f3040;border-radius:999px;padding:3px 10px;font-size:12px;color:#aeb3c6}
+  .pill.on{border-color:#3d7bff;background:rgba(61,123,255,.16);color:#cfe0ff;font-weight:700}
+  .pill.alpha{border-color:#22c55e;background:rgba(34,197,94,.14);color:#bff2d1}
+  .btn{display:inline-block;padding:7px 14px;border-radius:9px;font-weight:700;font-size:13px}
+  .btn.p{background:#ff2d55;color:#fff}.btn.g{border:1px solid #3a3b48;color:#c9cbd6}
+  .btn.b{background:#3d7bff;color:#fff}
+  .num{font-family:ui-monospace,Menlo,monospace;font-weight:800;background:#2a2b36;color:#c9cbd6;padding:2px 7px;border-radius:6px;font-size:12px}
+  .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .step{border:1px solid #2a2b36;border-radius:12px;padding:12px;background:#14141b}
+  .step b{display:block;margin-bottom:6px}.step .n{display:inline-flex;width:22px;height:22px;border-radius:50%;background:#3d7bff;color:#fff;align-items:center;justify-content:center;font-size:12px;font-weight:800;margin-right:6px}
+  .old{color:#ff8fab;text-decoration:line-through}
+  .note{font-size:12px;color:#8b90a3;margin-top:6px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .choice{border:1px solid #2f3040;border-radius:10px;padding:10px 12px}
+  .choice.on{border:2px solid #3d7bff;background:rgba(61,123,255,.08)}
+  .choice small{display:block;color:#8b90a3;margin-top:3px}
+  .chips span{display:inline-block;margin:3px}
+  .gold{border-color:#f5b301!important;background:rgba(245,179,1,.18)!important;color:#f5b301!important}
+  .delta{border-left:3px solid #f5a623;padding-left:10px;margin-top:8px;font-size:12.5px;color:#d9c39a}
+</style></head><body>
+<h1>Montage Maker — the streamlined workflow (Stills example)</h1>
+<div class="muted">One decision per segment. Low rez to cut with. One high-rez button. The alpha machinery stays, but you stop seeing it.</div>
+
+<h2>1 · Choose style → the one new setting</h2>
+<div class="card" style="border-style:dashed">
+  <div class="muted" style="font-size:12.5px">Choose Style is unchanged: the click-to-pick palette of style cards (single-click picks, double-click opens that style's settings box under the card). <strong>Delivery</strong> is a pair of buttons inside that settings box — not a pulldown — like the Border and Neon controls already there.</div>
+  <div class="row" style="margin-top:10px;gap:8px">
+    <span class="pill">Hollywood</span><span class="pill">Party 2</span><span class="pill on">MEvid Stills ✓</span><span class="pill">Glass</span><span class="pill">Two Panel</span><span class="pill">Framed Box</span><span class="muted" style="font-size:12px">… (the cards)</span>
+  </div>
+</div>
+<div class="card">
+  <div class="row" style="margin-bottom:10px"><span class="num">Segment A</span> <strong>MEvid Stills</strong> <span class="pill">Cycle all 26</span> <span class="pill">Border 0.9</span></div>
+  <div style="font-size:12px;color:#9aa0b4;margin-bottom:6px">Delivery</div>
+  <div class="two">
+    <div class="choice on"><strong>Keyable</strong> — transparent around the photos, drop it over your own backdrop in Premiere.<small>Auto-picked for Stills / Party / Hollywood on the plain backdrop. Low rez and full rez both come with alpha.</small></div>
+    <div class="choice"><strong>Finished look</strong> — the montage is the picture, edge to edge.<small>Auto-picked for Glass, Framed Box, or any imported backdrop / texture. Always one file, never a matte.</small></div>
+  </div>
+  <div class="note">Green / Magenta key: tucked under <em>Advanced</em>, off the main path. Nothing else on this panel changes.</div>
+  <div class="delta">What goes away here: the Key colour dropdown as a front-and-centre choice.</div>
+</div>
+
+<h2>2 · Generate → the low rez you cut with</h2>
+<div class="card">
+  <div class="row"><span class="num">139</span> <strong>Seg A — Stills</strong> <span class="pill">low rez</span> <span class="pill alpha">KEYABLE · pair ready</span> <span class="pill">stills · 40 photos · #171-213</span></div>
+  <div class="row" style="margin-top:8px;font-size:13px"><a>Show Preview</a> · <a>Download low rez</a> · <a>Revise</a> · <a>☆ Star</a></div>
+  <div class="note">Keyable segment → "Download low rez" gives the colour + matte pair (Alpha Merge makes the .mov). Finished-look segment → one file. You never pick.</div>
+  <div class="delta">What goes away here: <span class="old">Export Low Rez</span> · <span class="old">Low rez with alpha</span> · <span class="old">Matte pass</span> · <span class="old">Export with alpha</span> — four links become two.</div>
+</div>
+
+<h2>3 · Cut in Premiere, star the keepers, one button for full rez</h2>
+<div class="card">
+  <div class="row" style="margin-bottom:8px"><strong>Alpha export — three steps</strong> <span class="muted">★ 3 starred · 0 ready</span></div>
+  <div class="row"><span class="num">1</span> <span class="btn p">Export all starred — full rez (★ 3)</span> <span class="muted">pairs for Keyable segments, single files for Finished look</span></div>
+  <div class="chips" style="margin:10px 0 4px"><span class="pill">▶ Pick by number</span>
+    <span class="pill">135</span><span class="pill">136</span><span class="pill">137</span><span class="pill gold">★ 138</span><span class="pill gold">★ 139</span><span class="pill gold">★ 140</span></div>
+  <div class="row" style="margin-top:8px"><span class="num">2</span> <span class="btn b">Download new (3 new · 6 files)</span> <span class="muted">only what you haven't taken · <a>already have these</a> · <a>download all again</a></span></div>
+  <div class="row" style="margin-top:8px"><span class="num">3</span> <span class="btn g">Alpha Merge in the Dock</span> <span class="muted">→ 138HR_…_ALPHA.mov, 139HR_…, 140HR_… — Replace Footage in Premiere</span></div>
+  <div class="delta">What changes here: the button is "Export all starred"; Finished-look segments come down as single files in the same batch.</div>
+</div>
+
+<h2>The whole loop, Stills</h2>
+<div class="flow">
+  <div class="step"><span class="n">1</span><b>Set up</b>Pick Stills. Delivery auto-picks <em>Keyable</em>. Generate.</div>
+  <div class="step"><span class="n">2</span><b>Cut</b>Download low rez → Alpha Merge → cut with the numbered _ALPHA.mov files.</div>
+  <div class="step"><span class="n">3</span><b>Keep</b>Pick by number → the ones you used light up ★.</div>
+  <div class="step"><span class="n">4</span><b>Finish</b>Export all starred → Download new → Alpha Merge → Replace Footage.</div>
+</div>
+<div class="note" style="margin-top:14px">Same for Party, Hollywood, Two Panel. For Glass or an imported backdrop, step 2 and 4 hand you one file each and Alpha Merge has nothing to do.</div>
+</body></html>

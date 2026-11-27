@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mockup — New client preview</title>
+<style>
+  body{margin:0;background:#0b0710;color:#e8e6ee;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:30px}
+  .note{max-width:980px;margin:0 auto 14px;color:#9a93a8;font-size:13px}
+  .panel{max-width:980px;margin:0 auto;background:#120d18;border:1px solid #2a2333;border-radius:14px;padding:22px 24px}
+  .pills{display:flex;gap:10px;margin-bottom:18px}
+  .pill{border:1px solid #3d7bff;border-radius:999px;padding:6px 16px;font-weight:800;font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:#cfe0ff}
+  .pill.red{border-color:#ff2e4c;color:#ff2e4c}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
+  label{display:block;font-size:13px;color:#9a93a8;margin-bottom:6px}
+  input{width:100%;box-sizing:border-box;background:#18121f;border:1px solid #2a2333;border-radius:8px;color:#fff;font-size:15px;padding:11px 12px}
+  .pw{font-size:13px;color:#9a93a8;margin:14px 0 0}.pw code{color:#fff}
+  .kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#9a93a8;margin:22px 0 10px}
+  .new{border:2px dashed #37d99a;border-radius:12px;padding:14px;position:relative}
+  .new::before{content:"NEW";position:absolute;top:-10px;left:12px;background:#37d99a;color:#06150f;font-size:10px;font-weight:800;letter-spacing:.12em;padding:2px 8px;border-radius:6px}
+  .thumbs{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .thumb{border-radius:10px;overflow:hidden;border:1px solid #2a2333}
+  .cap{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#9a93a8;padding:7px 10px;background:#18121f;border-bottom:1px solid #2a2333}
+  .portal{background:radial-gradient(ellipse at top,#1b1030,#0a0610);text-align:center;padding:18px 10px 20px}
+  .logo{font-weight:900;font-size:15px;letter-spacing:.05em;color:#ff2e93;text-shadow:0 0 8px rgba(255,46,147,.7)}
+  .welcome{font-size:22px;font-weight:800;color:#cfe0ff;text-shadow:0 0 10px rgba(61,123,255,.9);margin:10px 0 4px}
+  .when{font-size:12px;color:#9a93a8}
+  .email{background:#f4f2f7;padding:12px}
+  .to{font-size:11.5px;color:#666;margin-bottom:8px;word-break:break-all}.to b{color:#333}
+  .card{background:#fff;border-radius:8px;padding:14px 16px}
+  .hi{font-size:18px;font-weight:700;color:#1a1523;margin:0 0 6px}
+  .lead{font-size:13px;color:#555;line-height:1.5;margin:0}
+  .warn{margin-top:10px;font-size:12.5px;color:#ffb44d;display:none}
+  .btn{display:inline-block;margin-top:18px;background:#ff2e93;color:#14040b;font-weight:800;border-radius:10px;padding:12px 20px;box-shadow:0 0 16px rgba(255,46,147,.5)}
+</style>
+</head>
+<body>
+<p class="note">Mockup only. Type in the Welcome name, email or date and the two previews update live. The green dashed box is the new part.</p>
+<div class="panel">
+  <div class="pills"><span class="pill red">▾ New client</span><span class="pill">▸ Site analytics</span><span class="pill">▸ Sample links</span></div>
+  <div class="grid">
+    <div><label>Welcome name (shown on portal)</label><input id="n" value="Noah &amp; family"></div>
+    <div><label>Last name (password base)</label><input value="Land"></div>
+    <div><label>Client email (username)</label><input id="e" value="shellyabramowicz@gmail.com"></div>
+    <div><label>Event date</label><input id="d" type="date" value="2027-01-23"></div>
+    <div><label>Event type (optional)</label><input id="t" value="Bar Mitzvah"></div>
+  </div>
+  <p class="pw">Password will be: <code>land0123</code></p>
+
+  <p class="kicker">How it will read</p>
+  <div class="new">
+    <div class="thumbs">
+      <div class="thumb">
+        <div class="cap">Their portal</div>
+        <div class="portal">
+          <div class="logo">MAIN EVENT<div style="font-size:9px;letter-spacing:.3em;color:#cfe0ff;text-shadow:0 0 6px rgba(61,123,255,.8)">STUDIO</div></div>
+          <div class="welcome" id="pw">Welcome Noah &amp; family</div>
+          <div class="when" id="pd">January 23, 2027 · Bar Mitzvah</div>
+        </div>
+      </div>
+      <div class="thumb">
+        <div class="cap">Emails we send them</div>
+        <div class="email">
+          <div class="to">To: <b id="et">Noah &amp; family &lt;shellyabramowicz@gmail.com&gt;</b></div>
+          <div class="card">
+            <p class="hi" id="eh">Hi Noah &amp; family,</p>
+            <p class="lead">Your cut from Main Event Studio is ready to watch…</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="warn" id="w">⚠ Welcome name is empty — the portal would just say "Welcome".</div>
+  </div>
+
+  <span class="btn">Create client</span>
+</div>
+<script>
+  const $=id=>document.getElementById(id);
+  function fmt(v){if(!v)return'';const d=new Date(v+'T12:00:00');return d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});}
+  function upd(){
+    const n=$('n').value.trim(), e=$('e').value.trim(), t=$('t').value.trim(), d=fmt($('d').value);
+    $('pw').textContent='Welcome '+n;
+    $('pd').textContent=[d,t].filter(Boolean).join(' · ');
+    $('eh').textContent='Hi '+(n||'')+',';
+    $('et').textContent=(n||'')+' <'+e+'>';
+    $('w').style.display=n?'none':'block';
+  }
+  ['n','e','d','t'].forEach(id=>$(id).addEventListener('input',upd));upd();
+</script>
+</body>
+</html>

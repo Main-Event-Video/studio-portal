@@ -41,7 +41,7 @@ async function fetchAll(make, pageSize = 1000, max = 200000) {
   return { rows, error: null };
 }
 
-const PAGE_NAMES = { '/': 'Home', '/samplework': 'Portfolio', '/testimonials': 'Testimonials', '/about': 'About', '/articles': 'Articles', '/contact': 'Contact', '/pricing': 'Pricing', '/new-page': 'Client Page' };
+const PAGE_NAMES = { '/': 'Home', '/samplework': 'Portfolio', '/testimonials': 'Testimonials', '/about': 'About', '/articles': 'Articles', '/contact': 'Contact', '/pricing': 'Pricing', '/new-page': 'Client Page', '/drawn-together': 'Drawn Together', '/drawn-together-video': 'Drawn Together · Watch page' };
 function pageName(p) {
   const path = (p || '/').replace(/\/+$/, '') || '/';
   if (PAGE_NAMES[path]) return PAGE_NAMES[path];
@@ -152,7 +152,47 @@ export async function GET(request) {
   const devices = {};
   for (const r of views) devices[r.device || 'unknown'] = (devices[r.device || 'unknown'] || 0) + 1;
 
+  // DRAWN TOGETHER VIDEO (Josh 11/27) — kind='video' rows from the watch-page
+  // tracker. People = distinct visitors; plays include replays.
+  const vid = rows.filter((r) => r.kind === 'video');
+  const vPeople = (lab) => new Set(vid.filter((r) => r.label === lab).map((r) => r.visitor)).size;
+  const playRows = vid.filter((r) => r.label === 'play');
+  const players = new Set(playRows.map((r) => r.visitor));
+  const funnel = [['play', 'Played'], ['p25', '25%'], ['p50', '50%'], ['p75', '75%'], ['complete', 'Finished']]
+    .map(([k, label]) => ({ label, people: vPeople(k) }));
+  const watchVisitors = new Set(views.filter((r) => (r.path || '').replace(/\/+$/, '') === '/drawn-together-video').map((r) => r.visitor));
+  const vDev = {}, vPage = {};
+  for (const r of playRows) {
+    vDev[r.device || 'unknown'] = (vDev[r.device || 'unknown'] || 0) + 1;
+    vPage[pageName(r.path)] = (vPage[pageName(r.path)] || 0) + 1;
+  }
+  let vSeries = [];
+  if (key === 'today') {
+    const nowHour = hourKey(new Date().toISOString()); const byH = {};
+    for (const r of playRows) { const h = hourKey(r.created_at); byH[h] = (byH[h] || 0) + 1; }
+    for (let h = 0; h <= nowHour; h++) vSeries.push({ label: `${(h % 12) || 12}${h < 12 ? 'a' : 'p'}`, value: byH[h] || 0 });
+  } else {
+    const byD = {};
+    for (const r of playRows) { const d = dayKey(r.created_at); byD[d] = (byD[d] || 0) + 1; }
+    for (let i = RANGE_DAYS[key] - 1; i >= 0; i--) {
+      const d = dayKey(new Date(now - i * 864e5).toISOString()); const [, m, dd] = d.split('-');
+      vSeries.push({ label: `${Number(m)}/${Number(dd)}`, value: byD[d] || 0 });
+    }
+  }
+  const video = {
+    people: players.size,
+    plays: playRows.length,
+    completionPct: players.size ? Math.round((funnel[4].people / players.size) * 100) : null,
+    watchPageVisitors: watchVisitors.size,
+    playRatePct: watchVisitors.size ? Math.min(100, Math.round((players.size / watchVisitors.size) * 100)) : null,
+    funnel,
+    series: vSeries,
+    pages: topN(vPage, 4),
+    devices: topN(vDev, 4),
+  };
+
   return NextResponse.json({
+    video,
     range: key,
     since: startIso,
     totals,

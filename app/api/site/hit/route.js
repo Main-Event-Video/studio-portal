@@ -18,6 +18,9 @@ const SALT = process.env.ANALYTICS_SALT || process.env.SUPABASE_SERVICE_ROLE_KEY
 const BOT_RE = /bot|crawl|spider|slurp|bing|google|yandex|baidu|duckduck|facebookexternalhit|embedly|pinterest|slackbot|telegrambot|whatsapp|discordbot|headless|phantom|puppeteer|playwright|lighthouse|gtmetrix|pingdom|uptime|monitor|curl|wget|python-requests|axios|node-fetch|semrush|ahrefs|dataprovider|preview/i;
 const ALLOWED_ORIGINS = ['https://www.maineventstudio.com', 'https://maineventstudio.com'];
 const CLICK_LABELS = new Set(['mevid', 'donate', 'contact', 'phone_email', 'portal']);
+// Video milestones from the Drawn Together watch page (Josh 11/27): one row per
+// event, raw — replays are real plays; dedupe by visitor at query time.
+const VIDEO_EVENTS = new Set(['play', 'p25', 'p50', 'p75', 'complete']);
 
 function cors(request) {
   const origin = request.headers.get('origin') || '';
@@ -64,9 +67,10 @@ export async function POST(request) {
     const ua = request.headers.get('user-agent') || '';
     if (BOT_RE.test(ua)) return NextResponse.json({ ok: true, skipped: 'bot' }, { headers });
 
-    const kind = body.kind === 'click' ? 'click' : 'view';
-    const label = kind === 'click' && CLICK_LABELS.has(body.label) ? body.label : null;
-    if (kind === 'click' && !label) return NextResponse.json({ ok: true, skipped: 'label' }, { headers });
+    const kind = body.kind === 'click' ? 'click' : body.kind === 'video' ? 'video' : 'view';
+    const label = kind === 'click' ? (CLICK_LABELS.has(body.label) ? body.label : null)
+      : kind === 'video' ? (VIDEO_EVENTS.has(body.label) ? body.label : null) : null;
+    if (kind !== 'view' && !label) return NextResponse.json({ ok: true, skipped: 'label' }, { headers });
     let path = String(body.path || '/').slice(0, 300);
     if (!path.startsWith('/')) path = '/';
 

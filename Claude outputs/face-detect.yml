@@ -1,0 +1,82 @@
+# =============================================================
+# Main Event Studio — FACE DETECTION for Glass accent crops
+#
+# WHY THIS IS A WORKFLOW AND NOT PART OF THE APP: the portal runs on Vercel, and
+# a serverless function has a package-size ceiling and a short wall clock. Face
+# detection needs a real model plus a full image decode — per photo. Doing it
+# inside a render request would mean decoding sixty photos before Creatomate is
+# even called, on every single render. So it runs once per photo, here, and the
+# answer is stored on the row. That also covers the photos ALREADY in R2, which
+# a detect-on-upload hook never would.
+#
+# WHAT IT IS FOR: the Glass style puts accent panes down the sides of the hero
+# photograph. Those panes are narrow, so a pane showing a picture is showing a
+# tight crop of it — and a tight crop aimed at nothing in particular once
+# isolated a child's torso. The rule now is that an accent crop is anchored on
+# the midpoint between a detected pair of EYES, and that a pane which cannot
+# reach a face becomes plain glass instead. This job supplies the eyes.
+#
+# SAFE TO RE-RUN. It only looks at photos whose `faces` column is still null, so
+# a second run picks up whatever was uploaded since and nothing else. Photos it
+# cannot decode are left pending rather than marked "no faces", so a later run
+# can try again.
+#
+# SECRETS: the same R2 and Supabase ones the nightly backup already uses —
+# R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET,
+# SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+# =============================================================
+name: Face detection (Glass accent crops)
+
+on:
+  schedule:
+    - cron: '0 10 * * *'      # 10:00 UTC, an hour after the media backup
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'How many photos to process this run'
+        required: false
+        default: '400'
+      client_id:
+        description: 'Optional: only this client (UUID). Leave blank for all.'
+        required: false
+        default: ''
+      redo:
+        description: 'Re-detect photos that already have faces'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: face-detect
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # opencv-python-headless: no GUI libs, which is what a runner wants.
+      # Pinned, because a detector that quietly changes behaviour between runs
+      # would give two different crops for the same photograph.
+      - name: Install
+        run: pip install --quiet opencv-python-headless==4.10.0.84 numpy==1.26.4 boto3==1.34.131 requests==2.32.3
+
+      - name: Detect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          python tools/face-detect/detect_faces.py \
+            --limit "${{ github.event.inputs.limit || '400' }}" \
+            ${{ github.event.inputs.client_id && format('--client-id {0}', github.event.inputs.client_id) || '' }} \
+            ${{ github.event.inputs.redo == 'true' && '--redo' || '' }}

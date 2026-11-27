@@ -1,0 +1,64 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mockup — Request Review</title>
+<style>
+:root{--bg:#060309;--panel:#0e0a16;--panel2:#150f20;--line:#241c33;--text:#edebf2;--muted:#8b8799;--blue:#3d7bff;--red:#ff2e4c;--ok:#37d99a;--gold:#ffc93d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;padding:24px 16px}
+.wrap{max-width:1000px;margin:0 auto}.note{color:var(--muted);font-size:13px;margin:0 0 14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;overflow-x:auto}
+h3{margin:0 0 12px;font-size:18px}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+.tbl td{padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle}
+.np{border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-weight:600}
+.gb{background:transparent;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:5px 10px;font-size:13px;cursor:pointer}
+.gb.req{border-color:var(--gold);color:var(--gold)}.gb.asked{color:var(--muted)}.gb.done{border-color:var(--ok);color:var(--ok)}
+.send{border:1px solid var(--gold);border-radius:12px;padding:16px;background:rgba(255,201,61,.05);white-space:normal}
+.go{display:block;width:100%;background:var(--ok);color:#06150f;border:0;border-radius:10px;padding:14px;font-weight:800;font-size:16px;cursor:pointer;box-shadow:0 0 14px rgba(55,217,154,.35)}
+.sub{font-size:12.5px;color:var(--muted);text-align:center;margin:6px 0 14px}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+input,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:9px 11px;font:inherit;font-size:14px}
+textarea{min-height:200px}
+.row2{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.new{outline:2px dashed var(--ok);outline-offset:3px}
+.sent{display:none;margin-top:10px;color:var(--ok);font-weight:700}
+</style></head><body><div class="wrap">
+<p class="note">Mockup. Click <b>Request Review</b> on the Noah &amp; family row, then the green button. Green dashed outlines = what's new.</p>
+<div class="panel">
+<h3>Clients</h3>
+<table class="tbl">
+<tr><th>Client</th><th>Email</th><th>Event</th><th>Last upload</th><th>Files</th><th></th></tr>
+<tr><td><span class="np">▸ Noah &amp; family</span></td><td>shellyabramowicz@gmail.com</td><td>2027-01-23 · Bar Mitzvah</td><td>—</td><td>0</td>
+<td><button class="gb">✎ Edit</button> <button class="gb">Reset password</button> <button class="gb">Archive</button> <button class="gb req new" id="rb" onclick="tog()">★ Request Review</button></td></tr>
+<tr id="box" style="display:none"><td colspan="6"><div class="send new">
+  <button class="go" onclick="sendIt()">✓ Request approved to send to client</button>
+  <p class="sub">Sends the email below to Noah &amp; family, with a copy to info@. Edit anything first if you like.</p>
+  <label>To</label><input value="Noah & family <shellyabramowicz@gmail.com>  ·  copy to info@maineventstudio.com">
+  <label>Subject</label><input value="How did we do? A quick favor from Main Event Studio">
+  <label>Message</label>
+  <textarea>Hi Noah & family,
+
+Thank you again for letting us be part of your Bar Mitzvah. It was a joy bringing your celebration to the screen, and we hope you and your family loved watching it as much as we loved making it.
+
+If you have a minute, we'd be so grateful if you'd share a few words about your experience. Your review helps other families find us, and it means the world to our small team.
+
+[Tap a star to rate us ★★★★★]  [Leave a review →]
+
+You choose how your name appears, and nothing is posted without your OK.
+
+With gratitude,
+Robyn & Josh
+Main Event Studio</textarea>
+  <div class="row2"><button class="gb">Copy link only (to text it)</button><button class="gb" onclick="tog()">Cancel</button></div>
+  <div class="sent" id="sent">Sent ✓ — the button now shows "★ Requested Nov 17".</div>
+</div></td></tr>
+<tr><td><span class="np">▸ Adam &amp; Jill</span></td><td>…</td><td>2026-10-01 · Bar Mitzvah</td><td>Sep 28</td><td>680</td>
+<td><button class="gb">✎ Edit</button> <button class="gb">Reset password</button> <button class="gb">Archive</button> <button class="gb asked new">★ Requested Nov 13</button></td></tr>
+<tr><td><span class="np">▸ Reagan</span></td><td>…</td><td>2026-09-19 · Bat Mitzvah</td><td>Sep 14</td><td>276</td>
+<td><button class="gb">✎ Edit</button> <button class="gb">Reset password</button> <button class="gb">Archive</button> <button class="gb done new">★★★★★ Reviewed</button></td></tr>
+</table>
+<p class="note" style="margin-top:12px">"★ Requested &lt;date&gt;": click it to open the same box again and send a reminder. "★★★★★ Reviewed" turns green once they send their review. The button is on archived clients too.</p>
+</div></div>
+<script>
+function tog(){const b=document.getElementById('box');b.style.display=b.style.display==='none'?'':'none';document.getElementById('sent').style.display='none'}
+function sendIt(){document.getElementById('sent').style.display='block';const r=document.getElementById('rb');r.textContent='★ Requested Nov 17';r.className='gb asked new'}
+</script></body></html>

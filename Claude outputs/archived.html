@@ -1,0 +1,129 @@
+<title>Archived clients — mockup</title>
+<style>
+  :root{--bg:#060309;--panel:#0e0a16;--panel-2:#150f20;--line:#241c33;--text:#edebf2;--muted:#8b8799;--blue:#3d7bff;--red:#ff2e4c;--ok:#37d99a}
+  body{background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:26px}
+  .wrap{max-width:1000px;margin:0 auto}
+  h2{font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 4px}
+  .sub{font-size:12.5px;color:var(--muted);margin:0 0 16px}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:10px;overflow:hidden}
+  th{text-align:left;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:10px 12px;border-bottom:1px solid var(--line)}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px}
+  tr:last-child td{border-bottom:none}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--muted)}
+  .name-pill{background:transparent;border:1px solid var(--line);border-radius:999px;padding:4px 12px;color:var(--text);font-weight:600;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;letter-spacing:.06em;border:1px solid var(--line);color:var(--muted)}
+  .pill.archived{border-color:var(--red);color:var(--red)}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:3px 9px;font-size:11.5px;cursor:pointer}
+  .arch-row td{background:rgba(255,46,76,.04)}
+  .arch-pill{background:transparent;border:1px solid var(--red);border-radius:999px;padding:5px 14px;color:var(--red);font-weight:700;font-size:12.5px;letter-spacing:.05em;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+  .arch-inner td{background:rgba(255,46,76,.02);color:var(--muted)}
+  .arch-inner .name-pill{opacity:.75}
+  .note{margin-top:22px;border:1px solid var(--line);border-left:3px solid #d8b56b;border-radius:8px;padding:12px 14px;background:rgba(216,181,107,.05)}
+  .note b{color:#d8b56b;font-size:12px}
+  .note p{font-size:12px;color:var(--muted);margin:6px 0 0}
+  .cnt{font-size:11px;color:var(--muted);font-weight:400;letter-spacing:0}
+  th.s{cursor:pointer;user-select:none}
+  th.s:hover{color:var(--text)}
+  th.s.on{color:var(--blue)}
+  .car{font-size:9px;opacity:.85}
+  .panel{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px 16px}
+  .np-pill{background:transparent;border:1px solid var(--red);border-radius:999px;padding:6px 16px;color:var(--red);
+           font-weight:800;font-size:13px;letter-spacing:.09em;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+  .neon{text-shadow:0 0 8px rgba(255,46,76,.55)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-top:16px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--muted)}
+  input{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:9px 11px;color:var(--text);font:inherit;font-size:13.5px}
+  .create{margin-top:16px;background:var(--red);border:none;border-radius:10px;padding:10px 20px;color:#fff;font-weight:800;font-size:14px;cursor:pointer}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}}
+</style>
+<div class="wrap">
+  <h2>Admin — clients</h2>
+  <p class="sub">Two changes: New Client folds away, and archived clients gather into one row.</p>
+
+  <!-- NEW CLIENT as a pill that opens and closes -->
+  <div class="panel">
+    <button class="np-pill" id="npT"><span id="npC">▸</span> <span class="neon">NEW CLIENT</span></button>
+    <div id="npBody" hidden>
+      <div class="grid2">
+        <label>Welcome name (shown on portal)<input placeholder="The Goldbergs"></label>
+        <label>Last name (password base)<input placeholder="Goldberg"></label>
+        <label>Client email (username)<input placeholder="family@example.com"></label>
+        <label>Event date<input type="date"></label>
+        <label>Event type (optional)<input placeholder="Bar Mitzvah, Wedding…"></label>
+        <span></span>
+      </div>
+      <button class="create">Create client</button>
+    </div>
+  </div>
+
+  <h2 style="margin-top:30px">Clients</h2>
+  <p class="sub">Archived clients gathered into one row at the bottom instead of sitting among the live ones.</p>
+
+  <table>
+    <thead><tr>
+      <th class="s" data-k="name">Client <span class="car"></span></th>
+      <th>Email</th>
+      <th class="s" data-k="event">Event <span class="car"></span></th>
+      <th class="s" data-k="upload">Last upload <span class="car"></span></th>
+      <th>Files</th><th></th>
+    </tr></thead>
+    <tbody id="body"></tbody>
+  </table>
+
+  <div class="note">
+    <b>Three things to check</b>
+    <p>1. Archived clients keep everything — opening one still gives you the full workspace, Montage Maker and all. They are only moved, not limited.</p>
+    <p>2. The row stays put at the bottom whether it is open or shut, so the live list never jumps around under your cursor.</p>
+    <p>3. If nothing is archived the row is not there at all, rather than an empty "Archived · 0".</p>
+    <p>4. Click <b>Client</b>, <b>Event</b> or <b>Last upload</b> to sort; click again to flip it. Sorting happens inside each group, so archived clients stay archived at the bottom.</p>
+    <p>5. Aaron Vance has no event date and has never uploaded — he stays at the BOTTOM whichever way the arrow points, so a date sort never opens with a wall of blanks.</p>
+    <p>6. New Client starts CLOSED. It is the first thing on the page and you use it rarely, so it was pushing the client list down every time you opened the admin. Click the pill to open it; it closes itself again after a client is created.</p>
+  </div>
+</div>
+<script>
+  var archOpen=false, sortKey=null, sortDir=1;
+  function cmp(a,b){
+    if(sortKey===null) return 0;
+    var ka = sortKey==='name'? a.n.toLowerCase() : sortKey==='event'? a.evk : a.luk;
+    var kb = sortKey==='name'? b.n.toLowerCase() : sortKey==='event'? b.evk : b.luk;
+    // Blanks ALWAYS last, whichever way the arrow points — otherwise a date
+    // sort opens with a wall of clients who have no date yet.
+    var ea=(ka===''||ka==null), eb=(kb===''||kb==null);
+    if(ea&&eb) return 0; if(ea) return 1; if(eb) return -1;
+    return ka<kb ? -sortDir : ka>kb ? sortDir : 0;
+  }
+  function render(){
+    var live=ROWS.filter(function(r){return !r.a;}).slice().sort(cmp);
+    var arch=ROWS.filter(function(r){return r.a;}).slice().sort(cmp);
+    var h='';
+    live.forEach(function(r){ h+=row(r,false); });
+    if(arch.length){
+      h+='<tr class="arch-row"><td colspan="6"><button class="arch-pill" id="toggle"><span>'+(archOpen?'▾':'▸')+'</span> ARCHIVED <span class="cnt">'+arch.length+' client'+(arch.length===1?'':'s')+'</span></button></td></tr>';
+      if(archOpen) arch.forEach(function(r){ h+=row(r,true); });
+    }
+    document.getElementById('body').innerHTML=h;
+    document.querySelectorAll('th.s').forEach(function(th){
+      th.classList.toggle('on', th.dataset.k===sortKey);
+      th.querySelector('.car').textContent = th.dataset.k===sortKey ? (sortDir===1?'▲':'▼') : '';
+    });
+    var tg=document.getElementById('toggle');
+    if(tg) tg.addEventListener('click',function(){ archOpen=!archOpen; render(); });
+  }
+  function row(r,isA){
+    return '<tr'+(isA?' class="arch-inner"':'')+'><td><button class="name-pill">▸ '+r.n+'</button>'+(isA?' <span class="pill archived">archived</span>':'')+'</td>'+
+      '<td class="mono">'+r.e+'</td><td>'+r.ev+'</td><td>'+r.lu+'</td><td>'+r.f+'</td>'+
+      '<td style="white-space:nowrap"><button class="btn-ghost">✎ Edit</button> <button class="btn-ghost">'+(isA?'Unarchive':'Archive')+'</button></td></tr>';
+  }
+  document.querySelectorAll('th.s').forEach(function(th){
+    th.addEventListener('click',function(){
+      var k=th.dataset.k;
+      if(sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir = (k==='name'?1:-1); }
+      render();
+    });
+  });
+  render();
+  var nt=document.getElementById('npT'), nb=document.getElementById('npBody'), nc=document.getElementById('npC');
+  nt.addEventListener('click',function(){ var open=!nb.hidden; nb.hidden=open; nc.textContent=open?'▸':'▾'; });
+
+  var ROWS=[{"n": "Dylan Rosson", "e": "dylan@example.com", "ev": "2026-10-04 \u00b7 Bat Mitzvah", "lu": "Sep 6, 2026", "f": "142", "evk": "2026-10-04", "luk": "2026-09-06", "a": 0}, {"n": "Julie Taylor-Bini", "e": "julie@example.com", "ev": "2026-09-27 \u00b7 Mitzvah", "lu": "Sep 5, 2026", "f": "88", "evk": "2026-09-27", "luk": "2026-09-05", "a": 0}, {"n": "Pam &amp; Chris Bingham", "e": "pam@example.com", "ev": "2026-11-15 \u00b7 Wedding", "lu": "Sep 2, 2026", "f": "301", "evk": "2026-11-15", "luk": "2026-09-02", "a": 0}, {"n": "Aaron Vance", "e": "aaron@example.com", "ev": "\u2014 ", "lu": "never", "f": "0", "evk": "", "luk": "", "a": 0}, {"n": "Michaels Family", "e": "ms.michaels@example.com", "ev": "2026-05-18 \u00b7 Anniversary", "lu": "May 20, 2026", "f": "64", "evk": "2026-05-18", "luk": "2026-05-20", "a": 1}, {"n": "Gordon Retirement", "e": "gordon@example.com", "ev": "2026-04-02 \u00b7 Retirement", "lu": "Apr 6, 2026", "f": "39", "evk": "2026-04-02", "luk": "2026-04-06", "a": 1}, {"n": "Verona Sweet 16", "e": "verona@example.com", "ev": "2026-03-11 \u00b7 Sweet 16", "lu": "Mar 14, 2026", "f": "121", "evk": "2026-03-11", "luk": "2026-03-14", "a": 1}, {"n": "Halpern Bar Mitzvah", "e": "halpern@example.com", "ev": "2026-01-25 \u00b7 Bar Mitzvah", "lu": "Jan 28, 2026", "f": "77", "evk": "2026-01-25", "luk": "2026-01-28", "a": 1}];
+</script>
